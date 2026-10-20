@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "bad_randomness"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/bad_randomness/old_blockhash.sol",
+  "sourceFile": "old_blockhash.sol",
+  "solcVersion": "0.4.24",
+  "vulnerableLines": [
+    {
+      "lines": [
+        35
+      ],
+      "category": "bad_randomness"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/bad_randomness/old_blockhash.sol",
+  "originalSource": "https://github.com/SmartContractSecurity/SWC-registry/blob/master/test_cases/weak_randomness/old_blockhash.sol"
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-20T13:59:19+00:00",
+  "sampleCount": 0,
+  "scoredSampleCount": 0,
+  "unscoredSampleCount": 0,
+  "precision": null,
+  "recall": null,
+  "falsePositiveCount": 0,
+  "truePositiveCount": 0,
+  "falseNegativeCount": 0,
+  "costUsd": 0.0,
+  "costScope": "本地静态分析；未调用云端模型",
+  "durationMs": 0,
+  "metricsScope": "仅按 ground-truth.knownIssues 与 Slither detector check ID 精确匹配；静态信号不代表确认漏洞",
+  "samples": []
+}

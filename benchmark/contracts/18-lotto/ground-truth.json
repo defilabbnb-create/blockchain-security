@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "unchecked_low_level_calls"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/unchecked_low_level_calls/lotto.sol",
+  "sourceFile": "lotto.sol",
+  "solcVersion": "0.4.18",
+  "vulnerableLines": [
+    {
+      "lines": [
+        20
+      ],
+      "category": "unchecked_low_level_calls"
+    },
+    {
+      "lines": [
+        27
+      ],
+      "category": "unchecked_low_level_calls"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/unchecked_low_level_calls/lotto.sol",
+  "originalSource": "https://github.com/sigp/solidity-security-blog"
+}

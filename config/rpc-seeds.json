@@ -1,0 +1,9 @@
+{
+  "observedAt": "2026-10-17",
+  "entries": [
+    {"chainId": 1285, "source": "https://docs.moonbeam.network/builders/get-started/networks/moonriver/", "urls": ["https://rpc.api.moonriver.moonbeam.network", "https://moonriver.api.onfinality.io/public", "https://moonriver.unitedbloc.com"]},
+    {"chainId": 1284, "source": "https://docs.moonbeam.network/builders/get-started/quick-start/", "urls": ["https://rpc.api.moonbeam.network", "https://moonbeam.unitedbloc.com"]},
+    {"chainId": 592, "source": "https://docs.astar.network/docs/build/environment/endpoints/", "urls": ["https://evm.astar.network", "https://astar-rpc.n.dwellir.com", "https://astar.api.onfinality.io/public", "https://astar.public.curie.radiumblock.co/http", "https://1rpc.io/astr"]},
+    {"chainId": 7700, "source": "https://docs.canto.io/user-guides/connecting-to-canto", "urls": ["https://canto.slingshot.finance", "https://canto-rpc.ansybl.io", "https://canto.gravitychain.io"]}
+  ]
+}

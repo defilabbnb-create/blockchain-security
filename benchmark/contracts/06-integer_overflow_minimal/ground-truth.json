@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "arithmetic"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/integer_overflow_minimal.sol",
+  "sourceFile": "integer_overflow_minimal.sol",
+  "solcVersion": "0.4.19",
+  "vulnerableLines": [
+    {
+      "lines": [
+        17
+      ],
+      "category": "arithmetic"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/integer_overflow_minimal.sol",
+  "originalSource": "https://github.com/SmartContractSecurity/SWC-registry/blob/master/test_cases/integer_overflow_and_underflow/integer_overflow_minimal.sol"
+}

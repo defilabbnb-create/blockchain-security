@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-17",
+  "methodology": {
+    "historicalAttention": "Documented launch/deployment or historical ecosystem cycle; qualitative until a comparable dated series is added.",
+    "currentActivity": "DeFiLlama snapshot from 2026-10-17 UTC; protocol TVL estimates, not total chain assets or audit priority by itself.",
+    "verification": "A chain moves into active investigation only after chain ID, node health, explorer source verification and deployed bytecode match have been checked.",
+    "nextRun": "One chain per investigation: identify protocol, validate deployed code, map proxy/admin/oracle, inspect state and privileged actions, reproduce relevant findings in tests or fork simulation, publish evidence and confidence."
+  },
+  "chains": [
+    {
+      "name": "Flare",
+      "llamaName": "Flare",
+      "chainId": 14,
+      "ecosystem": "EVM",
+      "historicalAttention": "Flare DeFi launch; Firelight announced live 2026-10-06 and Morpho integration launched 2026-02-03.",
+      "currentDefiTvlUsdSnapshot": 183243463,
+      "selectedForDeepDive": true,
+      "status": "source analysis available; deployment-to-source matching pending",
+      "rpc": "https://flare-api.flare.network/ext/C/rpc",
+      "explorer": "https://flare.routescan.io"
+    },
+    {
+      "name": "Songbird",
+      "llamaName": "Songbird",
+      "chainId": 19,
+      "ecosystem": "EVM",
+      "historicalAttention": "Flare canary network and historical ecosystem activity.",
+      "currentDefiTvlUsdSnapshot": 151775,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Fantom",
+      "llamaName": "Fantom",
+      "chainId": 250,
+      "ecosystem": "EVM",
+      "historicalAttention": "High-profile EVM DeFi ecosystem in the 2021-2022 cycle; successor/chain migration changes deployed-code scope.",
+      "currentDefiTvlUsdSnapshot": 3669618,
+      "selectedForDeepDive": false,
+      "status": "candidate; establish current chain identity before any code review"
+    },
+    {
+      "name": "Moonriver",
+      "llamaName": "Moonriver",
+      "chainId": 1285,
+      "ecosystem": "EVM",
+      "historicalAttention": "Kusama parachain expansion and 2021 DeFi launch cycle.",
+      "currentDefiTvlUsdSnapshot": 0,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Evmos",
+      "llamaName": "Evmos",
+      "chainId": 9001,
+      "ecosystem": "EVM",
+      "historicalAttention": "Cosmos-EVM launch cycle and cross-ecosystem deployments.",
+      "currentDefiTvlUsdSnapshot": 0,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Harmony",
+      "llamaName": "Harmony",
+      "chainId": 1666600000,
+      "ecosystem": "EVM",
+      "historicalAttention": "2021 DeFi expansion followed by a major ecosystem shock.",
+      "currentDefiTvlUsdSnapshot": 0,
+      "selectedForDeepDive": false,
+      "status": "candidate; archived protocols and bridges need separate scope"
+    },
+    {
+      "name": "Moonbeam",
+      "llamaName": "Moonbeam",
+      "chainId": 1284,
+      "ecosystem": "EVM",
+      "historicalAttention": "Polkadot parachain and DeFi launch cycle.",
+      "currentDefiTvlUsdSnapshot": 0,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Canto",
+      "llamaName": "Canto",
+      "chainId": 7700,
+      "ecosystem": "EVM",
+      "historicalAttention": "2023 permissionless DeFi and public-goods funding attention.",
+      "currentDefiTvlUsdSnapshot": 0,
+      "selectedForDeepDive": false,
+      "status": "candidate; check chain continuity"
+    },
+    {
+      "name": "Aurora",
+      "llamaName": "Aurora",
+      "chainId": 1313161554,
+      "ecosystem": "EVM",
+      "historicalAttention": "NEAR EVM expansion and Aurora DeFi launch cycle.",
+      "currentDefiTvlUsdSnapshot": 4525937,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Kava EVM",
+      "llamaName": "Kava",
+      "chainId": 2222,
+      "ecosystem": "EVM",
+      "historicalAttention": "Kava EVM launch and multi-ecosystem DeFi incentives.",
+      "currentDefiTvlUsdSnapshot": 20732787,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Boba Ethereum",
+      "llamaName": "Boba",
+      "chainId": 288,
+      "ecosystem": "EVM",
+      "historicalAttention": "2021-2022 optimistic-rollup and ecosystem-incentive expansion.",
+      "currentDefiTvlUsdSnapshot": 2389033,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Fuse",
+      "llamaName": "Fuse",
+      "chainId": 122,
+      "ecosystem": "EVM",
+      "historicalAttention": "Retail payments and DeFi EVM expansion.",
+      "currentDefiTvlUsdSnapshot": 391246,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Telos EVM",
+      "llamaName": "Telos",
+      "chainId": 40,
+      "ecosystem": "EVM",
+      "historicalAttention": "EVM expansion alongside the Telos ecosystem.",
+      "currentDefiTvlUsdSnapshot": 2670927,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Metis",
+      "llamaName": "Metis",
+      "chainId": 1088,
+      "ecosystem": "EVM",
+      "historicalAttention": "Ethereum L2 launch and ecosystem incentives.",
+      "currentDefiTvlUsdSnapshot": 2646679,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Astar EVM",
+      "llamaName": "Astar",
+      "chainId": 592,
+      "ecosystem": "EVM",
+      "historicalAttention": "Polkadot smart-contract and dApp incentive cycle.",
+      "currentDefiTvlUsdSnapshot": 1160044,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Rootstock",
+      "llamaName": "Rootstock",
+      "chainId": 30,
+      "ecosystem": "EVM",
+      "historicalAttention": "Bitcoin sidechain lending and Bitcoin DeFi expansion.",
+      "currentDefiTvlUsdSnapshot": 81017130,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Cronos EVM",
+      "llamaName": "Cronos",
+      "chainId": 25,
+      "ecosystem": "EVM",
+      "historicalAttention": "2021-2022 exchange-linked EVM DeFi expansion.",
+      "currentDefiTvlUsdSnapshot": 139961920,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Gnosis Chain",
+      "llamaName": "Gnosis",
+      "chainId": 100,
+      "ecosystem": "EVM",
+      "historicalAttention": "Long-running low-cost EVM and DAO ecosystem.",
+      "currentDefiTvlUsdSnapshot": 93661128,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    },
+    {
+      "name": "Celo EVM",
+      "llamaName": "Celo",
+      "chainId": 42220,
+      "ecosystem": "EVM",
+      "historicalAttention": "Mobile-first EVM and real-world-payment ecosystem; chain transition matters.",
+      "currentDefiTvlUsdSnapshot": 13573305,
+      "selectedForDeepDive": false,
+      "status": "candidate"
+    }
+  ],
+  "dataSource": {
+    "currentSnapshot": "https://api.llama.fi/v2/chains",
+    "chainIds": "https://chainid.network/chains.json",
+    "definitions": "https://dev.flare.network/network/overview"
+  }
+}

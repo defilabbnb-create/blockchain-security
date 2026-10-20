@@ -1,0 +1,1 @@
+{"role":"erc4626","template":"share_price_monotonic,withdraw_preserves_remaining_value","expectedOnCorrect":"passed","expectedOnViolating":"violated"}

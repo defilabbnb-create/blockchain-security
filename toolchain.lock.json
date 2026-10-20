@@ -1,0 +1,883 @@
+{
+  "inventory": {
+    "architecture": "arm64",
+    "foundry": {
+      "available": true,
+      "installationTimeStatus": "unknown_existing_install",
+      "installedAt": null,
+      "path": "work/tools/forge",
+      "sha256": "1bd4b44465bedc89c546d3b7010e0a0ee2bc03c3f1e232f82587ecb24c512873",
+      "sourceStatus": "unknown_existing_install",
+      "version": "forge Version: 1.8.5\nCommit SHA: 51a52c59cffd940f76eddd0b4bb1791aa4b5ac7f\nBuild Timestamp: 2026-10-05T17:07:33.315474000Z (1791220053)\nBuild Profile: dist"
+    },
+    "heimdall": {
+      "available": true,
+      "expectedAsset": "heimdall-macos-arm64",
+      "expectedSha256": "c279e92aa5a2178cb6327861f206eddee5d53209bb19a863915159b844cc0d23",
+      "installationTimeStatus": "unknown_existing_install",
+      "installedAt": null,
+      "path": "work/tools/heimdall/heimdall",
+      "releaseTag": "0.9.3",
+      "releaseTagVersionMismatch": true,
+      "releaseUrl": "https://github.com/Jon-Becker/heimdall-rs/releases/tag/0.9.3",
+      "sha256": "c279e92aa5a2178cb6327861f206eddee5d53209bb19a863915159b844cc0d23",
+      "sourceStatus": "official_release_asset_hash_match",
+      "verifiedReleaseAsset": true,
+      "version": "heimdall 0.9.2"
+    },
+    "node": {
+      "available": true,
+      "installationTimeStatus": "unknown_existing_install",
+      "installedAt": null,
+      "path": "/opt/homebrew/Cellar/node/26.11.1/bin/node",
+      "version": "v26.11.1"
+    },
+    "npm": {
+      "available": true,
+      "installationTimeStatus": "unknown_existing_install",
+      "installedAt": null,
+      "path": "/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js",
+      "version": "11.20.0"
+    },
+    "npmLockfiles": [
+      {
+        "available": true,
+        "installationTimeStatus": "unknown_existing_install",
+        "installedAt": null,
+        "installedSolc": {
+          "available": false,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "matchesLock": null,
+          "soljsonSha256": null,
+          "version": null
+        },
+        "lockPath": "package-lock.json",
+        "lockSha256": "6834ac74a52e63f1de89468b88cb11141359a4c6fa2a851b830e818535103914",
+        "manifestMissing": false,
+        "manifestPath": "package.json",
+        "manifestSha256": "20b966f890c2bd4fc9e289c527f6a8ccfbced3c20a80aed553ee93711df2c13e",
+        "packages": []
+      },
+      {
+        "available": true,
+        "installationTimeStatus": "unknown_existing_install",
+        "installedAt": null,
+        "installedSolc": {
+          "available": true,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "matchesLock": true,
+          "soljsonSha256": "fba49e26930967a28d4f301088e126002ab6fbb755f37b5d0ee22b1bf4787070",
+          "version": "0.8.19"
+        },
+        "lockPath": "flare-scan/tools/solc-0819/package-lock.json",
+        "lockSha256": "3b8fe105eff29de9a92fd68362ffc017bb58b3bef58703d0b08a00f5e54d2a9f",
+        "manifestMissing": false,
+        "manifestPath": "flare-scan/tools/solc-0819/package.json",
+        "manifestSha256": "93df0452ffe3323aff9decfdc34654332ed0ee80799096dd7f948ae1b79fe6b1",
+        "packages": [
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-LTQ/SGc+s0Xc0Fu5WaKnR0YiygZkm9eKFvyS+fRsU7/ZWFF8ykFM6Pc9aCVf1+xasOOZpO3BAVgVrKvsqKHV7w==",
+            "lockKey": "node_modules/command-exists",
+            "name": "command-exists",
+            "resolved": "https://registry.npmjs.org/command-exists/-/command-exists-1.2.9.tgz",
+            "version": "1.2.9"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==",
+            "lockKey": "node_modules/commander",
+            "name": "commander",
+            "resolved": "https://registry.npmjs.org/commander/-/commander-8.3.0.tgz",
+            "version": "8.3.0"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-FNvFGzoMLWmE6Yj9spb/zjd7yiNCHiAW9/Tg9CXrQ8wuu32HtlJOwWO11OJafl5FfY3DxTdQ0vj42zU1kvv5jg==",
+            "lockKey": "node_modules/follow-redirects",
+            "name": "follow-redirects",
+            "resolved": "https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.16.1.tgz",
+            "version": "1.16.1"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-gF1cRrHhIzNfToc802P800N8PpXS+evLLXfsVpowqmAFR9uwbi89WvXg2QspOmXL8QL86J4T1EpFu+yUkwJY3Q==",
+            "lockKey": "node_modules/js-sha3",
+            "name": "js-sha3",
+            "resolved": "https://registry.npmjs.org/js-sha3/-/js-sha3-0.8.0.tgz",
+            "version": "0.8.0"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-S3UwM3yj5mtUSEfP41UZmt/0SCoVYUcU1rkXv+BQ5Ig8ndL4sPoJNBUJERafdPb5jjHJGuMgytgKvKIf58XNBw==",
+            "lockKey": "node_modules/memorystream",
+            "name": "memorystream",
+            "resolved": "https://registry.npmjs.org/memorystream/-/memorystream-0.3.1.tgz",
+            "version": "0.3.1"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-D2FR03Vir7FIu45XBY20mTb+/ZSWB00sjU9jdQXt83gDrI4Ztz5Fs7/yy74g2N5SVQY4xY1qDr4rNddwYRVX0g==",
+            "lockKey": "node_modules/os-tmpdir",
+            "name": "os-tmpdir",
+            "resolved": "https://registry.npmjs.org/os-tmpdir/-/os-tmpdir-1.0.2.tgz",
+            "version": "1.0.2"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-cBznnQ9KjJqU67B52RMC65CMarK2600WFnbkcaiwWq3xy/5haFJlshgnpjovMVJ+Hff49d8GEn0b87C5pDQ10g==",
+            "lockKey": "node_modules/semver",
+            "name": "semver",
+            "resolved": "https://registry.npmjs.org/semver/-/semver-5.7.2.tgz",
+            "version": "5.7.2"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-yqurS3wzC4LdEvmMobODXqprV4MYJcVtinuxgrp61ac8K2zz40vXA0eSAskSHPgv8dQo7Nux39i3QBsHx4pqyA==",
+            "lockKey": "node_modules/solc",
+            "name": "solc",
+            "resolved": "https://registry.npmjs.org/solc/-/solc-0.8.19.tgz",
+            "version": "0.8.19"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-jRCJlojKnZ3addtTOjdIqoRuPEKBvNXcGYqzO6zWZX8KfKEpnGY5jfggJQ3EjKuu8D4bJRr0y+cYJFmYbImXGw==",
+            "lockKey": "node_modules/tmp",
+            "name": "tmp",
+            "resolved": "https://registry.npmjs.org/tmp/-/tmp-0.0.33.tgz",
+            "version": "0.0.33"
+          }
+        ]
+      },
+      {
+        "available": true,
+        "installationTimeStatus": "unknown_existing_install",
+        "installedAt": null,
+        "installedSolc": {
+          "available": true,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "matchesLock": true,
+          "soljsonSha256": "9745559c347ccd7f9334b5e0aa00e884c23913952d943abdc0c6af85220a6b8e",
+          "version": "0.8.23"
+        },
+        "lockPath": "flare-scan/tools/solc-0823/package-lock.json",
+        "lockSha256": "6e999ef486e82bb0d8eebdb838a7453c67144eda45f813afec947001f6b4bda9",
+        "manifestMissing": false,
+        "manifestPath": "flare-scan/tools/solc-0823/package.json",
+        "manifestSha256": "7e5b873d246cd07f1357974e7a4be8095bc493f075eea30798a4095a1dc82203",
+        "packages": [
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-LTQ/SGc+s0Xc0Fu5WaKnR0YiygZkm9eKFvyS+fRsU7/ZWFF8ykFM6Pc9aCVf1+xasOOZpO3BAVgVrKvsqKHV7w==",
+            "lockKey": "node_modules/command-exists",
+            "name": "command-exists",
+            "resolved": "https://registry.npmjs.org/command-exists/-/command-exists-1.2.9.tgz",
+            "version": "1.2.9"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==",
+            "lockKey": "node_modules/commander",
+            "name": "commander",
+            "resolved": "https://registry.npmjs.org/commander/-/commander-8.3.0.tgz",
+            "version": "8.3.0"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-FNvFGzoMLWmE6Yj9spb/zjd7yiNCHiAW9/Tg9CXrQ8wuu32HtlJOwWO11OJafl5FfY3DxTdQ0vj42zU1kvv5jg==",
+            "lockKey": "node_modules/follow-redirects",
+            "name": "follow-redirects",
+            "resolved": "https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.16.1.tgz",
+            "version": "1.16.1"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-gF1cRrHhIzNfToc802P800N8PpXS+evLLXfsVpowqmAFR9uwbi89WvXg2QspOmXL8QL86J4T1EpFu+yUkwJY3Q==",
+            "lockKey": "node_modules/js-sha3",
+            "name": "js-sha3",
+            "resolved": "https://registry.npmjs.org/js-sha3/-/js-sha3-0.8.0.tgz",
+            "version": "0.8.0"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-S3UwM3yj5mtUSEfP41UZmt/0SCoVYUcU1rkXv+BQ5Ig8ndL4sPoJNBUJERafdPb5jjHJGuMgytgKvKIf58XNBw==",
+            "lockKey": "node_modules/memorystream",
+            "name": "memorystream",
+            "resolved": "https://registry.npmjs.org/memorystream/-/memorystream-0.3.1.tgz",
+            "version": "0.3.1"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-iKU/fMITB+bJe0wQ6Q6THSWBpfF/f/g4elhr23Mp4TywSY0rJvaHVdkMhL9uWEdwdipAPidmTIqafI0BTJj/lQ==",
+            "lockKey": "node_modules/n",
+            "name": "n",
+            "resolved": "https://registry.npmjs.org/n/-/n-9.2.3.tgz",
+            "version": "9.2.3"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-D2FR03Vir7FIu45XBY20mTb+/ZSWB00sjU9jdQXt83gDrI4Ztz5Fs7/yy74g2N5SVQY4xY1qDr4rNddwYRVX0g==",
+            "lockKey": "node_modules/os-tmpdir",
+            "name": "os-tmpdir",
+            "resolved": "https://registry.npmjs.org/os-tmpdir/-/os-tmpdir-1.0.2.tgz",
+            "version": "1.0.2"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-cBznnQ9KjJqU67B52RMC65CMarK2600WFnbkcaiwWq3xy/5haFJlshgnpjovMVJ+Hff49d8GEn0b87C5pDQ10g==",
+            "lockKey": "node_modules/semver",
+            "name": "semver",
+            "resolved": "https://registry.npmjs.org/semver/-/semver-5.7.2.tgz",
+            "version": "5.7.2"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-uqe69kFWfJc3cKdxj+Eg9CdW1CP3PLZDPeyJStQVWL8Q9jjjKD0VuRAKBFR8mrWiq5A7gJqERxJFYJsklrVsfA==",
+            "lockKey": "node_modules/solc",
+            "name": "solc",
+            "resolved": "https://registry.npmjs.org/solc/-/solc-0.8.23.tgz",
+            "version": "0.8.23"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-jRCJlojKnZ3addtTOjdIqoRuPEKBvNXcGYqzO6zWZX8KfKEpnGY5jfggJQ3EjKuu8D4bJRr0y+cYJFmYbImXGw==",
+            "lockKey": "node_modules/tmp",
+            "name": "tmp",
+            "resolved": "https://registry.npmjs.org/tmp/-/tmp-0.0.33.tgz",
+            "version": "0.0.33"
+          }
+        ]
+      },
+      {
+        "available": true,
+        "installationTimeStatus": "unknown_existing_install",
+        "installedAt": null,
+        "installedSolc": {
+          "available": true,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "matchesLock": true,
+          "soljsonSha256": "9ef37cc1d2597ed6d2f706a960f449e33eb9eee920936cea77b11e6f43861970",
+          "version": "0.8.28"
+        },
+        "lockPath": "flare-scan/tools/solc-0828/package-lock.json",
+        "lockSha256": "cc0fedc165842e0de4f9c489c15583c6b79938a4959a533946911b76c66644ee",
+        "manifestMissing": false,
+        "manifestPath": "flare-scan/tools/solc-0828/package.json",
+        "manifestSha256": "ed5fe36410eafa09b0b70f4038ae5652db0727df43e9ae90b208ceb9a2a27b60",
+        "packages": [
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-LTQ/SGc+s0Xc0Fu5WaKnR0YiygZkm9eKFvyS+fRsU7/ZWFF8ykFM6Pc9aCVf1+xasOOZpO3BAVgVrKvsqKHV7w==",
+            "lockKey": "node_modules/command-exists",
+            "name": "command-exists",
+            "resolved": "https://registry.npmjs.org/command-exists/-/command-exists-1.2.9.tgz",
+            "version": "1.2.9"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==",
+            "lockKey": "node_modules/commander",
+            "name": "commander",
+            "resolved": "https://registry.npmjs.org/commander/-/commander-8.3.0.tgz",
+            "version": "8.3.0"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-FNvFGzoMLWmE6Yj9spb/zjd7yiNCHiAW9/Tg9CXrQ8wuu32HtlJOwWO11OJafl5FfY3DxTdQ0vj42zU1kvv5jg==",
+            "lockKey": "node_modules/follow-redirects",
+            "name": "follow-redirects",
+            "resolved": "https://registry.npmjs.org/follow-redirects/-/follow-redirects-1.16.1.tgz",
+            "version": "1.16.1"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-gF1cRrHhIzNfToc802P800N8PpXS+evLLXfsVpowqmAFR9uwbi89WvXg2QspOmXL8QL86J4T1EpFu+yUkwJY3Q==",
+            "lockKey": "node_modules/js-sha3",
+            "name": "js-sha3",
+            "resolved": "https://registry.npmjs.org/js-sha3/-/js-sha3-0.8.0.tgz",
+            "version": "0.8.0"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-S3UwM3yj5mtUSEfP41UZmt/0SCoVYUcU1rkXv+BQ5Ig8ndL4sPoJNBUJERafdPb5jjHJGuMgytgKvKIf58XNBw==",
+            "lockKey": "node_modules/memorystream",
+            "name": "memorystream",
+            "resolved": "https://registry.npmjs.org/memorystream/-/memorystream-0.3.1.tgz",
+            "version": "0.3.1"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-D2FR03Vir7FIu45XBY20mTb+/ZSWB00sjU9jdQXt83gDrI4Ztz5Fs7/yy74g2N5SVQY4xY1qDr4rNddwYRVX0g==",
+            "lockKey": "node_modules/os-tmpdir",
+            "name": "os-tmpdir",
+            "resolved": "https://registry.npmjs.org/os-tmpdir/-/os-tmpdir-1.0.2.tgz",
+            "version": "1.0.2"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-cBznnQ9KjJqU67B52RMC65CMarK2600WFnbkcaiwWq3xy/5haFJlshgnpjovMVJ+Hff49d8GEn0b87C5pDQ10g==",
+            "lockKey": "node_modules/semver",
+            "name": "semver",
+            "resolved": "https://registry.npmjs.org/semver/-/semver-5.7.2.tgz",
+            "version": "5.7.2"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-AFCiJ+b4RosyyNhnfdVH4ZR1+TxiL91iluPjw0EJslIu4LXGM9NYqi2z5y8TqochC4tcH9QsHfwWhOIC9jPDKA==",
+            "lockKey": "node_modules/solc",
+            "name": "solc",
+            "resolved": "https://registry.npmjs.org/solc/-/solc-0.8.28.tgz",
+            "version": "0.8.28"
+          },
+          {
+            "installationTimeStatus": "unknown_existing_install",
+            "installedAt": null,
+            "integrity": "sha512-jRCJlojKnZ3addtTOjdIqoRuPEKBvNXcGYqzO6zWZX8KfKEpnGY5jfggJQ3EjKuu8D4bJRr0y+cYJFmYbImXGw==",
+            "lockKey": "node_modules/tmp",
+            "name": "tmp",
+            "resolved": "https://registry.npmjs.org/tmp/-/tmp-0.0.33.tgz",
+            "version": "0.0.33"
+          }
+        ]
+      }
+    ],
+    "platform": "Darwin",
+    "python": {
+      "available": true,
+      "installationTimeStatus": "unknown_existing_install",
+      "installedAt": null,
+      "path": "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9",
+      "version": "3.9.6"
+    },
+    "pythonDistributions": {
+      "available": true,
+      "distributionCount": 49,
+      "distributions": [
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "aiohappyeyeballs",
+          "recordSha256": "080c967fe5e934f64e81d2b6644e5673fce630c27e4e544ef545b0363e7a4650",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "2.6.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "aiohttp",
+          "recordSha256": "218482bcc0049a6ad42645e8e6393da8fb737527fa7cc3e64eb133afcc441eee",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "3.13.5"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "aiosignal",
+          "recordSha256": "2289545f36189cef648b33546b92801c62ff894fd5626dacc5aa74f23aa82e98",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "1.4.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "annotated-types",
+          "recordSha256": "e8dd8720693fc05475527f57ca3023775df20ebaeadbb7b26b90303b8b00ca6a",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.7.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "async-timeout",
+          "recordSha256": "6f36ce9b5ed587f3d04aa413abaebc2ac9d98f724af56984ae140a625e6d59e9",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "5.0.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "attrs",
+          "recordSha256": "b1288b5736c1985d7ddd7a5c5ad9e1645b125db6666d6ea253fc7fc3c064c49c",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "26.1.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "bitarray",
+          "recordSha256": "25c61efce528cf62cf3a5a6b5b3be0a92d9e2d2da305ea1934a3c1082b04abb6",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "3.12.2"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "cbor2",
+          "recordSha256": "59a1fc4dffd7ed28639d719cc03264bb3e5d729e0c6621b3ef920863383a62ec",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "5.9.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "certifi",
+          "recordSha256": "d384b553cae1498cf360edea102d81459705864f0a98c950a02e8581383aa789",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "2026.7.22"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "charset-normalizer",
+          "recordSha256": "ab00da340b3f9c7e2af56f5ba5623df0ebb6688720aa33b52dae291006a68aac",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "3.5.2"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "ckzg",
+          "recordSha256": "1e2bcc65bc0d0293e5cce6a8015915c164447bb3780592cea12060c3fc6b6c05",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "2.1.8"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "crytic-compile",
+          "recordSha256": "d0a2c4842a7d75aae00c22473d0bec6e82f995c4b718d3b8c5b08cc21de20302",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.3.11"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "cytoolz",
+          "recordSha256": "b97a3b4f3baaa0f1d72f086317382c071587532287bf5d4ca5893b4251f14f34",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "1.2.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "eth_abi",
+          "recordSha256": "7b31b7c35d298b9688542a2f20806e1d650e00a6ed345ea7ea6668163ef23501",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "5.2.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "eth-account",
+          "recordSha256": "c97963b0cc78500ec6c0533b0ced42cae3ad1d888bffdcae3293110fb35a44e6",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.13.7"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "eth-hash",
+          "recordSha256": "eeddaf95c6b896106a62cd82870809d1d5ecfd17302f2af473b1984ea03681e9",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.7.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "eth-keyfile",
+          "recordSha256": "5c7ef6b2af99f3d0b0ff2fbf3ca5a597ede000357dbdd3ee70ee338004ce66d2",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.8.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "eth-keys",
+          "recordSha256": "fff66510eeabbb047a87589832c11f660b9fbdceaaa50521a6544fd049b55579",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.7.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "eth-rlp",
+          "recordSha256": "d19cb2350ffaa7c48d2531f7db2cd59329f1acc83cf495079e3dd4c00adfb1b4",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "2.2.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "eth-typing",
+          "recordSha256": "d567fbbf33fc162eaf85036d07a080ef8ef637d8e44ba56a3af9c8322b91c1c7",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "5.2.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "eth-utils",
+          "recordSha256": "09b3e1d2225a6ac4ede26d0d1daba519136dcdf3860d3e9ec34dba734223920c",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "5.3.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "frozenlist",
+          "recordSha256": "cac489b241cc811ed86fba6f70b15b2259cee2ea1c73595a06f8056ba5315bbf",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "1.8.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "hexbytes",
+          "recordSha256": "b5ac4b128e0c4eee9117e214f00910fd37a38b93b7a70803cd73cae62c6947c6",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "1.3.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "idna",
+          "recordSha256": "3f5921a3d7d116b879659e998ea77389d0a1672b53e8b8c3e1000eb773f8b171",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "3.20"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "importlib_metadata",
+          "recordSha256": "16fef9b857496b5b8ec0fca80eff5aa0a2298505ae1d3371925bc35e6808b965",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "8.7.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "multidict",
+          "recordSha256": "d870074844813ad6132ce8ebb19d5d8a17e1ccef97eca1997aa66dd5966fcba3",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "6.7.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "packaging",
+          "recordSha256": "c72404c2eacd53338f50eee4816eac21f053f0a25ff0bf984bf8d5cc5cca82b5",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "26.3"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "parsimonious",
+          "recordSha256": "f3489f2b107d4bf483a981e9c05630c3fd09b493f7fc357f0d3e7d284c1bdd7e",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.10.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "prettytable",
+          "recordSha256": "acc14f539742ad8676be509d085bee97a53f56bcb3bb41868460cb437b0d31d2",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "3.16.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "propcache",
+          "recordSha256": "35bacceddb9753593d8ef5127e29ff62217004ebebd684a69151704c40f1dc82",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.4.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "pycryptodome",
+          "recordSha256": "047baa3f3f6242a3a0e3a02fd931124b2d0793b7bbe3b21bc367f1bc7ea2ffee",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "3.24.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "pydantic",
+          "recordSha256": "ce0e5b5ac11a37c675c34dc4c275da8fcff534b59776e9ce2fa9a79eb6b60063",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "2.13.5"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "pydantic_core",
+          "recordSha256": "089556ce29c5e8fe7f173ac29576c29998a8c4966529181f72002d27485fee0f",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "2.46.5"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "pyunormalize",
+          "recordSha256": "a970a5b06cba3054a39cd2afa60a4272a3381c37d5452ecc84119a4709a3c5e6",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "18.0.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "regex",
+          "recordSha256": "ffdce41fce85ea9ba242cf89e565b37cc0e782490bce2ef70b5e33d990288e39",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "2026.1.15"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "requests",
+          "recordSha256": "8f23b4c48f8af6803b49878818a9230582991cf6ec36a00dc2f29862ad56f76e",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "2.32.5"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "rlp",
+          "recordSha256": "ae3aa9c19f0f163db5986a0653d120ec4f39fe73c3373b24191825d1a8ce2bb4",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "4.1.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "slither-analyzer",
+          "recordSha256": "8856500286b02b4f8359f8184b22cf8bff272fe50557e77a1a07513c29d995fa",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.11.4"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "solc-select",
+          "recordSha256": "779b236b463f8e865f65f82d5a9da2738d92fa51f591359761046e302a8e792b",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "1.2.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "toolz",
+          "recordSha256": "5307bcaabf73047964bfeb5d8988250d302012f1f22fa7b9c567549e27a2c647",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "1.2.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "types-requests",
+          "recordSha256": "c47c02d5ce57bdb0bc61de612b4a68df15468449747661fb859d5a3059c493ff",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "2.32.4.20260107"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "typing_extensions",
+          "recordSha256": "df79b14d51e84a4e19976bb06cecb42d94d4f075a36209c4717e024a08e5598e",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "4.16.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "typing-inspection",
+          "recordSha256": "76df9820f2d26e39b71e455ff03e9d8008ce53e1f1038d4ef82f8a5a5b688d6b",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.4.2"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "urllib3",
+          "recordSha256": "4b65d7b9a3aed07f4ef7294c85f97d0a8c67e8e8d8ba51854f9dd3867c72c775",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "2.6.3"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "wcwidth",
+          "recordSha256": "12356d23f7a4bfcbdc099bba0d9ee6cd25a2160a288887dc2d4f7de8866508b1",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "0.9.2"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "web3",
+          "recordSha256": "97ed4810e90c92c671dc5a2d9700b09e4542aa495609934e4687f8ea667a4ed4",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "7.16.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "websockets",
+          "recordSha256": "a78f7f6401bea89844a1cbc9903e857076f8fbbd768151fdc5caf29c73ca48b7",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "15.0.1"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "yarl",
+          "recordSha256": "e410467591371cb076601bc083a23598724f7b57eca879e468af1143ab972e04",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "1.22.0"
+        },
+        {
+          "directUrl": null,
+          "installationTimeStatus": "unknown_existing_install",
+          "installedAt": null,
+          "name": "zipp",
+          "recordSha256": "c0bf2283875888f0dbbc6a8cad3559720ad8f009781d40411afefb60f09a1e3f",
+          "recordStatus": "recorded",
+          "sourceStatus": "unknown",
+          "version": "3.23.1"
+        }
+      ],
+      "path": "flare-scan/tools/pylibs"
+    }
+  },
+  "observedAt": "2026-10-20T05:55:35.016302+00:00",
+  "schemaVersion": 1
+}

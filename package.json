@@ -1,0 +1,42 @@
+{
+  "name": "defi-scan",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.5.0"
+  },
+  "scripts": {
+    "scan": "bash scan.sh",
+    "test": "node --test tests/*.test.js && python3 -m unittest discover -s tests -p 'test_*.py'",
+    "analyze": "bash flare-scan/scan.sh",
+    "doctor": "python3 scripts/doctor.py",
+    "setup": "python3 scripts/setup.py",
+    "import:project": "python3 scripts/project_import.py",
+    "upgrade-check": "python3 scripts/upgrade-check.py",
+    "uninstall": "python3 scripts/uninstall.py",
+    "toolchain:lock": "python3 scripts/toolchain-lock.py",
+    "toolchain:check": "python3 scripts/toolchain-lock.py --check",
+    "screen": "python3 scripts/chain-screener.py --all",
+    "web": "node src/web-server.js",
+    "ask": "node src/ask.js",
+    "test:security": "node scripts/run-security-checks.mjs",
+    "test:soak": "node scripts/soak-test.mjs",
+    "test:high-speed": "node scripts/high-speed-stability.mjs",
+    "validate:vault-detector": "python3 scripts/check-vault-detector.py",
+    "compare:static": "python3 scripts/compare-static-analysis.py",
+    "plan:discovery": "python3 scripts/discovery_plan.py",
+    "tasks:analysis": "node scripts/run-analysis-tasks.mjs",
+    "validate:firelight-claim": "python3 scripts/check-firelight-claim-mutations.py",
+    "test:ui": "node scripts/ui-check.cjs",
+    "review:manifest": "node scripts/create-review-manifest.mjs",
+    "review:gate": "node scripts/evaluate-review-gate.mjs",
+    "analyze:bytecode": "python3 scripts/bytecode_analysis.py",
+    "poc:generate": "python3 scripts/poc_generator.py",
+    "poc:run": "python3 scripts/poc_runner.py",
+    "rpc:refresh": "python3 scripts/rpc_pool.py",
+    "research:hour": "python3 scripts/defi-campaign.py --duration 3600",
+    "benchmark:static": "python3 scripts/benchmark-static-analysis.py",
+    "eval": "python3 scripts/eval_pipeline.py"
+  }
+}

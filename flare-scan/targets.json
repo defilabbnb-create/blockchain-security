@@ -1,0 +1,102 @@
+[
+  {
+    "name": "morpho-blue",
+    "project": "contracts/morpho-blue",
+    "source": "src/Morpho.sol",
+    "compiler": "0.8.19",
+    "evmVersion": "paris",
+    "optimizerRuns": 999999,
+    "viaIR": true,
+    "priority": "Baked-in dependency / historical code; analyze only after selecting the matching chain or project."
+  },
+  {
+    "name": "firelight-vault",
+    "project": "contracts/firelight-core",
+    "source": "contracts/core/FirelightVault.sol",
+    "compiler": "0.8.28",
+    "evmVersion": "london",
+    "optimizerRuns": 800,
+    "viaIR": true,
+    "priority": "Flare"
+  },
+  {
+    "name": "firelight-cover-nft",
+    "project": "contracts/firelight-core",
+    "source": "contracts/core/CoverNFT.sol",
+    "compiler": "0.8.28",
+    "evmVersion": "london",
+    "optimizerRuns": 10000,
+    "viaIR": true,
+    "priority": "Flare"
+  },
+  {
+    "name": "firelight-cover-allocator",
+    "project": "contracts/firelight-core",
+    "source": "contracts/core/CoverOrderAllocator.sol",
+    "compiler": "0.8.28",
+    "evmVersion": "london",
+    "optimizerRuns": 100,
+    "viaIR": true,
+    "priority": "Flare"
+  },
+  {
+    "name": "firelight-incidents",
+    "project": "contracts/firelight-core",
+    "source": "contracts/core/IncidentManager.sol",
+    "compiler": "0.8.28",
+    "evmVersion": "london",
+    "optimizerRuns": 10000,
+    "viaIR": true,
+    "priority": "Flare"
+  },
+  {
+    "name": "firelight-rewards",
+    "project": "contracts/firelight-core",
+    "source": "contracts/core/VaultRewardDistributor.sol",
+    "compiler": "0.8.28",
+    "evmVersion": "london",
+    "optimizerRuns": 10000,
+    "viaIR": true,
+    "priority": "Flare"
+  },
+  {
+    "name": "firelight-oracle",
+    "project": "contracts/firelight-core",
+    "source": "contracts/oracle/FtsoChainlinkAdapter.sol",
+    "compiler": "0.8.28",
+    "evmVersion": "london",
+    "optimizerRuns": 10000,
+    "viaIR": true,
+    "priority": "Flare"
+  },
+  {
+    "name": "firelight-legacy-vault",
+    "project": "contracts/firelight-core",
+    "source": "contracts/legacy/FirelightVaultPredeposits.sol",
+    "compiler": "0.8.28",
+    "evmVersion": "london",
+    "optimizerRuns": 10000,
+    "viaIR": true,
+    "priority": "Baked-in dependency / historical code; analyze only after selecting the matching chain or project."
+  },
+  {
+    "name": "firelight-fasset",
+    "project": "contracts/firelight-core",
+    "source": "contracts/fasset/fassetToken/implementation/FAsset.sol",
+    "compiler": "0.8.23",
+    "evmVersion": "london",
+    "optimizerRuns": 10000,
+    "viaIR": false,
+    "priority": "Baked-in dependency / historical code; analyze only after selecting the matching chain or project."
+  },
+  {
+    "name": "firelight-fasset-proxy",
+    "project": "contracts/firelight-core",
+    "source": "contracts/fasset/fassetToken/implementation/FAssetProxy.sol",
+    "compiler": "0.8.23",
+    "evmVersion": "london",
+    "optimizerRuns": 10000,
+    "viaIR": false,
+    "priority": "Baked-in dependency / historical code; analyze only after selecting the matching chain or project."
+  }
+]

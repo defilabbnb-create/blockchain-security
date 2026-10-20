@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "access_control"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/arbitrary_location_write_simple.sol",
+  "sourceFile": "arbitrary_location_write_simple.sol",
+  "solcVersion": "0.4.25",
+  "vulnerableLines": [
+    {
+      "lines": [
+        27
+      ],
+      "category": "access_control"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/arbitrary_location_write_simple.sol",
+  "originalSource": "https://smartcontractsecurity.github.io/SWC-registry/docs/SWC-124#arbitrary-location-write-simplesol"
+}

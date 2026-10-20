@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "unchecked_low_level_calls"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/unchecked_low_level_calls/unchecked_return_value.sol",
+  "sourceFile": "unchecked_return_value.sol",
+  "solcVersion": "0.4.25",
+  "vulnerableLines": [
+    {
+      "lines": [
+        17
+      ],
+      "category": "unchecked_low_level_calls"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/unchecked_low_level_calls/unchecked_return_value.sol",
+  "originalSource": "https://smartcontractsecurity.github.io/SWC-registry/docs/SWC-104#unchecked-return-valuesol"
+}

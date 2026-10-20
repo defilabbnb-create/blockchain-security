@@ -1,0 +1,5 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+# chainid=1337，后面用 RPC fork

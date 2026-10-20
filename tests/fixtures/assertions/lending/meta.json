@@ -1,0 +1,1 @@
+{"role":"lending","template":"health_factor_monotonic_on_borrow,interest_accrual_conserves_value","expectedOnCorrect":"passed","expectedOnViolating":"violated"}

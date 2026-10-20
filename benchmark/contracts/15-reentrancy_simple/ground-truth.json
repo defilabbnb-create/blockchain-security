@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "reentrancy"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/reentrancy_simple.sol",
+  "sourceFile": "reentrancy_simple.sol",
+  "solcVersion": "0.4.15",
+  "vulnerableLines": [
+    {
+      "lines": [
+        24
+      ],
+      "category": "reentrancy"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/reentrancy_simple.sol",
+  "originalSource": "https://github.com/trailofbits/not-so-smart-contracts/blob/master/reentrancy/Reentrancy.sol"
+}

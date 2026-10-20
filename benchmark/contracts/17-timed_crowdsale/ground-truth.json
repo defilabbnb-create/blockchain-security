@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "time_manipulation"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/time_manipulation/timed_crowdsale.sol",
+  "sourceFile": "timed_crowdsale.sol",
+  "solcVersion": "0.4.25",
+  "vulnerableLines": [
+    {
+      "lines": [
+        13
+      ],
+      "category": "time_manipulation"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/time_manipulation/timed_crowdsale.sol",
+  "originalSource": "https://github.com/SmartContractSecurity/SWC-registry/blob/master/test_cases/timestamp_dependence/timed_crowdsale.sol"
+}

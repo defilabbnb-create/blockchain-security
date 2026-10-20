@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "access_control"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/incorrect_constructor_name2.sol",
+  "sourceFile": "incorrect_constructor_name2.sol",
+  "solcVersion": "0.4.24",
+  "vulnerableLines": [
+    {
+      "lines": [
+        18
+      ],
+      "category": "access_control"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/incorrect_constructor_name2.sol",
+  "originalSource": "https://smartcontractsecurity.github.io/SWC-registry/docs/SWC-118#incorrect-constructor-name1sol"
+}

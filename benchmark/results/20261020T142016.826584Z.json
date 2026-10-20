@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-20T14:20:16+00:00",
+  "sampleCount": 20,
+  "scoredSampleCount": 20,
+  "unscoredSampleCount": 0,
+  "precision": 0.35,
+  "recall": 0.35,
+  "falsePositiveCount": 13,
+  "truePositiveCount": 7,
+  "falseNegativeCount": 13,
+  "costUsd": 0.0,
+  "costScope": "本地静态分析；未调用云端模型",
+  "durationMs": 17900,
+  "metricsScope": "仅统计 Slither High/Medium/Low impact 检测，将 check ID 映射为 SmartBugs 漏洞类别后与 ground-truth.knownIssues 精确匹配；静态信号不代表确认漏洞",
+  "samples": [
+    {
+      "caseId": "01-arbitrary_location_write_simple",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "detectedIssues": [
+        "controlled-array-length",
+        "tautology"
+      ],
+      "inputSourceSha256": "bbbdb5367463fd3d1e11b2c569695d8b4734e3f88fcf937a34469a23121b01ab",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 2,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "02-incorrect_constructor_name1",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "d918731cebddf34ad385dd799691237e0ec1aab09f34ce7eb6bbe83ec86cd8c8",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "03-simple_suicide",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "d210fc21c6fdf273cfe2af52408b09ec82df89ebdea554b0c6356ad8b5d8796d",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "04-unprotected0",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "detectedIssues": [
+        "missing-zero-check"
+      ],
+      "inputSourceSha256": "8cfc8702a1a0afe407c2ea83e0c48e97909f66af1955ee5e1321f1dc2818a045",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "05-BECToken",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "5765dccd66c76ce39da689c314364dc380e0b6a984ad351c5f81eb8e35e749b9",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "06-integer_overflow_minimal",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "ca539303822841840452b2aa1bf8607dc7b46d32de7261e11861da1bc9c6e915",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "07-overflow_simple_add",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "641f6d9e0a4ff8f91c6340a38af72f4ab48749635f5ebb9815123c8ae2e0a46e",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "08-guess_the_random_number",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "bad_randomness"
+      ],
+      "detectedIssues": [
+        "access_control",
+        "incorrect-equality",
+        "time_manipulation"
+      ],
+      "inputSourceSha256": "d27ca8263b122093d6798f08c58264dd8aa552b7dd2e567aac648928be6e17f5",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 3,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "09-old_blockhash",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "bad_randomness"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "fcacbdf48076326222bd952ab15d0ef3a1cb2bd0acf983b8ff6cdb90633c30e7",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "10-dos_address",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "denial_of_service"
+      ],
+      "detectedIssues": [
+        "controlled-array-length"
+      ],
+      "inputSourceSha256": "4f6960a84c3da5f791faf0111033b1d6a425e2575fb03b31acd248210497794e",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "11-dos_simple",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "denial_of_service"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "53dcfd96beb66caaefc66373d6cef836a0b1f0320d3e4421426cb26590fc2c0c",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "12-eth_tx_order_dependence_minimal",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "front_running"
+      ],
+      "detectedIssues": [
+        "events-maths"
+      ],
+      "inputSourceSha256": "ff02571525b00a0261fa98cc57fc00822124d72ce0039b4e46423523154bf5ed",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "13-etherstore",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "bffe7255c351724c3ab15f6c4c4909a3d756650791360e86cf2f71c48046aa79",
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "14-reentrance",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [
+        "reentrancy"
+      ],
+      "inputSourceSha256": "78ebf8f92bb978386a96fb1b4bec2ad2aaa77916a6ed7e49c2ae74c92f466ea4",
+      "truePositiveCount": 1,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "15-reentrancy_simple",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [
+        "reentrancy"
+      ],
+      "inputSourceSha256": "98b4c8b45c2e6711b1c58fb6991375f698a66f148799ca7aff6e27db8a9803e1",
+      "truePositiveCount": 1,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "16-simple_dao",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [
+        "controlled-array-length",
+        "reentrancy"
+      ],
+      "inputSourceSha256": "bcd0fdfad9f6594fdbc940967321856490ed4bffbe8b6ab9c75c6b85072528a5",
+      "truePositiveCount": 1,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "17-timed_crowdsale",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "time_manipulation"
+      ],
+      "detectedIssues": [
+        "time_manipulation"
+      ],
+      "inputSourceSha256": "52fa5d86b7ee71874f54c1973562f0ff76b58a0a2ba2371e5193f783bd30222e",
+      "truePositiveCount": 1,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "18-lotto",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "unchecked_low_level_calls"
+      ],
+      "detectedIssues": [
+        "access_control",
+        "unchecked_low_level_calls",
+        "uninitialized-state"
+      ],
+      "inputSourceSha256": "09c8886de37a52a987d1a40588bd8fe352b8bb8bbfb9960caf8a6664a893b223",
+      "truePositiveCount": 1,
+      "falsePositiveCount": 2,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "19-mishandled",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "unchecked_low_level_calls"
+      ],
+      "detectedIssues": [
+        "missing-zero-check",
+        "unchecked_low_level_calls"
+      ],
+      "inputSourceSha256": "ac992f26a8a567c74fe30e0f48d0c421d3f483ff431f6672a6dae5dd6c9e168d",
+      "truePositiveCount": 1,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "20-reentrancy_cross_function",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [
+        "controlled-array-length",
+        "reentrancy"
+      ],
+      "inputSourceSha256": "0196d033850b295690465d0f7d2baae8b3570df29c9d03d507496b45155a84e5",
+      "truePositiveCount": 1,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 0
+    }
+  ]
+}

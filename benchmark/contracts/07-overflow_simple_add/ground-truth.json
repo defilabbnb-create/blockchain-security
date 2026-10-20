@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "arithmetic"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/overflow_simple_add.sol",
+  "sourceFile": "overflow_simple_add.sol",
+  "solcVersion": "0.4.25",
+  "vulnerableLines": [
+    {
+      "lines": [
+        14
+      ],
+      "category": "arithmetic"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/overflow_simple_add.sol",
+  "originalSource": "https://smartcontractsecurity.github.io/SWC-registry/docs/SWC-101#overflow-simple-addsol"
+}

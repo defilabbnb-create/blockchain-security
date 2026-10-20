@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "bad_randomness"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/bad_randomness/guess_the_random_number.sol",
+  "sourceFile": "guess_the_random_number.sol",
+  "solcVersion": "0.4.21",
+  "vulnerableLines": [
+    {
+      "lines": [
+        15
+      ],
+      "category": "bad_randomness"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/bad_randomness/guess_the_random_number.sol",
+  "originalSource": "https://capturetheether.com/challenges/lotteries/guess-the-random-number/"
+}

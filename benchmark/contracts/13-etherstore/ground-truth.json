@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "reentrancy"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/etherstore.sol",
+  "sourceFile": "etherstore.sol",
+  "solcVersion": "0.4.10",
+  "vulnerableLines": [
+    {
+      "lines": [
+        27
+      ],
+      "category": "reentrancy"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/etherstore.sol",
+  "originalSource": "https://github.com/sigp/solidity-security-blog"
+}

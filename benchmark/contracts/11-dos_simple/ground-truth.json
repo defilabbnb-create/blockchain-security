@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "denial_of_service"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/denial_of_service/dos_simple.sol",
+  "sourceFile": "dos_simple.sol",
+  "solcVersion": "0.4.25",
+  "vulnerableLines": [
+    {
+      "lines": [
+        17,
+        18
+      ],
+      "category": "denial_of_service"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/denial_of_service/dos_simple.sol",
+  "originalSource": "https://github.com/SmartContractSecurity/SWC-registry/blob/master/test_cases/dos_gas_limit/dos_simple.sol"
+}

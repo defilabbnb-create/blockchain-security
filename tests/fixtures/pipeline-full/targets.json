@@ -1,0 +1,26 @@
+{
+  "targets": [
+    {
+      "id": "offline-vault",
+      "address": "0x1111111111111111111111111111111111111111",
+      "chainId": 1,
+      "block": 100,
+      "fromBlock": 99,
+      "reachableAssetsUsd": 1000,
+      "source": "tests/fixtures/pipeline-full/Vault.sol",
+      "sourceBundle": "tests/fixtures/pipeline-full/source-bundle.json",
+      "harness": "tests/fixtures/pipeline-full/harness",
+      "preferHarness": true,
+      "bytecode": "0x600060005500",
+      "pocTestSource": "pragma solidity >=0.8.19; contract Proof { function testPoC_9ede0d2aece7f576() public pure {} }",
+      "finding": {"id": "fixture-finding-1", "reachableAssetsUsd": 10},
+      "mockCloudReview": true,
+      "rpcFixture": {
+        "eth_getBlockByNumber": [{"number": "0x64", "hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "transactions": []}],
+        "eth_getStorageAt": ["0x0000000000000000000000000000000000000000000000000000000000000000"],
+        "eth_getCode": ["0x6001"],
+        "eth_getLogs": [[]]
+      }
+    }
+  ]
+}

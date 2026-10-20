@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "arithmetic"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/BECToken.sol",
+  "sourceFile": "BECToken.sol",
+  "solcVersion": "0.4.16",
+  "vulnerableLines": [
+    {
+      "lines": [
+        264
+      ],
+      "category": "arithmetic"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/BECToken.sol",
+  "originalSource": "https://smartcontractsecurity.github.io/SWC-registry/docs/SWC-101#bectokensol"
+}

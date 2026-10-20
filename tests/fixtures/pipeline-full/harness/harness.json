@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "deployment": {"state": "ready", "contract": "SmokeTest"},
+  "tests": [{"invariantId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "path": "test/Smoke.t.sol"}]
+}

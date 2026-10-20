@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "knownIssues": [
+    "front_running"
+  ],
+  "clean": false,
+  "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/front_running/eth_tx_order_dependence_minimal.sol",
+  "sourceFile": "eth_tx_order_dependence_minimal.sol",
+  "solcVersion": "0.4.16",
+  "vulnerableLines": [
+    {
+      "lines": [
+        23
+      ],
+      "category": "front_running"
+    },
+    {
+      "lines": [
+        31
+      ],
+      "category": "front_running"
+    }
+  ],
+  "dataset": "SmartBugs Curated",
+  "datasetCommit": "230e649123477eff332742a59a1c7cc6dc286cab",
+  "datasetSource": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/front_running/eth_tx_order_dependence_minimal.sol",
+  "originalSource": "https://github.com/ConsenSys/evm-analyzer-benchmark-suite"
+}

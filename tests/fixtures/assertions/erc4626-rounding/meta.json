@@ -1,0 +1,1 @@
+{"role":"erc4626","template":"rounding_direction_correct","expectedOnCorrect":"passed","expectedOnViolating":"violated"}
