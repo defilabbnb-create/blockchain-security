@@ -26,12 +26,14 @@ def erc4626_fixture(decimals=18):
 
 
 class InvariantGeneratorTests(unittest.TestCase):
-    def test_erc4626_generates_three_unverified_invariants_with_parameters(self):
+    def test_erc4626_generates_five_unverified_invariants_with_parameters(self):
         result = GEN.generate_invariants(erc4626_fixture())
         self.assertEqual(result['state'], 'available')
         self.assertEqual(result['detectedRoles'], ['erc4626'])
         self.assertEqual([item['template'] for item in result['invariants']], [
-            'share_price_monotonic', 'withdraw_preserves_remaining_value', 'donation_does_not_change_ledger'])
+            'share_price_monotonic', 'withdraw_preserves_remaining_value',
+            'donation_does_not_change_ledger', 'first_deposit_no_inflation',
+            'rounding_direction_correct'])
         self.assertTrue(all(item['status'] == 'unverified' for item in result['invariants']))
         self.assertTrue(all(item['generatedTestPath'] is None for item in result['invariants']))
         self.assertTrue(all(item['params']['decimals'] == 18 for item in result['invariants']))
@@ -75,6 +77,79 @@ class InvariantGeneratorTests(unittest.TestCase):
         risk_params = [item['params']['riskField'] for item in result['invariants'] if 'riskField' in item['params']]
         self.assertTrue(risk_params)
         self.assertTrue(all(value == 'healthFactor' for value in risk_params))
+
+    def test_lending_helper_named_my_total_assets_does_not_become_erc4626(self):
+        document = {
+            'schemaVersion': 1,
+            'functions': [
+                {'name': 'Pool::Pool.myTotalAssets()', 'entrypoint': True},
+                {'name': 'Pool::Pool.borrow(uint256)', 'entrypoint': True},
+                {'name': 'Pool::Pool.liquidate(address)', 'entrypoint': True},
+            ],
+            'storageAccesses': [
+                {'effect': {'variable': 'Pool.totalBorrows', 'type': 'uint256'}},
+                {'effect': {'variable': 'Pool.totalSupply', 'type': 'uint256'}},
+                {'effect': {'variable': 'Pool.healthFactor', 'type': 'uint256'}},
+            ],
+        }
+        result = GEN.generate_invariants(document)
+        self.assertNotIn('erc4626', result['detectedRoles'])
+        self.assertGreaterEqual(result['roleFeatures']['erc4626']['confidence'], 0)
+        self.assertIn('function.deposit', result['roleFeatures']['erc4626']['missingFeatures'])
+
+    def test_prefixed_erc4626_methods_and_return_types_are_recognized(self):
+        document = erc4626_fixture()
+        document['functions'] = [
+            {'name': f'Vault::Vault.vault{name[0].upper() + name[1:]}(uint256)' if name in ('deposit', 'withdraw', 'redeem', 'mint') else f'Vault::Vault.vault{name[0].upper() + name[1:]}(uint256)',
+             'returns': ['uint256'], 'entrypoint': True}
+            for name in ('deposit', 'withdraw', 'redeem', 'mint', 'convertToShares', 'convertToAssets')
+        ]
+        document['storageAccesses'] = [
+            {'effect': {'variable': 'Vault.totalAssets', 'type': 'uint256'}},
+            {'effect': {'variable': 'Vault.totalSupply', 'type': 'uint256'}},
+        ]
+        result = GEN.generate_invariants(document)
+        self.assertIn('erc4626', result['detectedRoles'])
+        self.assertGreaterEqual(result['roleFeatures']['erc4626']['confidence'], 0.7)
+
+    def test_amm_and_staking_roles_have_confidence_and_templates(self):
+        amm = {
+            'schemaVersion': 1,
+            'functions': [
+                {'name': 'Pool.swap(uint256,uint256)', 'entrypoint': True},
+                {'name': 'Pool.sync()', 'entrypoint': True},
+            ],
+            'storageAccesses': [
+                {'effect': {'variable': 'Pool.reserve0', 'type': 'uint256'}},
+                {'effect': {'variable': 'Pool.reserve1', 'type': 'uint256'}},
+            ],
+        }
+        result = GEN.generate_invariants(amm)
+        self.assertIn('amm_pool', result['detectedRoles'])
+        self.assertEqual([item['template'] for item in result['invariants']],
+                         ['k_never_decreases', 'fee_conserved', 'oracle_assumption_holds'])
+        staking = {
+            'schemaVersion': 1,
+            'functions': [
+                {'name': 'Rewards.stake(uint256)', 'entrypoint': True},
+                {'name': 'Rewards.withdraw(uint256)', 'entrypoint': True},
+                {'name': 'Rewards.claimRewards()', 'entrypoint': True},
+                {'name': 'Rewards.rewardPerToken()', 'entrypoint': True},
+            ],
+            'storageAccesses': [
+                {'effect': {'variable': 'Rewards.rewardRate', 'type': 'uint256'}},
+            ],
+        }
+        staking_result = GEN.generate_invariants(staking)
+        self.assertIn('staking_reward', staking_result['detectedRoles'])
+        self.assertTrue(staking_result['roleFeatures']['staking_reward']['matchedFeatures'])
+
+    def test_low_confidence_role_is_not_returned(self):
+        result = GEN.generate_invariants({'schemaVersion': 1, 'functions': [
+            {'name': 'Vault.totalAssets()', 'entrypoint': True}],
+            'storageAccesses': []})
+        self.assertNotIn('erc4626', result['detectedRoles'])
+        self.assertLess(result['roleFeatures']['erc4626']['confidence'], 0.7)
 
 
 if __name__ == '__main__':

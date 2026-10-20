@@ -26,6 +26,7 @@ from dynamic_runner import run_harness
 from harness_gen import _source_digest, generate_harness
 from invariant_gen import generate_invariants
 from poc_generator import generate_poc
+from deploy_adapter import generate_deployment, run_deployment
 
 
 def _atomic_json(path: Path, value: Any) -> None:
@@ -103,18 +104,76 @@ def _dynamic(target: dict[str, Any], stage_dir: Path, mode: str) -> dict[str, An
         block_number=target.get("block") if run_mode == "fixed_block_fork" else None,
         replay_enabled=target.get("enableReplay") is True,
     )
+    manifest = json.loads((harness_dir / "harness.json").read_text(encoding="utf-8"))
+    assertion_count = sum(1 for row in manifest.get("tests", [])
+                          if isinstance(row, dict) and row.get("status") != "adapter_required")
+    adapter_count = int(manifest.get("adapterRequiredCount", 0) or 0)
     artifact = {"schemaVersion": 1, "mode": run_mode, "results": results,
+                "deployedTarget": target.get("deployedTarget"),
+                "invariantAssertionsExecuted": assertion_count,
+                "adapterRequiredCount": adapter_count,
                 "evidenceSha256": _digest(json.dumps(results, sort_keys=True, separators=(",", ":")).encode())}
     _atomic_json(stage_dir / "dynamic-result.json", artifact)
     states = [row.get("state") for row in results]
     if states and all(state in {"passed", "violated"} for state in states):
         # A violated invariant is a completed experiment, never a vulnerability confirmation.
         return {"state": "completed", "outcome": "invariant_violated" if "violated" in states else "passed",
-                "evidenceSha256": artifact["evidenceSha256"], "resultPath": "dynamic-result.json"}
+                "evidenceSha256": artifact["evidenceSha256"], "resultPath": "dynamic-result.json",
+                "deployedTarget": target.get("deployedTarget"),
+                "invariantAssertionsExecuted": assertion_count, "adapterRequiredCount": adapter_count}
     if states and all(state == "unavailable" for state in states):
-        return {"state": "unavailable", "reason": "dynamic_runner_unavailable", "evidenceSha256": artifact["evidenceSha256"]}
+        return {"state": "unavailable", "reason": "dynamic_runner_unavailable", "evidenceSha256": artifact["evidenceSha256"],
+                "deployedTarget": target.get("deployedTarget"),
+                "invariantAssertionsExecuted": assertion_count, "adapterRequiredCount": adapter_count}
     return {"state": "failed" if any(state == "timeout" for state in states) else "unavailable",
             "reason": "dynamic_result_incomplete", "evidenceSha256": artifact["evidenceSha256"]}
+
+
+def _deploy(target: dict[str, Any], stage_dir: Path, mode: str) -> dict[str, Any]:
+    """Prepare or run a local deployment adapter before dynamic execution.
+
+    A deployment address is accepted only when supplied by a local runner or
+    a real forge result. Constructor arguments are never guessed.
+    """
+    if mode != "local":
+        return {"state": "unavailable", "reason": "deployment_is_local_only"}
+    supplied = target.get("deployedTarget")
+    if isinstance(supplied, str) and re.fullmatch(r"0x[0-9a-fA-F]{40}", supplied):
+        return {"state": "completed", "deployedTarget": supplied.lower(),
+                "invariantAssertionsExecuted": int(target.get("invariantAssertionsExecuted", 0) or 0),
+                "adapterRequiredCount": int(target.get("adapterRequiredCount", 0) or 0),
+                "deploymentState": "provided_local_target"}
+    bundle_value = target.get("sourceBundle")
+    if bundle_value is None:
+        return {"state": "unavailable", "reason": "verified_source_bundle_missing",
+                "deployedTarget": None, "invariantAssertionsExecuted": 0, "adapterRequiredCount": 0}
+    try:
+        bundle = _load_input(bundle_value, json_path=True)
+        deployment_dir = stage_dir / "deployment"
+        manifest = generate_deployment(bundle, deployment_dir,
+                                       constructor_args=target.get("constructorArgs", target.get("deploymentArgs")))
+        _atomic_json(stage_dir / "deployment.json", manifest)
+        if manifest.get("state") == "adapter_required":
+            manifest.update({"state": "unavailable", "reason": manifest.get("reason", "adapter_required"),
+                             "deployedTarget": None, "invariantAssertionsExecuted": 0,
+                             "adapterRequiredCount": len(manifest.get("missing", [])) or 1})
+            _atomic_json(stage_dir / "deployment.json", manifest)
+            return manifest
+        if target.get("executeDeployment") is True:
+            manifest = run_deployment(deployment_dir, forge=target.get("forge", "forge"),
+                                      timeout=min(float(target.get("timeoutSeconds", 120)), 600))
+        deployed = manifest.get("target")
+        if not (isinstance(deployed, str) and re.fullmatch(r"0x[0-9a-fA-F]{40}", deployed)):
+            return {"state": "unavailable", "reason": "deployment_target_not_observed",
+                    "deploymentState": manifest.get("state"), "deploymentPath": "deployment.json",
+                    "deployedTarget": None, "invariantAssertionsExecuted": 0, "adapterRequiredCount": 0}
+        return {"state": "completed", "deploymentState": manifest.get("state"),
+                "deploymentPath": "deployment.json", "deployedTarget": deployed.lower(),
+                "invariantAssertionsExecuted": int(target.get("invariantAssertionsExecuted", 0) or 0),
+                "adapterRequiredCount": int(target.get("adapterRequiredCount", 0) or 0)}
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as error:
+        return {"state": "failed", "reason": f"deployment_error:{type(error).__name__}:{str(error)[:200]}",
+                "deployedTarget": None, "invariantAssertionsExecuted": 0, "adapterRequiredCount": 0}
 
 
 def _dynamic_from_ir(target: dict[str, Any], stage_dir: Path, mode: str) -> dict[str, Any]:
@@ -143,17 +202,25 @@ def _dynamic_from_ir(target: dict[str, Any], stage_dir: Path, mode: str) -> dict
                        rpc_url=target.get("rpcUrl") if run_mode == "fixed_block_fork" else None,
                        block_number=target.get("block") if run_mode == "fixed_block_fork" else None,
                        replay_enabled=target.get("enableReplay") is True)
+    assertion_count = sum(1 for row in manifest.get("tests", [])
+                          if isinstance(row, dict) and row.get("status") != "adapter_required")
+    adapter_count = int(manifest.get("adapterRequiredCount", 0) or 0)
     artifact = {"schemaVersion": 1, "mode": run_mode, "results": rows,
+                "deployedTarget": target.get("deployedTarget"),
+                "invariantAssertionsExecuted": assertion_count,
+                "adapterRequiredCount": adapter_count,
                 "evidenceSha256": _digest(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode())}
     _atomic_json(stage_dir / "dynamic-result.json", artifact)
     states = [row.get("state") for row in rows]
     if states and all(state in {"passed", "violated"} for state in states):
         return {"state": "completed", "outcome": "invariant_violated" if "violated" in states else "passed",
                 "invariantsPath": "invariants.json", "harnessPath": "harness", "resultPath": "dynamic-result.json",
-                "evidenceSha256": artifact["evidenceSha256"]}
+                "evidenceSha256": artifact["evidenceSha256"], "deployedTarget": target.get("deployedTarget"),
+                "invariantAssertionsExecuted": assertion_count, "adapterRequiredCount": adapter_count}
     return {"state": "unavailable", "reason": "dynamic_adapter_or_invariant_execution_unavailable",
             "invariantsPath": "invariants.json", "harnessPath": "harness", "resultPath": "dynamic-result.json",
-            "evidenceSha256": artifact["evidenceSha256"]}
+            "evidenceSha256": artifact["evidenceSha256"], "deployedTarget": target.get("deployedTarget"),
+            "invariantAssertionsExecuted": assertion_count, "adapterRequiredCount": adapter_count}
 
 
 def _decompile(target: dict[str, Any], stage_dir: Path) -> dict[str, Any]:
@@ -248,6 +315,8 @@ def run_stage(stage: str, target: dict[str, Any], stage_dir: str | Path, mode: s
     directory = Path(stage_dir).resolve()
     directory.mkdir(parents=True, exist_ok=True)
     try:
+        if stage == "deploy":
+            return _deploy(target, directory, mode)
         if stage == "dynamic":
             return _dynamic(target, directory, mode)
         if stage == "decompile":

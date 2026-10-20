@@ -77,27 +77,37 @@ def run_harness(harness_dir, *, mode='local', forge=None, timeout_seconds=120, m
     harness_dir = Path(harness_dir).resolve()
     manifest_path = harness_dir / 'harness.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-    invariant_rows = manifest.get('tests', [])
+    all_rows = manifest.get('tests', [])
+    adapter_rows = [row for row in all_rows if row.get('status') == 'adapter_required']
+    invariant_rows = [row for row in all_rows if row not in adapter_rows]
+
+    def finish(rows):
+        adapter_results = [_result(row['invariantId'], mode, 'unavailable', reason=row.get('reason', 'adapter_required'))
+                           for row in adapter_rows]
+        return adapter_results + rows
+
+    if not invariant_rows:
+        return finish([])
     forge = Path(forge or harness_dir.parent.parent / 'tools' / 'forge')
     if mode not in ('local', 'fixed_block_fork', 'replay'):
         raise ValueError('mode must be local, fixed_block_fork, or replay')
     if mode == 'replay':
         reason = 'replay_disabled_by_default' if not replay_enabled else 'replay_adapter_not_configured'
-        return [_result(row['invariantId'], mode, 'unavailable', reason=reason) for row in invariant_rows]
+        return finish([_result(row['invariantId'], mode, 'unavailable', reason=reason) for row in invariant_rows])
     deployment = manifest.get('deployment') or {}
     if deployment.get('state') == 'adapter_required':
-        return [_result(row['invariantId'], mode, 'unavailable', reason='protocol_specific_deployment_adapter_required') for row in invariant_rows]
+        return [_result(row['invariantId'], mode, 'unavailable', reason='protocol_specific_deployment_adapter_required') for row in all_rows]
     if mode == 'fixed_block_fork':
         if not isinstance(rpc_url, str) or not _rpc_url_is_safe(rpc_url):
-            return [_result(row['invariantId'], mode, 'unavailable', reason='fixed_block_fork_requires_https_rpc_without_credentials') for row in invariant_rows]
+            return finish([_result(row['invariantId'], mode, 'unavailable', reason='fixed_block_fork_requires_https_rpc_without_credentials') for row in invariant_rows])
         if not isinstance(block_number, int) or block_number < 0:
-            return [_result(row['invariantId'], mode, 'unavailable', reason='fixed_block_fork_requires_nonnegative_block') for row in invariant_rows]
+            return finish([_result(row['invariantId'], mode, 'unavailable', reason='fixed_block_fork_requires_nonnegative_block') for row in invariant_rows])
         try:
             block_hash_before = _rpc_block_hash(rpc_url, block_number)
         except Exception as error:
-            return [_result(row['invariantId'], mode, 'unavailable', reason=str(error)[:120]) for row in invariant_rows]
+            return finish([_result(row['invariantId'], mode, 'unavailable', reason=str(error)[:120]) for row in invariant_rows])
     if not forge.is_file():
-        return [_result(row['invariantId'], mode, 'unavailable', reason='forge_not_found') for row in invariant_rows]
+        return finish([_result(row['invariantId'], mode, 'unavailable', reason='forge_not_found') for row in invariant_rows])
     command = _forge_command(forge, harness_dir)
     env = dict(os.environ)
     for key in ('RPC_URL', 'DYNAMIC_FORK_RPC_URL', 'DYNAMIC_FORK_BLOCK_NUMBER', 'ETH_RPC_URL', 'FOUNDRY_ETH_RPC_URL'):
@@ -119,12 +129,12 @@ def run_harness(harness_dir, *, mode='local', forge=None, timeout_seconds=120, m
         output = (completed.stdout or '').encode('utf-8', errors='replace') + (completed.stderr or '').encode('utf-8', errors='replace')
     except memory_error as error:
         evidence = _sha256_bytes((getattr(error, 'stdout', '') or '').encode('utf-8') + (getattr(error, 'stderr', '') or '').encode('utf-8'))
-        return [_result(row['invariantId'], mode, 'timeout', reason='process_tree_memory_limit_exceeded', evidence=evidence) for row in invariant_rows]
+        return finish([_result(row['invariantId'], mode, 'timeout', reason='process_tree_memory_limit_exceeded', evidence=evidence) for row in invariant_rows])
     except subprocess.TimeoutExpired as error:
         evidence = _sha256_bytes((error.stdout or b'') + (error.stderr or b''))
-        return [_result(row['invariantId'], mode, 'timeout', reason='forge_timeout', evidence=evidence) for row in invariant_rows]
+        return finish([_result(row['invariantId'], mode, 'timeout', reason='forge_timeout', evidence=evidence) for row in invariant_rows])
     except Exception as error:
-        return [_result(row['invariantId'], mode, 'unavailable', reason=f'runner_error:{type(error).__name__}') for row in invariant_rows]
+        return finish([_result(row['invariantId'], mode, 'unavailable', reason=f'runner_error:{type(error).__name__}') for row in invariant_rows])
     if len(output) > max_output_bytes:
         output = output[:max_output_bytes]
     evidence = _sha256_bytes(output)
@@ -132,14 +142,14 @@ def run_harness(harness_dir, *, mode='local', forge=None, timeout_seconds=120, m
         try:
             block_hash_after = _rpc_block_hash(rpc_url, block_number)
         except Exception as error:
-            return [_result(row['invariantId'], mode, 'unavailable', reason=str(error)[:120],
+            return finish([_result(row['invariantId'], mode, 'unavailable', reason=str(error)[:120],
                             evidence=evidence, block_anchor={'number': block_number, 'hashBefore': block_hash_before,
-                                                             'rpcUrlSha256': _sha256_bytes(rpc_url.encode('utf-8'))}) for row in invariant_rows]
+                                                             'rpcUrlSha256': _sha256_bytes(rpc_url.encode('utf-8'))}) for row in invariant_rows])
         if block_hash_after != block_hash_before:
-            return [_result(row['invariantId'], mode, 'unavailable', reason='block_anchor_changed', evidence=evidence,
+            return finish([_result(row['invariantId'], mode, 'unavailable', reason='block_anchor_changed', evidence=evidence,
                             block_anchor={'number': block_number, 'hashBefore': block_hash_before,
                                           'hashAfter': block_hash_after,
-                                          'rpcUrlSha256': _sha256_bytes(rpc_url.encode('utf-8'))}) for row in invariant_rows]
+                                          'rpcUrlSha256': _sha256_bytes(rpc_url.encode('utf-8'))}) for row in invariant_rows])
     output_text = output.decode('utf-8', errors='replace').lower()
     unavailable = any(marker in output_text for marker in ('compilation failed', 'compiler run failed',
         'invariant_target', 'failed to resolve', 'could not find'))
@@ -152,10 +162,10 @@ def run_harness(harness_dir, *, mode='local', forge=None, timeout_seconds=120, m
     else:
         state = 'violated'
         reason = 'forge_assertion_or_compilation_failed'
-    return [_result(row['invariantId'], mode, state, reason=reason,
+    return finish([_result(row['invariantId'], mode, state, reason=reason,
                     block_anchor=({'number': block_number, 'hash': block_hash_before,
                                    'rpcUrlSha256': _sha256_bytes(rpc_url.encode('utf-8'))} if mode == 'fixed_block_fork' else None),
-                    evidence=evidence) for row in invariant_rows]
+                    evidence=evidence) for row in invariant_rows])
 
 
 def main(argv=None):

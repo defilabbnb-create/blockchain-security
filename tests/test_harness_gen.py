@@ -23,7 +23,9 @@ contract Vault {
     source_hash = GEN._source_digest(sources)
     invariants = {'schemaVersion': 1, 'sourceSha256': source_hash,
                   'invariants': [{'invariantId': hashlib.sha256(b'fixture').hexdigest(),
-                                  'description': 'Vault observation', 'status': 'unverified'}]}
+                                  'template': 'share_price_monotonic',
+                                  'params': {'assetsField': 'totalAssets', 'sharesField': 'totalSupply', 'toleranceBps': 0},
+                                  'description': 'Vault share price', 'status': 'unverified'}]}
     bundle = {'sources': sources,
               'metadata': {'settings': {'compilationTarget': {'Vault.sol': 'Vault'}}}}
     return invariants, bundle
@@ -38,7 +40,8 @@ class HarnessGeneratorTests(unittest.TestCase):
             self.assertEqual(len(manifest['tests']), 1)
             self.assertEqual(manifest['deployment']['state'], 'adapter_required')
             self.assertEqual(manifest['sourceSha256'], invariants['sourceSha256'])
-            self.assertIn('testInvariantTargetObservationIsAvailable', (output / manifest['tests'][0]['path']).read_text())
+            self.assertIn('function testInvariant()', (output / manifest['tests'][0]['path']).read_text())
+            self.assertNotIn('smoke check', (output / manifest['tests'][0]['path']).read_text())
             forge = ROOT / 'work' / 'tools' / 'forge'
             if not forge.is_file():
                 self.skipTest('bundled forge binary is unavailable')

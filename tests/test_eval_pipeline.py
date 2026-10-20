@@ -13,7 +13,7 @@ SPEC.loader.exec_module(eval_pipeline)
 class EvaluationPipelineTests(unittest.TestCase):
     def test_repository_benchmark_contains_twenty_source_bound_cases(self):
         cases = sorted((ROOT / "benchmark" / "contracts").glob("*/ground-truth.json"))
-        self.assertEqual(len(cases), 20)
+        self.assertEqual(len(cases), 30)
         for path in cases:
             truth = json.loads(path.read_text())
             self.assertFalse(truth["clean"])

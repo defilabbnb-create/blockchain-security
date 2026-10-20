@@ -1,0 +1,1 @@
+{"knownIssues":["erc4626_rounding"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Vault.sol","solcVersion":"0.8.19"}

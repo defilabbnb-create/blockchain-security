@@ -139,6 +139,47 @@ def build_report(input_path: str | Path, *, output_dir: str | Path | None = None
     generated = generated_at or datetime.now(timezone.utc).isoformat()
     ir_value = optional["ir-reconciliation"]["value"]
     ir_score = ir_value.get("sourceFaithfulnessScore") if isinstance(ir_value, dict) else None
+    invariant_value = optional["invariants"]["value"]
+    dynamic_value = optional["dynamic-result"]["value"]
+    poc_value = optional["poc-result"]["value"]
+    invariant_rows = invariant_value.get("invariants", []) if isinstance(invariant_value, dict) else []
+    dynamic_rows = dynamic_value.get("results", []) if isinstance(dynamic_value, dict) else []
+    adapter_required = []
+    for value in (invariant_value, dynamic_value, poc_value):
+        if isinstance(value, dict):
+            rows_value = value.get("adapterRequired") or value.get("adapterRequiredItems")
+            if isinstance(rows_value, list):
+                adapter_required.extend(item for item in rows_value if isinstance(item, dict))
+            count = value.get("adapterRequiredCount")
+            if isinstance(count, int) and count > len(adapter_required):
+                adapter_required.extend({"reason": "adapter_required"} for _ in range(count - len(adapter_required)))
+    unresolved = []
+    if isinstance(ir_value, dict):
+        unresolved = ir_value.get("unresolved", []) if isinstance(ir_value.get("unresolved"), list) else []
+    chapters = {
+        "invariantVerification": {
+            "state": optional["invariants"]["state"],
+            "invariants": invariant_rows if isinstance(invariant_rows, list) else [],
+            "dynamicResults": dynamic_rows if isinstance(dynamic_rows, list) else [],
+        },
+        "sourceFaithfulness": {
+            "state": optional["ir-reconciliation"]["state"],
+            "sourceFaithfulnessScore": ir_score,
+            "functionRiskHints": ir_value.get("functionRiskHints", {}) if isinstance(ir_value, dict) else {},
+        },
+        "pocReproduction": {
+            "state": optional["poc-result"]["state"],
+            "pocState": poc_value.get("pocState") if isinstance(poc_value, dict) else None,
+            "command": poc_value.get("command") if isinstance(poc_value, dict) else None,
+            "expectedOutput": poc_value.get("expectedOutput") if isinstance(poc_value, dict) else None,
+            "actualOutput": poc_value.get("actualOutput") if isinstance(poc_value, dict) else None,
+        },
+        "coverageGaps": {
+            "adapterRequired": adapter_required,
+            "unresolved": unresolved,
+            "missingEvidence": [name for name, item in optional.items() if item["state"] != "available"],
+        },
+    }
     index_value = index if isinstance(index, dict) else {}
     recorded_coverage = index_value.get("coverage")
     coverage_complete = recorded_coverage.get("complete") is True if isinstance(recorded_coverage, dict) else False
@@ -154,6 +195,11 @@ def build_report(input_path: str | Path, *, output_dir: str | Path | None = None
         "cost": {"state": "not_available", "amountUsd": None, "reason": "input evidence does not include a complete cost record"},
         "reproduction": {"state": "not_available", "instructions": "Use the recorded local test plan and evidence paths; no executable reproduction was supplied."},
         "methodology": {"static": "available" if rows else "not_performed", "dynamic": optional["dynamic-result"]["state"], "poc": optional["poc-result"]["state"], "irReconciliation": optional["ir-reconciliation"]["state"]},
+        "chapters": chapters,
+        "invariantVerification": chapters["invariantVerification"],
+        "sourceFaithfulness": chapters["sourceFaithfulness"],
+        "pocReproduction": chapters["pocReproduction"],
+        "coverageGaps": chapters["coverageGaps"],
     }
     payload["markdown"] = render_markdown(payload)
     payload["html"] = render_html(payload)
@@ -188,7 +234,12 @@ def render_markdown(report: dict[str, Any]) -> str:
                 lines.append(f"  - `{item.get('file', '未记录')}`:{item.get('lineStart', '?')}-{item.get('lineEnd', '?')} {quote}")
         else:
             lines.append("- 证据：未记录")
-    lines += ["", "## 成本披露", "", f"状态：{report.get('cost', {}).get('state', 'not_available')}；金额：{report.get('cost', {}).get('amountUsd', '未记录')}。", "", "## 复现指引", "", report.get("reproduction", {}).get("instructions", "未提供可执行复现步骤。"), "", "## 附录证据路径", "", "缺失的动态、PoC 或 IR 输入均保留为 `not_available`，不会被解释为通过或失败。"]
+    chapters = report.get("chapters", {})
+    invariant = chapters.get("invariantVerification", {})
+    faithfulness = chapters.get("sourceFaithfulness", {})
+    poc = chapters.get("pocReproduction", {})
+    gaps = chapters.get("coverageGaps", {})
+    lines += ["", "## 不变量验证", "", f"输入状态：{invariant.get('state', 'not_available')}；断言数：{len(invariant.get('invariants', [])) if isinstance(invariant.get('invariants'), list) else 0}。", "", "## 源码可信度", "", f"对账状态：{faithfulness.get('state', 'not_available')}；sourceFaithfulnessScore：{faithfulness.get('sourceFaithfulnessScore', '未记录')}。", "", "## PoC 复现", "", f"执行状态：{poc.get('state', 'not_available')}；PoC 状态：{poc.get('pocState', '未记录')}。", "", "## 覆盖缺口", "", f"adapter_required：{len(gaps.get('adapterRequired', [])) if isinstance(gaps.get('adapterRequired'), list) else 0}；unresolved：{len(gaps.get('unresolved', [])) if isinstance(gaps.get('unresolved'), list) else 0}。", "", "## 成本披露", "", f"状态：{report.get('cost', {}).get('state', 'not_available')}；金额：{report.get('cost', {}).get('amountUsd', '未记录')}。", "", "## 复现指引", "", report.get("reproduction", {}).get("instructions", "未提供可执行复现步骤。"), "", "## 附录证据路径", "", "缺失的动态、PoC 或 IR 输入均保留为 `not_available`，不会被解释为通过或失败。"]
     return "\n".join(lines) + "\n"
 
 
@@ -223,6 +274,12 @@ def render_sarif(report: dict[str, Any]) -> dict[str, Any]:
             if isinstance(evidence[0].get("lineStart"), int):
                 location["physicalLocation"]["region"] = {"startLine": evidence[0]["lineStart"]}
             result["locations"] = [location]
+        flow_items = [item for item in evidence if isinstance(item.get("file"), str)]
+        if len(flow_items) > 1:
+            result["codeFlows"] = [{"threadFlows": [{"locations": [{
+                "location": {"physicalLocation": {"artifactLocation": {"uri": item["file"]},
+                                                       "region": {"startLine": item["lineStart"]}}
+                            }} for item in flow_items if isinstance(item.get("lineStart"), int)]}]}]
         results.append(result)
     return {"$schema": SCHEMA, "version": "2.1.0", "runs": [{"tool": {"driver": {"name": "defi-scan", "rules": rules}}, "results": results, "properties": {"coverage": report.get("coverage"), "interpretation": "候选记录不等于已证实漏洞。"}}]}
 

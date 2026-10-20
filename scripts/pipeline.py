@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parent.parent
-STAGES = ("recon", "collect", "repr", "static", "dynamic", "decompile", "review", "poc", "report")
+STAGES = ("recon", "collect", "repr", "static", "deploy", "dynamic", "decompile", "review", "poc", "report")
 SCRIPT_DIR = ROOT / "scripts"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -133,7 +133,7 @@ def _default_runner(stage: str, target: dict[str, Any], stage_dir: Path, mode: s
         if stage == "repr":
             target.setdefault("reprCacheRoot", str(ROOT / "work" / "repr-cache"))
         return pipeline_source_stages.run_stage(stage, target, stage_dir, mode)
-    if stage in {"dynamic", "decompile", "poc"}:
+    if stage in {"deploy", "dynamic", "decompile", "poc"}:
         return pipeline_verification_stages.run_stage(stage, target, stage_dir, mode)
     if stage in {"review", "report"}:
         return pipeline_review_stages.run_stage(stage, target, stage_dir, mode)
@@ -320,7 +320,8 @@ def run_pipeline(targets_path: str | Path, *, stages: list[str], mode: str = "lo
                 for previous in state["stages"].values():
                     if isinstance(previous, dict):
                         for key in ("sourcePath", "sourceBundle", "sourceBundleSha256", "findingIndex", "cacheKey", "artifactPath", "artifactPaths", "representation", "representationArtifactSha256", "sourceIrSha256", "bytecodeIrSha256", "decompilerInputSha256", "resultPath",
-                                    "unifiedIR", "bytecodeIR", "decompilerInput", "invariantsPath", "harnessPath"):
+                                    "unifiedIR", "bytecodeIR", "decompilerInput", "invariantsPath", "harnessPath",
+                                    "deployedTarget", "deploymentPath", "invariantAssertionsExecuted", "adapterRequiredCount"):
                             if previous.get(key) is not None:
                                 stage_target[key] = previous[key]
                 result = runner(stage, stage_target, stage_dir, mode)

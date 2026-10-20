@@ -1,0 +1,1 @@
+{"knownIssues":["unchecked_cross_contract_assumption"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Router.sol","solcVersion":"0.8.19"}

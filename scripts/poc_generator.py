@@ -8,6 +8,13 @@ import re
 import tempfile
 from pathlib import Path
 
+try:
+    from poc_template import render_test
+except ModuleNotFoundError:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from poc_template import render_test
+
 
 def canonical_sha256(value):
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True,
@@ -51,7 +58,7 @@ def severity_score(category_weight, trigger_difficulty, reachable_assets_usd):
     return float(category_weight) * float(trigger_difficulty) * float(reachable_assets_usd)
 
 
-def generate_poc(finding, source_bundle, output_dir, *, test_source=None):
+def generate_poc(finding, source_bundle, output_dir, *, test_source=None, cloud=None):
     if not isinstance(finding, dict):
         raise ValueError('finding must be an object')
     if not isinstance(source_bundle, dict) or not isinstance(source_bundle.get('sources'), dict):
@@ -76,6 +83,16 @@ def generate_poc(finding, source_bundle, output_dir, *, test_source=None):
     short_id = hashlib.sha256(finding_id.encode('utf-8')).hexdigest()[:16]
     test_name = f'testPoC_{short_id}'
     adapter = test_source if test_source is not None else finding.get('pocTestSource')
+    generated_from = 'explicit_adapter' if adapter is not None else None
+    if adapter is None and cloud is not None:
+        if callable(cloud):
+            adapter = cloud(finding, source_bundle, test_name)
+        elif hasattr(cloud, 'generate') and callable(cloud.generate):
+            adapter = cloud.generate(finding, source_bundle, test_name)
+        generated_from = 'cloud_review'
+    if adapter is None:
+        adapter = render_test(finding, source_bundle, test_name)
+        generated_from = 'local_template' if adapter is not None else None
     valid_adapter = (isinstance(adapter, str) and len(adapter.encode('utf-8')) <= 256_000
                      and len(re.findall(r'function\s+' + re.escape(test_name) + r'\s*\(', adapter)) == 1
                      and 'contract ' in adapter and 'pragma solidity' in adapter)
@@ -109,6 +126,7 @@ contract PoC_{short_id} {{
                 'sourceBundleSha256': source_sha,
                 'findingSha256': canonical_sha256(finding), 'testName': test_name,
                 'testPath': str(test_path.relative_to(output_dir)), 'adapterState': adapter_state,
+                'generatedFrom': generated_from,
                 'severityFactors': {'categoryWeight': category_weight,
                                     'triggerDifficulty': trigger_difficulty,
                                     'reachableAssetsUsd': assets},

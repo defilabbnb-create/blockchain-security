@@ -170,8 +170,43 @@ def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+EVAL_LAYERS = ("slither", "ir-reconcile", "invariants", "poc")
+
+
+def _layer_observations(result: dict[str, Any], layer: str) -> list[str]:
+    """Read a layer-specific result without promoting missing evidence."""
+    if layer == "slither":
+        return list(result.get("findings", [])) if isinstance(result.get("findings"), list) else []
+    value = result.get(layer)
+    if isinstance(value, dict):
+        value = value.get("findings", value.get("issues", value.get("detected", [])))
+    return list(value) if isinstance(value, list) else []
+
+
+def _layer_metrics(rows: list[dict[str, Any]], layer: str) -> dict[str, Any]:
+    tp = fp = fn = 0
+    sample_count = 0
+    for row in rows:
+        if layer not in row.get("layers", {}):
+            continue
+        sample_count += 1
+        counts = row["layers"][layer]
+        tp += counts["truePositiveCount"]
+        fp += counts["falsePositiveCount"]
+        fn += counts["falseNegativeCount"]
+    precision = tp / (tp + fp) if tp + fp else None
+    recall = tp / (tp + fn) if tp + fn else None
+    return {"sampleCount": sample_count, "truePositiveCount": tp,
+            "falsePositiveCount": fp, "falseNegativeCount": fn,
+            "precision": precision, "recall": recall,
+            "no_incremental_value_detected": sample_count > 0 and tp == 0}
+
+
 def run_evaluation(contracts_dir: Path = CONTRACTS, results_dir: Path = RESULTS,
-                   timeout: float = 900, analyzer=None) -> dict[str, Any]:
+                   timeout: float = 900, analyzer=None, layers=None) -> dict[str, Any]:
+    selected_layers = list(layers or ("slither",))
+    if not selected_layers or any(layer not in EVAL_LAYERS for layer in selected_layers):
+        raise BenchmarkError(f"layers 必须来自: {', '.join(EVAL_LAYERS)}")
     started = time.monotonic()
     rows = []
     tp = fp = fn = 0
@@ -186,14 +221,18 @@ def run_evaluation(contracts_dir: Path = CONTRACTS, results_dir: Path = RESULTS,
         input_hash = _source_hash(bundle)
         try:
             result = (analyzer or _analyze)(bundle, timeout)
-            detected = result["findings"]
+            detected = _layer_observations(result, "slither")
             counts = score_case(known, detected)
             tp += counts["truePositiveCount"]
             fp += counts["falsePositiveCount"]
             fn += counts["falseNegativeCount"]
             rows.append({"caseId": case_dir.name, "state": "scored", "clean": truth["clean"],
                          "knownIssues": known, "detectedIssues": sorted(set(detected)),
-                         "inputSourceSha256": input_hash, **counts})
+                         "inputSourceSha256": input_hash, "layers": {
+                             layer: score_case(known, _layer_observations(result, layer))
+                             | {"detectedIssues": sorted(set(_layer_observations(result, layer)))}
+                             for layer in selected_layers
+                         }, **counts})
         except BenchmarkError as error:
             rows.append({"caseId": case_dir.name, "state": "unscored", "reason": str(error),
                          "knownIssues": known, "inputSourceSha256": input_hash})
@@ -205,7 +244,9 @@ def run_evaluation(contracts_dir: Path = CONTRACTS, results_dir: Path = RESULTS,
               "unscoredSampleCount": len(rows) - len(scored), "precision": precision, "recall": recall,
               "falsePositiveCount": fp, "truePositiveCount": tp, "falseNegativeCount": fn,
               "costUsd": 0.0, "costScope": "本地静态分析；未调用云端模型", "durationMs": round((time.monotonic() - started) * 1000),
-              "metricsScope": "仅统计 Slither High/Medium/Low impact 检测，将 check ID 映射为 SmartBugs 漏洞类别后与 ground-truth.knownIssues 精确匹配；静态信号不代表确认漏洞",
+              "layers": {layer: _layer_metrics(rows, layer) for layer in selected_layers},
+              "selectedLayers": selected_layers,
+              "metricsScope": "按显式层分别统计；缺少某层证据不计为通过，静态信号不代表确认漏洞",
               "samples": rows}
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     output = results_dir / f"{stamp}.json"
@@ -219,12 +260,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--contracts", type=Path, default=CONTRACTS)
     parser.add_argument("--results", type=Path, default=RESULTS)
     parser.add_argument("--timeout", type=float, default=900)
+    parser.add_argument("--layers", default="slither",
+                        help="逗号分隔的评测层: slither,ir-reconcile,invariants,poc,all")
     args = parser.parse_args(argv)
     if args.timeout <= 0:
         print(json.dumps({"status": "invalid", "error": "timeout 无效"}, ensure_ascii=False))
         return 2
     try:
-        result = run_evaluation(args.contracts, args.results, args.timeout)
+        selected = [item.strip() for item in args.layers.split(",") if item.strip()]
+        if "all" in selected:
+            selected = list(EVAL_LAYERS)
+        result = run_evaluation(args.contracts, args.results, args.timeout, layers=selected)
     except (BenchmarkError, OSError) as error:
         print(json.dumps({"status": "failed", "error": str(error)}, ensure_ascii=False))
         return 1

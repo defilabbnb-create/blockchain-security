@@ -82,6 +82,41 @@ contract PocTest {{
         with self.assertRaises(ValueError):
             GEN.severity_score(1, 1.5, 10)
 
+    def test_local_template_generates_reentrancy_poc_from_evidence(self):
+        finding, bundle = self.fixture()
+        finding['title'] = 'reentrancy observation'
+        bundle['metadata'] = {'settings': {'compilationTarget': {'Vault.sol': 'Vault'}}}
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = GEN.generate_poc(finding, bundle, Path(directory) / 'poc')
+            self.assertEqual(manifest['adapterState'], 'ready')
+            self.assertEqual(manifest['generatedFrom'], 'local_template')
+            source = (Path(directory) / 'poc' / manifest['testPath']).read_text()
+            self.assertIn('function ' + manifest['testName'], source)
+            self.assertIn('reentrancy did not drain target', source)
+
+    def test_unknown_finding_remains_adapter_required(self):
+        finding, bundle = self.fixture()
+        finding['id'] = 'finding-generic-1'
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = GEN.generate_poc(finding, bundle, Path(directory) / 'poc')
+            self.assertEqual(manifest['adapterState'], 'adapter_required')
+            self.assertIsNone(manifest['generatedFrom'])
+
+    def test_generated_template_is_confirmed_only_by_real_forge_runner(self):
+        finding, bundle = self.fixture()
+        finding['title'] = 'reentrancy observation'
+        bundle['metadata'] = {'settings': {'compilationTarget': {'Vault.sol': 'Vault'}}}
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'poc'
+            GEN.generate_poc(finding, bundle, output)
+            runner_spec = importlib.util.spec_from_file_location('poc_runner', ROOT / 'scripts' / 'poc_runner.py')
+            runner = importlib.util.module_from_spec(runner_spec)
+            runner_spec.loader.exec_module(runner)
+            result = runner.run_poc(output, forge=ROOT / 'work' / 'tools' / 'forge')
+            self.assertEqual(result['pocState'], 'confirmed')
+            self.assertTrue(result['confirmedVulnerability'])
+            self.assertEqual(result['attempts'][0]['state'], 'confirmed')
+
 
 if __name__ == '__main__':
     unittest.main()

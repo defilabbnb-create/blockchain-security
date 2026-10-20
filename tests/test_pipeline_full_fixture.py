@@ -14,7 +14,7 @@ class PipelineFullFixtureTests(unittest.TestCase):
             output = Path(directory) / "run"
             command = [sys.executable, str(ROOT / "scripts" / "pipeline.py"), "run",
                        "--targets", str(ROOT / "tests/fixtures/pipeline-full/targets.json"),
-                       "--stages", "recon,collect,repr,static,dynamic,decompile,review,poc,report",
+                       "--stages", "recon,collect,repr,static,deploy,dynamic,decompile,review,poc,report",
                        "--mode", "local", "--budget-usd", "5", "--output", str(output)]
             completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
             self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -22,6 +22,9 @@ class PipelineFullFixtureTests(unittest.TestCase):
             self.assertEqual(run["state"], "completed")
             stages = run["targets"][0]["stages"]
             self.assertTrue(all(row["state"] == "completed" for row in stages.values()))
+            self.assertIn("deployedTarget", stages["deploy"])
+            self.assertIn("invariantAssertionsExecuted", stages["deploy"])
+            self.assertIn("adapterRequiredCount", stages["deploy"])
             self.assertEqual(stages["dynamic"]["outcome"], "passed")
             self.assertEqual(stages["review"]["provider"], "mock_cloud_ai")
             self.assertEqual(stages["poc"]["pocState"], "unconfirmed")

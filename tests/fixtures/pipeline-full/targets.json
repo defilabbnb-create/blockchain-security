@@ -9,6 +9,7 @@
       "reachableAssetsUsd": 1000,
       "source": "tests/fixtures/pipeline-full/Vault.sol",
       "sourceBundle": "tests/fixtures/pipeline-full/source-bundle.json",
+      "deployedTarget": "0x2222222222222222222222222222222222222222",
       "harness": "tests/fixtures/pipeline-full/harness",
       "preferHarness": true,
       "bytecode": "0x600060005500",

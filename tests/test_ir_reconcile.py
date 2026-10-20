@@ -59,6 +59,57 @@ class IRReconciliationTests(unittest.TestCase):
         self.assertIn('source IR is missing', result['unresolved']['reason'])
         self.assertEqual(result['sourceFaithfulnessScore'], 0.0)
 
+    def test_opcode_risk_hints_are_bound_to_function_pc_ranges(self):
+        source = source_ir()
+        source['functions'] = []
+        bytecode = bytecode_ir()
+        deposit_selector = selector('deposit(uint256)')
+        withdraw_selector = selector('withdraw(uint256)')
+        bytecode['functions'] = [
+            {'selector': deposit_selector, 'name': 'selector_deposit'},
+            {'selector': withdraw_selector, 'name': 'selector_withdraw'},
+        ]
+        bytecode['basicBlocks'] = [
+            {'id': 'deposit-block', 'startPc': 0, 'endPc': 9},
+            {'id': 'withdraw-block', 'startPc': 10, 'endPc': 19},
+        ]
+        bytecode['selectorDispatch'] = [
+            {'selector': deposit_selector, 'basicBlockId': 'deposit-block'},
+            {'selector': withdraw_selector, 'basicBlockId': 'withdraw-block'},
+        ]
+        bytecode['instructions'] = [
+            {'pc': 2, 'opcode': 'SLOAD'},
+            {'pc': 12, 'opcode': 'DELEGATECALL', 'targetKind': 'dynamic'},
+            {'pc': 14, 'opcode': 'SSTORE', 'slotKind': 'dynamic'},
+        ]
+        result = RECONCILE.reconcile(source, bytecode)
+        self.assertEqual(result['granularity'], 'function')
+        self.assertEqual(result['unattributedOpcodes'], [])
+        rows = {row['selector']: row for row in result['bytecodeOnlyFunctions']}
+        self.assertEqual(rows[deposit_selector]['riskHints'], [])
+        self.assertEqual(rows[withdraw_selector]['riskHints'],
+                         ['DELEGATECALL', 'NONCONSTANT_DELEGATECALL_TARGET', 'ARBITRARY_SSTORE'])
+
+    def test_missing_dispatch_ranges_falls_back_to_contract_granularity(self):
+        bytecode = bytecode_ir()
+        bytecode['functions'].append({'selector': '0xdeadbeef', 'name': 'selector_deadbeef'})
+        bytecode['instructions'] = [{'pc': 10, 'opcode': 'DELEGATECALL', 'targetKind': 'dynamic'}]
+        result = RECONCILE.reconcile(source_ir(), bytecode)
+        self.assertEqual(result['granularity'], 'contract')
+        self.assertIn('DELEGATECALL', result['bytecodeOnlyFunctions'][0]['riskHints'])
+        self.assertTrue(any(item['kind'] == 'delegatecall_target' for item in result['unresolved']['details']))
+
+    def test_unassigned_opcode_is_explicitly_unresolved(self):
+        bytecode = bytecode_ir()
+        bytecode['functions'] = [{'selector': selector('deposit(uint256)'), 'name': 'selector_deposit'}]
+        bytecode['basicBlocks'] = [{'id': 'deposit', 'startPc': 0, 'endPc': 3}]
+        bytecode['selectorDispatch'] = [{'selector': selector('deposit(uint256)'), 'basicBlockId': 'deposit'}]
+        bytecode['instructions'] = [{'pc': 9, 'opcode': 'SELFDESTRUCT'}]
+        result = RECONCILE.reconcile(source_ir(), bytecode)
+        self.assertEqual(result['granularity'], 'function')
+        self.assertEqual(result['unattributedOpcodes'][0]['opcode'], 'SELFDESTRUCT')
+        self.assertEqual(result['unresolved']['details'][-1]['kind'], 'unattributed_opcodes')
+
 
 if __name__ == '__main__':
     unittest.main()

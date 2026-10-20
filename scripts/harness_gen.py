@@ -10,6 +10,13 @@ import shutil
 import tempfile
 from pathlib import Path
 
+try:
+    from invariant_assertions import load_renderers
+except ModuleNotFoundError:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from invariant_assertions import load_renderers
+
 
 def _safe_source_path(name):
     if not isinstance(name, str) or not name or '\\' in name or name.startswith('/'):
@@ -62,6 +69,8 @@ def generate_harness(invariants, source_bundle, output_dir):
         path.write_text(entry['content'], encoding='utf-8')
 
     generated = []
+    renderers = load_renderers()
+    adapter_required = []
     seen_ids = set()
     for invariant in invariants.get('invariants', []):
         if not isinstance(invariant, dict):
@@ -72,6 +81,14 @@ def generate_harness(invariants, source_bundle, output_dir):
         if invariant_id in seen_ids:
             raise ValueError('invariantId values must be unique')
         seen_ids.add(invariant_id)
+        template = invariant.get('template')
+        renderer = renderers.get(template)
+        context = {'contract_name': target_name or 'Target', 'target_addr_expr': 'target'}
+        body = renderer(invariant.get('params') or {}, context) if renderer else None
+        if not isinstance(body, str) or not body.strip():
+            reason = 'invariant_renderer_missing' if renderer is None else 'invariant_renderer_requires_adapter'
+            adapter_required.append({'invariantId': invariant_id, 'template': template, 'status': 'adapter_required', 'reason': reason, 'path': None})
+            continue
         test_name = f'Invariant_{invariant_id[:16]}.t.sol'
         id_literal = '0x' + invariant_id
         description = json.dumps(str(invariant.get('description') or invariant.get('name') or ''))
@@ -82,29 +99,21 @@ interface Vm {{
     function envAddress(string calldata name) external view returns (address);
 }}
 
-interface IInvariantObservation {{
-    function totalAssets() external view returns (uint256);
-    function totalSupply() external view returns (uint256);
-}}
-
 contract Invariant_{invariant_id[:16]} {{
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
     bytes32 public constant invariantId = {id_literal};
     string public constant description = {description};
 
-    function testInvariantTargetObservationIsAvailable() public view {{
-        // This is an evidence-binding smoke check. A protocol-specific stateful
-        // adapter is required before this template can validate the property.
+    function testInvariant() public view {{
         address target = vm.envAddress("INVARIANT_TARGET");
         require(target.code.length > 0, "INVARIANT_TARGET has no code");
-        IInvariantObservation(target).totalAssets();
-        IInvariantObservation(target).totalSupply();
+        {body}
     }}
 }}
 '''
         (test_root / test_name).write_text(solidity, encoding='utf-8')
         generated.append({'invariantId': invariant_id, 'path': f'test/{test_name}',
-                          'status': invariant.get('status', 'unverified')})
+                          'template': template, 'status': invariant.get('status', 'unverified')})
     foundry = '''[profile.default]
 src = "src"
 test = "test"
@@ -118,8 +127,9 @@ offline = true
     manifest = {'schemaVersion': 1, 'sourceSha256': source_sha256,
                 'invariantsSha256': hashlib.sha256(json.dumps(invariants, sort_keys=True,
                     ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest(),
-                'deployment': deployment, 'tests': generated,
-                'scope': 'Generated checks bind invariant metadata and read target observations; a protocol-specific stateful adapter is required to test properties.'}
+                'deployment': deployment, 'tests': generated + adapter_required,
+                'adapterRequiredCount': len(adapter_required),
+                'scope': 'Generated checks execute registered protocol assertions; entries without a renderer remain adapter_required and never enter forge.'}
     (output_dir / 'harness.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return manifest
 

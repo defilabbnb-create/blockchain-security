@@ -13,6 +13,26 @@ spec.loader.exec_module(verification)
 
 
 class VerificationStageTests(unittest.TestCase):
+    def test_deploy_without_constructor_args_is_explicitly_unavailable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle = {"sources": {"Vault.sol": {"content": "pragma solidity >=0.8.19; contract Vault { constructor(address owner) {} }"}},
+                      "metadata": {"settings": {"compilationTarget": {"Vault.sol": "Vault"}}},
+                      "abi": [{"type": "constructor", "inputs": [{"name": "owner", "type": "address"}]}]}
+            result = verification.run_stage("deploy", {"sourceBundle": bundle}, root / "stage", "local")
+            self.assertEqual(result["state"], "unavailable")
+            self.assertEqual(result["adapterRequiredCount"], 1)
+            self.assertIsNone(result["deployedTarget"])
+
+    def test_deploy_accepts_only_explicit_local_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = verification.run_stage("deploy", {"deployedTarget": "0x" + "1" * 40,
+                                                         "invariantAssertionsExecuted": 5},
+                                             Path(directory) / "stage", "local")
+            self.assertEqual(result["state"], "completed")
+            self.assertEqual(result["deployedTarget"], "0x" + "1" * 40)
+            self.assertEqual(result["invariantAssertionsExecuted"], 5)
+
     def test_dynamic_builds_invariants_and_harness_from_ir_but_missing_adapter_is_unavailable(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -29,11 +49,13 @@ class VerificationStageTests(unittest.TestCase):
             target = {"unifiedIR": ir, "sourceBundle": bundle}
             result = verification.run_stage("dynamic", target, root / "stage", "local")
             generated = json.loads((root / "stage" / "invariants.json").read_text())
-            self.assertEqual(len(generated["invariants"]), 3)
+            self.assertEqual(len(generated["invariants"]), 5)
             self.assertEqual((root / "stage" / "harness" / "harness.json").is_file(), True)
             self.assertEqual(result["state"], "unavailable")
             dynamic = json.loads((root / "stage" / "dynamic-result.json").read_text())
-            self.assertEqual([row["state"] for row in dynamic["results"]], ["unavailable"] * 3)
+            self.assertEqual([row["state"] for row in dynamic["results"]], ["unavailable"] * 5)
+            self.assertEqual(dynamic["invariantAssertionsExecuted"], 5)
+            self.assertEqual(dynamic["adapterRequiredCount"], 0)
             self.assertNotEqual(result["state"], "completed")
 
     def test_dynamic_ir_path_requires_both_ir_and_verified_sources(self):

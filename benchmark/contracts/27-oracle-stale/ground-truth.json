@@ -1,0 +1,1 @@
+{"knownIssues":["oracle_stale_price"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Oracle.sol","solcVersion":"0.8.19"}

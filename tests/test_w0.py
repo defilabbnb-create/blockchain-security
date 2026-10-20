@@ -10,9 +10,13 @@ FIXTURES = ROOT / "tests" / "fixtures" / "assertions"
 
 
 class W0FoundationTests(unittest.TestCase):
-    def test_registry_contract_has_expected_modules_and_is_empty_before_p1(self):
+    def test_registry_contract_has_expected_modules_and_loads_renderers(self):
         self.assertEqual(RENDERER_MODULES, ("erc4626", "lending", "amm", "cross"))
-        self.assertEqual(load_renderers(), {})
+        registry = load_renderers()
+        self.assertIn("share_price_monotonic", registry)
+        self.assertIn("health_factor_monotonic_on_borrow", registry)
+        self.assertIn("k_never_decreases", registry)
+        self.assertEqual(len(registry), 12)
 
     def test_every_assertion_fixture_has_correct_and_violating_sources(self):
         fixture_dirs = [path for path in FIXTURES.iterdir() if path.is_dir()]

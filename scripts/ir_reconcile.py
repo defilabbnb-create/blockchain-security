@@ -102,6 +102,135 @@ def _slot_values(items):
     return values
 
 
+def _pc(value):
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = int(value, 0)
+        except ValueError:
+            return None
+        return parsed if parsed >= 0 else None
+    return None
+
+
+def _range_from(value):
+    if not isinstance(value, dict):
+        return None
+    start = _pc(value.get('startPc', value.get('startPC', value.get('pcStart', value.get('entryPc')))))
+    end = _pc(value.get('endPc', value.get('endPC', value.get('pcEnd'))))
+    if end is None and start is not None and isinstance(value.get('size'), int):
+        end = start + max(0, value['size'] - 1)
+    if start is None or end is None or end < start:
+        return None
+    return start, end
+
+
+def _function_regions(bytecode_ir, selectors):
+    """Return selector -> PC ranges from explicit dispatch/CFG evidence."""
+    blocks = {}
+    raw_blocks = bytecode_ir.get('basicBlocks', [])
+    if isinstance(raw_blocks, list):
+        for block in raw_blocks:
+            if not isinstance(block, dict):
+                continue
+            region = _range_from(block)
+            if region is None:
+                continue
+            for key in (block.get('id'), block.get('blockId'), block.get('basicBlockId')):
+                if key is not None:
+                    blocks[str(key)] = region
+
+    dispatch = bytecode_ir.get('selectorDispatch', bytecode_ir.get('dispatchTable'))
+    if isinstance(dispatch, dict):
+        dispatch_rows = []
+        for selector, value in dispatch.items():
+            if isinstance(value, dict):
+                row = dict(value)
+                row.setdefault('selector', selector)
+                dispatch_rows.append(row)
+    elif isinstance(dispatch, list):
+        dispatch_rows = [row for row in dispatch if isinstance(row, dict)]
+    else:
+        dispatch_rows = []
+    if dispatch_rows:
+        for row in dispatch_rows:
+            selector = str(row.get('selector', '')).lower()
+            if not SELECTOR.fullmatch(selector):
+                continue
+            region = _range_from(row)
+            if region is None:
+                block_id = row.get('basicBlockId', row.get('blockId'))
+                if block_id is not None:
+                    region = blocks.get(str(block_id))
+            if region:
+                selectors.setdefault(selector, {'selector': selector, 'name': selector})['pcRange'] = region
+
+    regions = {}
+    functions = bytecode_ir.get('functions', [])
+    if not isinstance(functions, list):
+        functions = []
+    for function in functions:
+        if not isinstance(function, dict):
+            continue
+        selector = function.get('selector')
+        if not isinstance(selector, str) or not SELECTOR.fullmatch(selector):
+            continue
+        selector = selector.lower()
+        ranges = []
+        direct = _range_from(function)
+        if direct:
+            ranges.append(direct)
+        for key in ('basicBlockIds', 'basicBlocks', 'blockIds'):
+            ids = function.get(key)
+            if isinstance(ids, list):
+                ranges.extend(blocks[str(block_id)] for block_id in ids if str(block_id) in blocks)
+        for key in ('basicBlockId', 'blockId'):
+            if function.get(key) is not None and str(function[key]) in blocks:
+                ranges.append(blocks[str(function[key])])
+        dispatch_region = selectors.get(selector, {}).get('pcRange')
+        if dispatch_region:
+            ranges.append(dispatch_region)
+        if ranges:
+            regions[selector] = sorted(set(ranges))
+    return regions
+
+
+def _opcode_rows(bytecode_ir):
+    rows = []
+    seen = set()
+    for collection in (bytecode_ir.get('operations', []), bytecode_ir.get('instructions', [])):
+        if not isinstance(collection, list):
+            continue
+        for item in collection:
+            if not isinstance(item, dict) or not isinstance(item.get('opcode'), str):
+                continue
+            pc = _pc(item.get('pc'))
+            key = (pc, item['opcode'])
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({**item, 'pc': pc})
+    return rows
+
+
+def _risk_hints(rows):
+    opcodes = {item.get('opcode') for item in rows if isinstance(item.get('opcode'), str)}
+    hints = []
+    delegatecall_rows = [item for item in rows if item.get('opcode') == 'DELEGATECALL']
+    if delegatecall_rows:
+        hints.append('DELEGATECALL')
+        if any(item.get('targetKind') == 'dynamic' or item.get('target') is None for item in delegatecall_rows):
+            hints.append('NONCONSTANT_DELEGATECALL_TARGET')
+    if 'SELFDESTRUCT' in opcodes:
+        hints.append('SELFDESTRUCT')
+    if any(item.get('opcode') == 'SSTORE' and item.get('slotKind') in ('dynamic', None) for item in rows):
+        hints.append('ARBITRARY_SSTORE')
+    return hints
+
+
 def reconcile(source_ir, bytecode_ir, *, source_sha256=None, contract=None):
     if source_ir is not None and not isinstance(source_ir, dict):
         raise ValueError('source IR must be an object or null')
@@ -134,17 +263,8 @@ def reconcile(source_ir, bytecode_ir, *, source_sha256=None, contract=None):
     report['sourceOnlyFunctions'] = [source_selectors[key] for key in sorted(source_selectors.keys() - bytecode_selectors.keys())]
     bytecode_only = [bytecode_selectors[key] for key in sorted(bytecode_selectors.keys() - source_selectors.keys())]
     operations = bytecode_ir.get('operations', [])
-    opcodes = {item.get('opcode') for item in operations if isinstance(item, dict)} if isinstance(operations, list) else set()
-    risk_hints = []
-    delegatecall_rows = [item for item in operations if isinstance(item, dict) and item.get('opcode') == 'DELEGATECALL'] if isinstance(operations, list) else []
-    if delegatecall_rows:
-        risk_hints.append('DELEGATECALL')
-        if any(item.get('targetKind') == 'dynamic' or item.get('target') is None for item in delegatecall_rows):
-            risk_hints.append('NONCONSTANT_DELEGATECALL_TARGET')
-        else:
-            report['unresolved'].append({'kind': 'delegatecall_target', 'reason': 'bytecode IR does not provide a proven call target'})
-    if 'SELFDESTRUCT' in opcodes:
-        risk_hints.append('SELFDESTRUCT')
+    opcode_rows = _opcode_rows(bytecode_ir)
+    opcodes = {item.get('opcode') for item in opcode_rows if isinstance(item.get('opcode'), str)}
     storage_rows = bytecode_ir.get('storageAccesses', [])
     dynamic_storage = any(isinstance(item, dict) and (
         item.get('slotKind') == 'dynamic' or item.get('storageSlot') in (None, 'dynamic') or
@@ -159,11 +279,57 @@ def reconcile(source_ir, bytecode_ir, *, source_sha256=None, contract=None):
             dynamic_storage = not (isinstance(previous, dict) and str(previous.get('opcode', '')).startswith('PUSH'))
             if dynamic_storage:
                 break
-    if dynamic_storage:
-        risk_hints.append('ARBITRARY_SSTORE')
+    if dynamic_storage and not any('ARBITRARY_SSTORE' in _risk_hints([row]) for row in opcode_rows):
+        # The storage access record can prove a dynamic slot even when the
+        # opcode row itself has no slot metadata.
+        for row in opcode_rows:
+            if row.get('opcode') == 'SSTORE':
+                row['slotKind'] = 'dynamic'
+    regions = _function_regions(bytecode_ir, bytecode_selectors)
+    report['granularity'] = 'function' if regions else 'contract'
+    report['unattributedOpcodes'] = []
+    report['functionRiskHints'] = {}
+    grouped = {selector: [] for selector in regions}
+    if regions:
+        for row in opcode_rows:
+            pc = row.get('pc')
+            if pc is None:
+                # Legacy operation rows without a PC cannot be assigned
+                # without inventing a function boundary; retain them in the
+                # contract-level comparison only.
+                continue
+            matches = [selector for selector, ranges in regions.items()
+                       if pc is not None and any(start <= pc <= end for start, end in ranges)]
+            if len(matches) == 1:
+                grouped[matches[0]].append(row)
+            elif len(matches) == 0:
+                report['unattributedOpcodes'].append({'pc': pc, 'opcode': row.get('opcode'), 'reason': 'outside_function_ranges'})
+            else:
+                report['unattributedOpcodes'].append({'pc': pc, 'opcode': row.get('opcode'), 'reason': 'overlapping_function_ranges'})
+        if report['unattributedOpcodes']:
+            report['unresolved'].append({'kind': 'unattributed_opcodes',
+                                         'reason': 'some opcodes could not be assigned to one function'})
+    else:
+        grouped['__contract__'] = opcode_rows
     for item in bytecode_only:
-        item['opcodes'] = ','.join(sorted(opcode for opcode in opcodes if isinstance(opcode, str)))
-        item['riskHints'] = risk_hints.copy()
+        selector = item.get('selector')
+        rows = grouped.get(selector, grouped.get('__contract__', []))
+        hints = _risk_hints(rows)
+        if dynamic_storage and any(row.get('opcode') == 'SSTORE' for row in rows):
+            if 'ARBITRARY_SSTORE' not in hints:
+                hints.append('ARBITRARY_SSTORE')
+        item['opcodes'] = ','.join(sorted(opcode for opcode in {row.get('opcode') for row in rows} if isinstance(opcode, str)))
+        item['riskHints'] = hints
+        item['granularity'] = report['granularity']
+    if regions:
+        for selector, rows in grouped.items():
+            report['functionRiskHints'][selector] = {
+                'opcodes': sorted({row.get('opcode') for row in rows if isinstance(row.get('opcode'), str)}),
+                'riskHints': _risk_hints(rows),
+                'granularity': 'function',
+            }
+    if report['granularity'] == 'contract' and any(row.get('opcode') == 'DELEGATECALL' for row in opcode_rows):
+        report['unresolved'].append({'kind': 'delegatecall_target', 'reason': 'function dispatch ranges are unavailable; risk is reported at contract granularity'})
     report['bytecodeOnlyFunctions'] = bytecode_only
     report['comparisons']['functionSelectors'] = {
         'matched': sorted(source_selectors.keys() & bytecode_selectors.keys()),
