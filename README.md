@@ -6,7 +6,7 @@
 
 - 双击 `开始扫描.command`：扫描 Ethereum 最近一个已等待 2 个区块的区块，保存到 `reports/latest-chain-scan.json`。
 - 双击 `静态分析.command`：编译并分析 `flare-scan/targets.json` 的 10 个目标，报告在 `flare-scan/reports/`。
-- 终端运行 `npm run doctor` 检查环境；`npm test` 运行回归测试。
+- 终端运行 `npm run doctor` 检查环境；`npm run test:parallel` 运行受控并行回归测试；改代码时用 `npm run test:fast -- pipeline invariant_gen` 只跑相关测试。
 - 运行 `npm run screen`：按历史 TVL、当前 TVL、跨链 connection 和 RPC 健康度筛选候选链；结果在 `flare-scan/reports/chain-screen.json`。
 
 要求 Node.js >=24.5.0、Python >=3.9。链上扫描没有 npm 第三方依赖。静态分析使用本目录现有 Slither 0.11.4 与独立安装的 solc-js 0.8.19 / 0.8.23 / 0.8.28。
@@ -74,6 +74,8 @@ npm run ask -- "哪些链可以真实跨链？"
 `npm run doctor` 会检查云端审查所需环境变量是否齐全、base URL 是否为无凭据的 HTTPS 地址；不发起网络请求，不读取或输出 API key，只显示安全的主机名与模型名。
 
 页面把 `quote_verified`、`connection_only` 和 `unavailable` 分开显示；connection 只证明兼容性，真实报价仍是只读证据，未执行任何交易动作。
+
+首屏作战地图只保留四个审计入口：地图、协议、发现、执行。每个页面底部都有“下一步”入口，移动端会自动改为纵向排列；运维页仍可从侧栏展开。页面只读，不会签名、授权或广播。
 
 任务状态机保存在 `work/task-state.json`，服务启动时自动启用。`GET /api/tasks` 列出持久化任务，`POST /api/tasks` 创建任务；单任务支持读取、定向 claim、heartbeat、checkpoint、状态转换、暂停、恢复、失败和取消。每次 claim 都生成新的 `fencingToken`；heartbeat、checkpoint、失败和 worker-owned 状态转换必须携带当前 token，防止旧 worker 与新租约复用同一 `workerId` 时继续写入。通用状态转换不能绕过 claim 直接创建无 lease 的 active 任务。租约 45 秒无心跳后才允许恢复；写入采用临时文件原子替换，状态记录损坏或任务字典键与 `taskId` 不一致时拒绝读取。任务 payload 只作为 JSON 数据保存，服务不会执行 payload。
 
@@ -150,6 +152,14 @@ npm run validate:vault-detector -- \
 此检查以最多两路并发运行未修改基线和六份彼此隔离的故障注入副本，包括份额记账、赎回授权、舍入、接收者错付、错付调用者与捐赠利率上限绕过；不连接 RPC、不发送外部交易。基线包含付款人/份额持有人/调用者/接收者分离、授权撤销恢复、默认零 maxRate 捐赠核算与依赖失败恢复。通过只证明这些特定变异能被当前夹具检出，不等同于确认线上漏洞或证明未发现其他缺陷。
 
 ## 四层漏洞发现与加速
+
+流水线按目标有界并行，默认 4 路，可用 `PIPELINE_TARGET_CONCURRENCY` 或命令行 `--target-concurrency 1..32` 调整；单个目标内部仍按阶段顺序执行，失败只阻断该目标的后续阶段。
+
+```bash
+python3 scripts/pipeline.py run --targets targets.json \
+  --stages recon,collect,repr,static,deploy,dynamic,decompile,review,poc,report \
+  --target-concurrency 4 --output work/pipeline-run
+```
 
 1. **静态线索与业务性质**：每个源码分析 bundle 自动生成 `discovery-plan.json` 和可交互 `discovery-plan.html`，从调用效果和入口提示生成带源码位置、现有 modifiers、独立 oracle 的验证计划。函数名只用于选择待验证假设，不判断漏洞或权限缺失。
 2. **动态状态序列**：VaultV2 夹具用独立账本、整数舍入参考模型和多个角色逐步验证业务性质，记录真实动作与相邻转换；测试只有全部断言通过才列出 `propertyIds`，失败记录 `targetPropertyIds` 供定位，不把该场景所有性质都判为失败。

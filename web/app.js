@@ -1415,9 +1415,26 @@ async function renderAuditRoute(route) {
   };
   const view = auditViews[route.name];
   audit.innerHTML = view.render(data);
+  appendAuditGuidance(audit, route.name);
   view.bind(audit);
   if (requestId !== state.workspaceRequest) return;
   if (route.protocol) audit.querySelector('[data-protocol-detail]')?.scrollIntoView({ block: 'center' });
+}
+
+function appendAuditGuidance(root, viewName) {
+  if (root.querySelector('.audit-next-step')) return;
+  const guidance = {
+    map: { text: '先确认重点协议，再查看合约和不变量。', links: [['protocols', '查看协议证据'], ['discoveries', '查看待核验发现']] },
+    protocols: { text: '确认不变量状态后，再进入证据链和本地复现。', links: [['discoveries', '查看发现'], ['execution', '查看执行结果']] },
+    discoveries: { text: '先确认来源和证据，再运行本地复现。', links: [['execution', '进入执行与复现'], ['protocols', '回到协议上下文']] },
+    execution: { text: '没有结果时，先从发现列表选择一条线索。', links: [['discoveries', '返回发现列表'], ['protocols', '查看不变量状态']] },
+  }[viewName];
+  if (!guidance) return;
+  const nav = document.createElement('nav');
+  nav.className = 'audit-next-step';
+  nav.setAttribute('aria-label', '下一步');
+  nav.innerHTML = `<strong>下一步</strong><span>${guidance.text}</span>${guidance.links.map(([hash, label]) => `<a href="#${hash}">${label} <span aria-hidden="true">→</span></a>`).join('')}`;
+  root.append(nav);
 }
 async function routeWorkspace() {
   const route = parseWorkspaceRoute();

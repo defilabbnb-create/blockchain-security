@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -125,6 +126,19 @@ def _validate_stages(stages: list[str]) -> list[str]:
     if len(set(stages)) != len(stages):
         raise PipelineError("stages 不得重复")
     return stages
+
+
+def _resolve_target_concurrency(value: int | None, target_count: int) -> int:
+    """Return a bounded worker count without allowing unbounded fan-out."""
+    if value is None:
+        raw = os.environ.get("PIPELINE_TARGET_CONCURRENCY", "4")
+        try:
+            value = int(raw)
+        except (TypeError, ValueError) as error:
+            raise PipelineError("target_concurrency 必须是正整数") from error
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1 or value > 32:
+        raise PipelineError("target_concurrency 必须是 1 到 32 的整数")
+    return min(value, max(1, target_count))
 
 
 def _default_runner(stage: str, target: dict[str, Any], stage_dir: Path, mode: str) -> dict[str, Any]:
@@ -278,64 +292,86 @@ def _default_runner(stage: str, target: dict[str, Any], stage_dir: Path, mode: s
     return result
 
 
+def _run_target(index: int, target: dict[str, Any], selected: list[str], root: Path, mode: str,
+                budget_usd: float, runner: Callable[[str, dict[str, Any], Path, str], dict[str, Any]]) -> dict[str, Any]:
+    """Run one target in an isolated directory; safe to execute in a worker."""
+    key = _target_key(target, index)
+    stage_dir = root / key
+    state_path = stage_dir / "state.json"
+    identity = {"targetSha256": _fingerprint(target), "mode": mode, "stages": selected}
+    state = _load_json(state_path) if state_path.is_file() else {"target": key, "stages": {}, "spentUsd": 0.0}
+    if state.get("identity") != identity:
+        state = {"target": key, "stages": {}, "spentUsd": 0.0}
+    state["identity"] = identity
+    state.setdefault("stages", {})
+    blocked = False
+    for stage in selected:
+        old = state["stages"].get(stage)
+        if isinstance(old, dict) and old.get("state") == "completed":
+            continue
+        if blocked:
+            state["stages"][stage] = {"state": "blocked", "reason": "upstream_stage_failed"}
+            continue
+        if float(state.get("spentUsd", 0.0)) >= float(budget_usd) and budget_usd > 0:
+            state["stages"][stage] = {"state": "blocked", "reason": "budget_exhausted"}
+            blocked = True
+            continue
+        try:
+            stage_target = dict(target)
+            for previous in state["stages"].values():
+                if isinstance(previous, dict):
+                    for field in (
+                        "sourcePath", "sourceBundle", "sourceBundleSha256", "findingIndex", "cacheKey",
+                        "artifactPath", "artifactPaths", "representation", "representationArtifactSha256",
+                        "sourceIrSha256", "bytecodeIrSha256", "decompilerInputSha256", "resultPath",
+                        "unifiedIR", "bytecodeIR", "decompilerInput", "invariantsPath", "harnessPath",
+                        "deployedTarget", "deploymentPath", "invariantAssertionsExecuted", "adapterRequiredCount",
+                    ):
+                        if previous.get(field) is not None:
+                            stage_target[field] = previous[field]
+            result = runner(stage, stage_target, stage_dir, mode)
+            if not isinstance(result, dict) or result.get("state") not in {"completed", "failed", "unavailable", "blocked"}:
+                raise PipelineError("stage runner returned invalid state")
+        except Exception as error:
+            result = {"state": "failed", "reason": f"runner_error:{type(error).__name__}"}
+        state["stages"][stage] = result
+        state["spentUsd"] = float(state.get("spentUsd", 0.0)) + float(result.get("costUsd", 0.0) or 0.0)
+        if result["state"] in {"failed", "blocked"}:
+            blocked = True
+    state["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    _atomic_json(state_path, state)
+    return state
+
+
 def run_pipeline(targets_path: str | Path, *, stages: list[str], mode: str = "local", budget_usd: float = 0.0,
                  output: str | Path, resume: str | Path | None = None,
-                 runner: Callable[[str, dict[str, Any], Path, str], dict[str, Any]] | None = None) -> dict[str, Any]:
+                 runner: Callable[[str, dict[str, Any], Path, str], dict[str, Any]] | None = None,
+                 target_concurrency: int | None = None) -> dict[str, Any]:
     if mode not in ("local", "fixed_block_fork", "replay"):
         raise PipelineError("mode 必须是 local、fixed_block_fork 或 replay")
     if isinstance(budget_usd, bool) or not isinstance(budget_usd, (int, float)) or budget_usd < 0:
         raise PipelineError("budget_usd 必须是非负数")
     selected = _validate_stages(list(stages))
     targets = _targets(Path(targets_path))
+    target_keys = [_target_key(target, index) for index, target in enumerate(targets)]
+    if len(set(target_keys)) != len(target_keys):
+        raise PipelineError("targets 的 id/address 规范化后必须唯一")
+    worker_count = _resolve_target_concurrency(target_concurrency, len(targets))
     root = Path(resume or output).resolve()
     root.mkdir(parents=True, exist_ok=True)
     run_id = root.name
     runner = runner or _default_runner
     aggregate = {"schemaVersion": 1, "runId": run_id, "mode": mode, "budgetUsd": float(budget_usd),
-                 "stages": selected, "targets": [], "state": "completed", "generatedAt": datetime.now(timezone.utc).isoformat()}
-    for index, target in enumerate(targets):
-        key = _target_key(target, index)
-        stage_dir = root / key
-        state_path = stage_dir / "state.json"
-        identity = {"targetSha256": _fingerprint(target), "mode": mode, "stages": selected}
-        state = _load_json(state_path) if state_path.is_file() else {"target": key, "stages": {}, "spentUsd": 0.0}
-        if state.get("identity") != identity:
-            state = {"target": key, "stages": {}, "spentUsd": 0.0}
-        state["identity"] = identity
-        state.setdefault("stages", {})
-        blocked = False
-        for stage in selected:
-            old = state["stages"].get(stage)
-            if isinstance(old, dict) and old.get("state") == "completed":
-                continue
-            if blocked:
-                state["stages"][stage] = {"state": "blocked", "reason": "upstream_stage_failed"}
-                continue
-            if float(state.get("spentUsd", 0.0)) >= float(budget_usd) and budget_usd > 0:
-                state["stages"][stage] = {"state": "blocked", "reason": "budget_exhausted"}
-                blocked = True
-                continue
-            try:
-                stage_target = dict(target)
-                for previous in state["stages"].values():
-                    if isinstance(previous, dict):
-                        for key in ("sourcePath", "sourceBundle", "sourceBundleSha256", "findingIndex", "cacheKey", "artifactPath", "artifactPaths", "representation", "representationArtifactSha256", "sourceIrSha256", "bytecodeIrSha256", "decompilerInputSha256", "resultPath",
-                                    "unifiedIR", "bytecodeIR", "decompilerInput", "invariantsPath", "harnessPath",
-                                    "deployedTarget", "deploymentPath", "invariantAssertionsExecuted", "adapterRequiredCount"):
-                            if previous.get(key) is not None:
-                                stage_target[key] = previous[key]
-                result = runner(stage, stage_target, stage_dir, mode)
-                if not isinstance(result, dict) or result.get("state") not in {"completed", "failed", "unavailable", "blocked"}:
-                    raise PipelineError("stage runner returned invalid state")
-            except Exception as error:
-                result = {"state": "failed", "reason": f"runner_error:{type(error).__name__}"}
-            state["stages"][stage] = result
-            state["spentUsd"] = float(state.get("spentUsd", 0.0)) + float(result.get("costUsd", 0.0) or 0.0)
-            if result["state"] in {"failed", "blocked"}:
-                blocked = True
-        state["updatedAt"] = datetime.now(timezone.utc).isoformat()
-        _atomic_json(state_path, state)
-        aggregate["targets"].append(state)
+                 "stages": selected, "targetConcurrency": worker_count, "targets": [], "state": "completed",
+                 "generatedAt": datetime.now(timezone.utc).isoformat()}
+    # Targets are independent; run them concurrently while retaining input order
+    # in the aggregate for deterministic reports and resumable consumers.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="pipeline-target") as executor:
+        futures = [executor.submit(_run_target, index, target, selected, root, mode, float(budget_usd), runner)
+                   for index, target in enumerate(targets)]
+        states = [future.result() for future in futures]
+    aggregate["targets"] = states
+    for state in states:
         stage_states = [item.get("state") for item in state["stages"].values()]
         if any(value in {"failed", "blocked"} for value in stage_states):
             aggregate["state"] = "partial"
@@ -355,12 +391,15 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--stages", required=True, help="逗号分隔的阶段")
     run.add_argument("--mode", default="local", choices=("local", "fixed_block_fork", "replay"))
     run.add_argument("--budget-usd", type=float, default=0.0)
+    run.add_argument("--target-concurrency", type=int, default=None,
+                     help="并行目标数（1-32，默认读取 PIPELINE_TARGET_CONCURRENCY 或 4）")
     run.add_argument("--output", required=True)
     run.add_argument("--resume")
     args = parser.parse_args(argv)
     try:
         result = run_pipeline(args.targets, stages=[item.strip() for item in args.stages.split(",") if item.strip()],
-                              mode=args.mode, budget_usd=args.budget_usd, output=args.output, resume=args.resume)
+                              mode=args.mode, budget_usd=args.budget_usd, output=args.output, resume=args.resume,
+                              target_concurrency=args.target_concurrency)
     except (PipelineError, OSError) as error:
         print(f"pipeline failed: {error}", file=sys.stderr)
         return 2

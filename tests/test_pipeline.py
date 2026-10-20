@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -154,6 +155,36 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(result["state"], "completed")
             self.assertTrue((output / "vault" / "source" / "verified-source.json").is_file())
             self.assertTrue((output / "vault" / "reports" / "report.sarif.json").is_file())
+
+    def test_targets_run_in_parallel_with_deterministic_aggregate_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            targets = root / "targets.json"
+            targets.write_text(json.dumps({"targets": [
+                {"id": "target-a", "address": "0x" + "11" * 20},
+                {"id": "target-b", "address": "0x" + "22" * 20},
+            ]}), encoding="utf-8")
+            barrier = threading.Barrier(2)
+            thread_ids = set()
+
+            def runner(stage, target, stage_dir, mode):
+                thread_ids.add(threading.get_ident())
+                barrier.wait(timeout=3)
+                return {"state": "completed"}
+
+            result = pipeline.run_pipeline(targets, stages=["recon"], output=root / "run",
+                                           runner=runner, target_concurrency=2)
+            self.assertEqual(result["targetConcurrency"], 2)
+            self.assertEqual([row["target"] for row in result["targets"]], ["target-a", "target-b"])
+            self.assertEqual(len(thread_ids), 2)
+
+    def test_target_concurrency_validation_is_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target_file = self.targets(directory)
+            for value in (0, 33, True):
+                with self.subTest(value=value), self.assertRaises(pipeline.PipelineError):
+                    pipeline.run_pipeline(target_file, stages=["recon"], output=Path(directory) / f"run-{value}",
+                                          target_concurrency=value)
 
 
 if __name__ == "__main__":

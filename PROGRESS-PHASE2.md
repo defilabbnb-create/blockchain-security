@@ -21,3 +21,10 @@
 | P3-2 | 报告四章升级 | DONE | 2026-10-21 | 报告专测通过；Markdown/HTML/SARIF 含四章与 `codeFlows` | 不变量、源码可信度、PoC、覆盖缺口独立保留状态 |
 | P3-3 | Web 样式与交互打磨 | DONE | 2026-10-21 | `npm run test:ui` passed；390/768/1440 视口 | 语义色、三态、移动端和键盘焦点 |
 | P4 | 全量验收 | DONE | 2026-10-21 | Node 331、Python 499、security 4/4、UI passed | `forge` 使用仓库绑定 `work/tools/forge`；`git diff --check` 通过 |
+
+## 阶段二收尾增强
+
+- 流水线目标级有界并行：默认 4 路，可通过 `PIPELINE_TARGET_CONCURRENCY` 或 `--target-concurrency 1..32` 调整；单目标阶段保持顺序，聚合结果保持输入顺序。
+- 快速测试入口支持多个关键词并行执行，`TEST_MAX_PARALLEL` 限制进程并发，失败状态正确汇总且无匹配时显式提示。
+- 四个审计视图增加“下一步”导航，移动端自动纵向排列；未改变 `/api/v1/*` 语义和只读边界。
+- 收尾验证：`npm run test:parallel`、pipeline 专测、`npm run test:security`、`npm run test:ui`、语法检查与 `git diff --check` 均通过。

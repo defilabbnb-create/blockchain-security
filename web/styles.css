@@ -69,6 +69,11 @@ a { color: inherit; text-decoration: none; }
 
 /* Four-layer audit workspace. The modules render into #audit-view without a framework. */
 .audit-view { min-width: 0; padding: 38px 0 30px; }
+.audit-next-step { display: flex; align-items: center; gap: 12px; margin-top: 18px; padding: 12px 14px; border: 1px solid var(--line); background: rgba(17, 31, 38, .72); color: var(--muted); font-size: 12px; }
+.audit-next-step strong { color: var(--text); font-weight: 600; white-space: nowrap; }
+.audit-next-step span { flex: 1; }
+.audit-next-step a { color: var(--teal); white-space: nowrap; }
+.audit-next-step a:hover { color: var(--text); }
 .audit-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding-bottom: 25px; border-bottom: 1px solid var(--line); }
 .audit-head h1 { margin: 11px 0 9px; font-size: clamp(28px, 3vw, 44px); line-height: 1.12; }
 .audit-head p { margin: 0; max-width: 760px; color: var(--muted); font-size: 13px; line-height: 1.7; }
@@ -649,6 +654,7 @@ progress::-moz-progress-bar { background: var(--teal); }
 .stage-summary-caveat { margin: 12px 0 0; color: var(--faint); font-size: 10px; line-height: 1.6; }
 @media (max-width: 1000px) { .stage-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .command-deck { padding-block: 20px; } .command-meta { display: none; } .deck-copy h1 { font-size: 28px; } .stage-summary { padding: 13px 14px 12px; } .stage-summary-head { align-items: flex-start; flex-direction: column; gap: 5px; margin-bottom: 9px; } .stage-summary-note { text-align: left; } .stage-summary-grid { grid-template-columns: 1fr; gap: 7px; } .stage-card { padding: 9px 10px 8px; } .stage-card-top { gap: 8px; } .stage-number, .stage-state { font-size: 9px; } .stage-card h4 { font-size: 12px; } .stage-card .stage-primary { min-height: 0; margin-top: 5px; font-size: 13px; line-height: 1.35; } .stage-facts { grid-template-columns: 1fr; gap: 3px; margin: 5px 0 6px; font-size: 10px; line-height: 1.35; } .stage-blocker { min-height: 0; margin-bottom: 5px; padding-left: 6px; font-size: 10px; line-height: 1.35; } .stage-summary-caveat { margin-top: 8px; font-size: 9px; line-height: 1.45; } }
+@media (max-width: 600px) { .audit-next-step { align-items: stretch; flex-direction: column; gap: 7px; padding: 11px 12px; } .audit-next-step a { padding-top: 3px; } }
 .runtime-stat { border-left: 1px solid var(--line); padding-left: 22px; display: grid; gap: 8px; }
 .runtime-stat > span { color: var(--muted); font-size: 12px; }
 .runtime-stat b { font: 20px var(--mono); }
