@@ -34,5 +34,6 @@
 - 反向 fixture 真实闸门已补齐：`bash scripts/verify-reverse-fixtures.sh` 验证 7 个 fixture，correct 全部通过、violating 全部断言失败，且两变体 assertion SHA-256 一致；缺 Forge 时 fail-closed。
 - 分层评测已修正：33 个样本含 3 个 clean 对照；IR 对账、不变量和 PoC 缺少证据时记录 `unavailableSampleCount` 与原因，不再当作零发现参与 precision/recall；`npm run eval -- --layers all` 当前 33/33 Slither 样本可评分，其余三层 33/33 明确 unavailable。最新报告为 `benchmark/results/20261021T050009.095195Z.json`。
 - 并发资源上限统一为 8 路；默认仍为 4 路，`TEST_MAX_PARALLEL` 与 `PIPELINE_TARGET_CONCURRENCY` 超过 8 会拒绝。
-- 真实合约离线 E2E 已执行 3 个已保存 verified-source 目标：`work/e2e/run-20261021-v5/summary.json`。三者均完成 collect、repr、static、report；recon、deploy、dynamic、decompile、review、poc 按缺失证据或配置显式记录 unavailable。该产物不是 fixed-block RPC 全链通过证明。
+- E2E 入口同步暴露 `--target-concurrency 1..8`，三合约离线重放和后续 fixed-block 重跑可直接复用同一并行限制。
+- 真实合约离线 E2E 已执行 3 个已保存 verified-source 目标：`work/e2e/run-20261021-v6/summary.json`，并以 `--target-concurrency 3` 验证并行参数已透传。三者均完成 collect、repr、static、report；recon、deploy、dynamic、decompile、review、poc 按缺失证据或配置显式记录 unavailable。该产物不是 fixed-block RPC 全链通过证明。
 - 仍待外部条件：提供安全的 fixed-block RPC 与部署参数后，重跑 3 个目标的 recon/deploy/dynamic；配置云审查后再启用 review。当前 3 个 clean 对照可开始估计静态检测误报，但样本量仍不足以代表真实合约总体。

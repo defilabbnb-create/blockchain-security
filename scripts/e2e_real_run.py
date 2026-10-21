@@ -43,7 +43,7 @@ def _load_targets(path: Path) -> dict[str, Any]:
 
 
 def run_e2e(targets_path: str | Path, output: str | Path, *, mode: str = "offline_replay",
-            budget_usd: float = 0.0) -> dict[str, Any]:
+            budget_usd: float = 0.0, target_concurrency: int | None = None) -> dict[str, Any]:
     """Execute all ten pipeline stages and write a compact review summary."""
     target_path = Path(targets_path).resolve(strict=True)
     payload = _load_targets(target_path)
@@ -60,6 +60,7 @@ def run_e2e(targets_path: str | Path, output: str | Path, *, mode: str = "offlin
         mode=pipeline_mode,
         budget_usd=budget_usd,
         output=output_path,
+        target_concurrency=target_concurrency,
     )
     summary_targets = []
     target_by_key = {pipeline._target_key(row, index): row for index, row in enumerate(payload["targets"])}
@@ -98,9 +99,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", default="offline_replay",
                         choices=("offline_replay", "replay", "local", "fixed_block_fork"))
     parser.add_argument("--budget-usd", type=float, default=0.0)
+    parser.add_argument("--target-concurrency", type=int, default=None,
+                        help="并行目标数（1-8，默认读取 PIPELINE_TARGET_CONCURRENCY 或 4）")
     args = parser.parse_args(argv)
     try:
-        result = run_e2e(args.targets, args.output, mode=args.mode, budget_usd=args.budget_usd)
+        result = run_e2e(args.targets, args.output, mode=args.mode, budget_usd=args.budget_usd,
+                         target_concurrency=args.target_concurrency)
     except (OSError, ValueError) as error:
         print(json.dumps({"state": "failed", "error": str(error)}, ensure_ascii=False))
         return 2
