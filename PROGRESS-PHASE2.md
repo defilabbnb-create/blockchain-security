@@ -11,7 +11,7 @@
 | P1-3 | AMM/跨合约断言 | DONE | 2026-10-21 | 4 模板、专测通过 | 缺依赖地址返回 adapter_required |
 | P1-4 | 角色识别 | DONE | 2026-10-21 | 8 项专测通过 | confidence 阈值 0.7，新增 AMM/质押 |
 | P1-5 | IR 函数粒度对账 | DONE | 2026-10-21 | 6 项专测通过 | PC/CFG 归属与 contract fallback |
-| P1-6 | 分层评测 | DONE | 2026-10-21 | 30 个样本；`--layers all` 输出四层指标 | IR/不变量/PoC 无增量价值时显式记录 `no_incremental_value_detected` |
+| P1-6 | 分层评测 | DONE | 2026-10-21 | 33 个样本（含 3 个 clean 对照）；`--layers all` 输出四层指标 | IR/不变量/PoC 缺证据时记录 unavailable，不误算为零发现 |
 | P1-7 | 部署适配器 | DONE | 2026-10-21 | 3 项专测通过 | 参数缺失和 forge 原文错误显式保留 |
 | P1-8 | Web 审计界面 | DONE | 2026-10-21 | `npm run test:ui` passed；无错误请求 | 四视图、三态、移动端 |
 | P2-1 | harness 真实断言生成 | DONE | 2026-10-21 | harness 专测与 `forge build` 通过 | smoke test 已删除；缺渲染器不进 forge |
@@ -32,7 +32,7 @@
 ## 后续闭环执行记录
 
 - 反向 fixture 真实闸门已补齐：`bash scripts/verify-reverse-fixtures.sh` 验证 7 个 fixture，correct 全部通过、violating 全部断言失败，且两变体 assertion SHA-256 一致；缺 Forge 时 fail-closed。
-- 分层评测已修正：IR 对账、不变量和 PoC 缺少证据时记录 `unavailableSampleCount` 与原因，不再当作零发现参与 precision/recall；`npm run eval -- --layers all` 当前 30/30 Slither 样本可评分，其余三层 30/30 明确 unavailable。
+- 分层评测已修正：33 个样本含 3 个 clean 对照；IR 对账、不变量和 PoC 缺少证据时记录 `unavailableSampleCount` 与原因，不再当作零发现参与 precision/recall；`npm run eval -- --layers all` 当前 33/33 Slither 样本可评分，其余三层 33/33 明确 unavailable。最新报告为 `benchmark/results/20261021T050009.095195Z.json`。
 - 并发资源上限统一为 8 路；默认仍为 4 路，`TEST_MAX_PARALLEL` 与 `PIPELINE_TARGET_CONCURRENCY` 超过 8 会拒绝。
 - 真实合约离线 E2E 已执行 3 个已保存 verified-source 目标：`work/e2e/run-20261021-v5/summary.json`。三者均完成 collect、repr、static、report；recon、deploy、dynamic、decompile、review、poc 按缺失证据或配置显式记录 unavailable。该产物不是 fixed-block RPC 全链通过证明。
 - 仍待外部条件：提供安全的 fixed-block RPC 与部署参数后，重跑 3 个目标的 recon/deploy/dynamic；配置云审查后再启用 review；为 benchmark 增加 clean 样本后再评估误报率。

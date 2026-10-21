@@ -11,14 +11,16 @@ SPEC.loader.exec_module(eval_pipeline)
 
 
 class EvaluationPipelineTests(unittest.TestCase):
-    def test_repository_benchmark_contains_twenty_source_bound_cases(self):
+    def test_repository_benchmark_contains_thirty_three_source_bound_cases(self):
         cases = sorted((ROOT / "benchmark" / "contracts").glob("*/ground-truth.json"))
-        self.assertEqual(len(cases), 30)
+        self.assertEqual(len(cases), 33)
+        clean_count = 0
         for path in cases:
             truth = json.loads(path.read_text())
-            self.assertFalse(truth["clean"])
+            clean_count += int(truth["clean"])
             self.assertTrue(truth["source"].startswith("https://"))
             self.assertTrue((path.parent / truth["sourceFile"]).is_file())
+        self.assertEqual(clean_count, 3)
 
     def add_case(self, root, case_id, truth, source="pragma solidity 0.8.19; contract Sample {}"):
         case = root / case_id

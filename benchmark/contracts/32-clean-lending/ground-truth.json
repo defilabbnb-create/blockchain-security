@@ -1,0 +1,7 @@
+{
+  "knownIssues": [],
+  "clean": true,
+  "source": "https://example.org/clean-lending",
+  "sourceFile": "CleanLending.sol",
+  "solcVersion": "0.8.19"
+}
