@@ -173,30 +173,64 @@ def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
 EVAL_LAYERS = ("slither", "ir-reconcile", "invariants", "poc")
 
 
-def _layer_observations(result: dict[str, Any], layer: str) -> list[str]:
-    """Read a layer-specific result without promoting missing evidence."""
+def _layer_evidence(result: dict[str, Any], layer: str) -> tuple[str, list[str], str | None]:
+    """Read one layer without turning absent evidence into a clean result.
+
+    A layer is scoreable only when the analyzer explicitly supplies a list of
+    observations.  An explicit empty list is valid evidence (measured zero),
+    while a missing field or an unavailable state is excluded from metrics.
+    """
     if layer == "slither":
-        return list(result.get("findings", [])) if isinstance(result.get("findings"), list) else []
-    value = result.get(layer)
+        value = result.get("findings")
+    else:
+        if layer not in result:
+            return "unavailable", [], "evidence_not_recorded"
+        value = result.get(layer)
     if isinstance(value, dict):
-        value = value.get("findings", value.get("issues", value.get("detected", [])))
-    return list(value) if isinstance(value, list) else []
+        state = value.get("state")
+        if state in {"unavailable", "not_performed", "failed", "partial"}:
+            reason = value.get("reason")
+            return "unavailable", [], reason if isinstance(reason, str) and reason else f"evidence_state:{state}"
+        for key in ("findings", "issues", "detected"):
+            if key in value:
+                value = value[key]
+                break
+        else:
+            return "unavailable", [], "evidence_shape_unknown"
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        return "unavailable", [], "evidence_shape_invalid"
+    return "scored", list(value), None
+
+
+def _layer_observations(result: dict[str, Any], layer: str) -> list[str]:
+    """Backward-compatible observation accessor for callers that need values."""
+    state, observations, _reason = _layer_evidence(result, layer)
+    return observations if state == "scored" else []
 
 
 def _layer_metrics(rows: list[dict[str, Any]], layer: str) -> dict[str, Any]:
     tp = fp = fn = 0
     sample_count = 0
+    unavailable_count = 0
+    reasons: dict[str, int] = {}
     for row in rows:
-        if layer not in row.get("layers", {}):
+        evidence = row.get("layers", {}).get(layer)
+        if not isinstance(evidence, dict):
+            continue
+        if evidence.get("state") != "scored":
+            unavailable_count += 1
+            reason = evidence.get("reason", "evidence_unavailable")
+            reasons[reason] = reasons.get(reason, 0) + 1
             continue
         sample_count += 1
-        counts = row["layers"][layer]
+        counts = evidence
         tp += counts["truePositiveCount"]
         fp += counts["falsePositiveCount"]
         fn += counts["falseNegativeCount"]
     precision = tp / (tp + fp) if tp + fp else None
     recall = tp / (tp + fn) if tp + fn else None
-    return {"sampleCount": sample_count, "truePositiveCount": tp,
+    return {"sampleCount": sample_count, "unavailableSampleCount": unavailable_count,
+            "unavailableReasons": reasons, "truePositiveCount": tp,
             "falsePositiveCount": fp, "falseNegativeCount": fn,
             "precision": precision, "recall": recall,
             "no_incremental_value_detected": sample_count > 0 and tp == 0}
@@ -221,18 +255,26 @@ def run_evaluation(contracts_dir: Path = CONTRACTS, results_dir: Path = RESULTS,
         input_hash = _source_hash(bundle)
         try:
             result = (analyzer or _analyze)(bundle, timeout)
-            detected = _layer_observations(result, "slither")
-            counts = score_case(known, detected)
-            tp += counts["truePositiveCount"]
-            fp += counts["falsePositiveCount"]
-            fn += counts["falseNegativeCount"]
+            slither_state, detected, slither_reason = _layer_evidence(result, "slither")
+            if "slither" in selected_layers and slither_state != "scored":
+                raise BenchmarkError(slither_reason or "slither evidence unavailable")
+            counts = score_case(known, detected) if slither_state == "scored" else {
+                "truePositiveCount": 0, "falsePositiveCount": 0, "falseNegativeCount": 0}
+            if "slither" in selected_layers:
+                tp += counts["truePositiveCount"]
+                fp += counts["falsePositiveCount"]
+                fn += counts["falseNegativeCount"]
+            layer_results = {}
+            for layer in selected_layers:
+                state, observations, reason = _layer_evidence(result, layer)
+                if state != "scored":
+                    layer_results[layer] = {"state": "unavailable", "reason": reason or "evidence_unavailable"}
+                    continue
+                layer_results[layer] = {"state": "scored", **score_case(known, observations),
+                                        "detectedIssues": sorted(set(observations))}
             rows.append({"caseId": case_dir.name, "state": "scored", "clean": truth["clean"],
                          "knownIssues": known, "detectedIssues": sorted(set(detected)),
-                         "inputSourceSha256": input_hash, "layers": {
-                             layer: score_case(known, _layer_observations(result, layer))
-                             | {"detectedIssues": sorted(set(_layer_observations(result, layer)))}
-                             for layer in selected_layers
-                         }, **counts})
+                         "inputSourceSha256": input_hash, "layers": layer_results, **counts})
         except BenchmarkError as error:
             rows.append({"caseId": case_dir.name, "state": "unscored", "reason": str(error),
                          "knownIssues": known, "inputSourceSha256": input_hash})

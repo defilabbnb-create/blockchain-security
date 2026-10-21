@@ -53,6 +53,59 @@ class EvaluationPipelineTests(unittest.TestCase):
             saved = json.loads(Path(report["resultPath"]).read_text())
             self.assertEqual(saved["samples"][0]["inputSourceSha256"], report["samples"][0]["inputSourceSha256"])
 
+    def test_missing_selected_layers_are_unavailable_not_zero_scores(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "contracts"
+            root.mkdir()
+            self.add_case(root, "case", {"knownIssues": ["bug"], "clean": False,
+                                           "source": "https://example.org/source"})
+
+            def analyzer(bundle, timeout):
+                return {"findings": ["bug"], "analysisState": "completed"}
+
+            report = eval_pipeline.run_evaluation(root, Path(directory) / "results",
+                                                  analyzer=analyzer,
+                                                  layers=["slither", "ir-reconcile", "invariants", "poc"])
+            self.assertEqual(report["layers"]["slither"]["sampleCount"], 1)
+            for layer in ("ir-reconcile", "invariants", "poc"):
+                metrics = report["layers"][layer]
+                self.assertEqual(metrics["sampleCount"], 0)
+                self.assertEqual(metrics["unavailableSampleCount"], 1)
+                self.assertEqual(metrics["unavailableReasons"], {"evidence_not_recorded": 1})
+                self.assertEqual(report["samples"][0]["layers"][layer]["state"], "unavailable")
+
+    def test_explicit_empty_layer_is_measured_zero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "contracts"
+            root.mkdir()
+            self.add_case(root, "case", {"knownIssues": ["bug"], "clean": False,
+                                           "source": "https://example.org/source"})
+
+            def analyzer(bundle, timeout):
+                return {"findings": [], "ir-reconcile": [], "invariants": [], "poc": []}
+
+            report = eval_pipeline.run_evaluation(root, Path(directory) / "results",
+                                                  analyzer=analyzer, layers=["ir-reconcile"])
+            metrics = report["layers"]["ir-reconcile"]
+            self.assertEqual(metrics["sampleCount"], 1)
+            self.assertEqual(metrics["unavailableSampleCount"], 0)
+            self.assertTrue(metrics["no_incremental_value_detected"])
+
+    def test_explicit_unavailable_layer_keeps_reason(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "contracts"
+            root.mkdir()
+            self.add_case(root, "case", {"knownIssues": ["bug"], "clean": False,
+                                           "source": "https://example.org/source"})
+
+            def analyzer(bundle, timeout):
+                return {"findings": ["bug"], "ir-reconcile": {"state": "unavailable",
+                                                                  "reason": "ir_missing"}}
+
+            report = eval_pipeline.run_evaluation(root, Path(directory) / "results",
+                                                  analyzer=analyzer, layers=["ir-reconcile"])
+            self.assertEqual(report["layers"]["ir-reconcile"]["unavailableReasons"], {"ir_missing": 1})
+
     def test_truth_requires_consistent_labels_and_https_source(self):
         for truth in (
             {"knownIssues": [], "clean": False, "source": "https://example.org"},

@@ -1,1 +1,1 @@
-{"role":"lending","template":"liquidation_does_not_create_bad_debt","expectedOnCorrect":"passed","expectedOnViolating":"violated"}
+{"role":"lending","template":"liquidation_does_not_create_bad_debt","params":{"badDebtField":"badDebt","toleranceBps":0},"expectedOnCorrect":"passed","expectedOnViolating":"violated"}

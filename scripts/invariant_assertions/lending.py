@@ -12,7 +12,7 @@ def render_health_factor_monotonic_on_borrow(params, context):
         read_expr(address, risk, "healthBefore"),
         "// The adapter borrows against the same account between snapshots.",
         read_expr(address, risk, "healthAfter"),
-        "require(healthAfter <= healthBefore, \"borrow increased the account health factor\");",
+        "require(healthAfter < healthBefore, \"borrow did not reduce the account health factor\");",
     ))
 
 
@@ -45,7 +45,8 @@ def render_interest_accrual_conserves_value(params, context):
         "// The adapter accrues interest between snapshots.",
         read_expr(address, debt, "debtAfter"),
         read_expr(address, supply, "supplyAfter"),
-        f"require(debtAfter * 10000 + supplyAfter * 10000 >= debtBefore * 10000 + supplyBefore * (10000 - {tolerance_bps}), \"interest accrual violated value conservation\");",
+        f"require(debtAfter >= debtBefore && supplyAfter >= supplyBefore, \"interest accrual decreased a tracked balance\");",
+        f"require((debtAfter - debtBefore) * 10000 <= (supplyAfter - supplyBefore) * (10000 + {tolerance_bps}), \"interest accrual exceeded supplied value\");",
     ))
 
 

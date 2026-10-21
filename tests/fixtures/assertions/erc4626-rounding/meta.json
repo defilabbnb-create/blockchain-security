@@ -1,1 +1,1 @@
-{"role":"erc4626","template":"rounding_direction_correct","expectedOnCorrect":"passed","expectedOnViolating":"violated"}
+{"role":"erc4626","template":"rounding_direction_correct","params":{"assetsField":"totalAssets","sharesField":"totalSupply","conversionField":"convertToShares","probeAssets":1},"expectedOnCorrect":"passed","expectedOnViolating":"violated"}

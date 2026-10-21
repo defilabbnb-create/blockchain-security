@@ -1,1 +1,1 @@
-{"role":"amm","template":"k_never_decreases","expectedOnCorrect":"passed","expectedOnViolating":"violated"}
+{"role":"amm","template":"k_never_decreases","params":{"reserve0Field":"reserve0","reserve1Field":"reserve1","toleranceBps":0},"expectedOnCorrect":"passed","expectedOnViolating":"violated"}

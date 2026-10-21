@@ -1,1 +1,1 @@
-{"role":"erc4626","template":"share_price_monotonic,withdraw_preserves_remaining_value","expectedOnCorrect":"passed","expectedOnViolating":"violated"}
+{"role":"erc4626","template":"share_price_monotonic,withdraw_preserves_remaining_value","params":{"assetsField":"totalAssets","sharesField":"totalSupply","toleranceBps":0},"expectedOnCorrect":"passed","expectedOnViolating":"violated"}

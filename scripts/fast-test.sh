@@ -4,8 +4,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 MAX_PARALLEL="${TEST_MAX_PARALLEL:-4}"
-if ! [[ "$MAX_PARALLEL" =~ ^[1-9][0-9]*$ ]] || (( MAX_PARALLEL > 32 )); then
-  echo "TEST_MAX_PARALLEL must be an integer from 1 to 32" >&2
+if ! [[ "$MAX_PARALLEL" =~ ^[1-9][0-9]*$ ]] || (( MAX_PARALLEL > 8 )); then
+  echo "TEST_MAX_PARALLEL must be an integer from 1 to 8" >&2
   exit 2
 fi
 

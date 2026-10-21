@@ -136,8 +136,8 @@ def _resolve_target_concurrency(value: int | None, target_count: int) -> int:
             value = int(raw)
         except (TypeError, ValueError) as error:
             raise PipelineError("target_concurrency 必须是正整数") from error
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1 or value > 32:
-        raise PipelineError("target_concurrency 必须是 1 到 32 的整数")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1 or value > 8:
+        raise PipelineError("target_concurrency 必须是 1 到 8 的整数")
     return min(value, max(1, target_count))
 
 
@@ -392,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--mode", default="local", choices=("local", "fixed_block_fork", "replay"))
     run.add_argument("--budget-usd", type=float, default=0.0)
     run.add_argument("--target-concurrency", type=int, default=None,
-                     help="并行目标数（1-32，默认读取 PIPELINE_TARGET_CONCURRENCY 或 4）")
+                     help="并行目标数（1-8，默认读取 PIPELINE_TARGET_CONCURRENCY 或 4）")
     run.add_argument("--output", required=True)
     run.add_argument("--resume")
     args = parser.parse_args(argv)

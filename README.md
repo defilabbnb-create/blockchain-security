@@ -153,13 +153,15 @@ npm run validate:vault-detector -- \
 
 ## 四层漏洞发现与加速
 
-流水线按目标有界并行，默认 4 路，可用 `PIPELINE_TARGET_CONCURRENCY` 或命令行 `--target-concurrency 1..32` 调整；单个目标内部仍按阶段顺序执行，失败只阻断该目标的后续阶段。
+流水线按目标有界并行，默认 4 路，可用 `PIPELINE_TARGET_CONCURRENCY` 或命令行 `--target-concurrency 1..8` 调整；单个目标内部仍按阶段顺序执行，失败只阻断该目标的后续阶段。
 
 ```bash
 python3 scripts/pipeline.py run --targets targets.json \
   --stages recon,collect,repr,static,deploy,dynamic,decompile,review,poc,report \
   --target-concurrency 4 --output work/pipeline-run
 ```
+
+并发硬上限为 8 路，超过上限会直接拒绝，避免同时抢占 Forge、CPU、内存和 RPC 配额。反向断言 fixture 可用真实 Forge 闸门验证：`bash scripts/verify-reverse-fixtures.sh --output work/reverse-fixtures-report.json`。评测使用 `npm run eval -- --layers all`；没有真实层证据的样本会标为 `unavailable`，不会被统计成“零发现”。
 
 1. **静态线索与业务性质**：每个源码分析 bundle 自动生成 `discovery-plan.json` 和可交互 `discovery-plan.html`，从调用效果和入口提示生成带源码位置、现有 modifiers、独立 oracle 的验证计划。函数名只用于选择待验证假设，不判断漏洞或权限缺失。
 2. **动态状态序列**：VaultV2 夹具用独立账本、整数舍入参考模型和多个角色逐步验证业务性质，记录真实动作与相邻转换；测试只有全部断言通过才列出 `propertyIds`，失败记录 `targetPropertyIds` 供定位，不把该场景所有性质都判为失败。

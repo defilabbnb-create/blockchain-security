@@ -1,1 +1,1 @@
-{"role":"lending","template":"health_factor_monotonic_on_borrow,interest_accrual_conserves_value","expectedOnCorrect":"passed","expectedOnViolating":"violated"}
+{"role":"lending","template":"health_factor_monotonic_on_borrow,interest_accrual_conserves_value","params":{"riskField":"healthFactor","debtField":"totalBorrows","supplyField":"totalSupply","toleranceBps":0},"expectedOnCorrect":"passed","expectedOnViolating":"violated"}

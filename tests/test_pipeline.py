@@ -181,7 +181,7 @@ class PipelineTests(unittest.TestCase):
     def test_target_concurrency_validation_is_bounded(self):
         with tempfile.TemporaryDirectory() as directory:
             target_file = self.targets(directory)
-            for value in (0, 33, True):
+            for value in (0, 9, True):
                 with self.subTest(value=value), self.assertRaises(pipeline.PipelineError):
                     pipeline.run_pipeline(target_file, stages=["recon"], output=Path(directory) / f"run-{value}",
                                           target_concurrency=value)

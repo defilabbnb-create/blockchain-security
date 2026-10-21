@@ -1,0 +1,1178 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-21T04:37:36+00:00",
+  "sampleCount": 30,
+  "scoredSampleCount": 30,
+  "unscoredSampleCount": 0,
+  "precision": 0.32,
+  "recall": 0.26666666666666666,
+  "falsePositiveCount": 17,
+  "truePositiveCount": 8,
+  "falseNegativeCount": 22,
+  "costUsd": 0.0,
+  "costScope": "本地静态分析；未调用云端模型",
+  "durationMs": 2103,
+  "layers": {
+    "slither": {
+      "sampleCount": 30,
+      "unavailableSampleCount": 0,
+      "unavailableReasons": {},
+      "truePositiveCount": 8,
+      "falsePositiveCount": 17,
+      "falseNegativeCount": 22,
+      "precision": 0.32,
+      "recall": 0.26666666666666666,
+      "no_incremental_value_detected": false
+    },
+    "ir-reconcile": {
+      "sampleCount": 0,
+      "unavailableSampleCount": 30,
+      "unavailableReasons": {
+        "evidence_not_recorded": 30
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0,
+      "precision": null,
+      "recall": null,
+      "no_incremental_value_detected": false
+    },
+    "invariants": {
+      "sampleCount": 0,
+      "unavailableSampleCount": 30,
+      "unavailableReasons": {
+        "evidence_not_recorded": 30
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0,
+      "precision": null,
+      "recall": null,
+      "no_incremental_value_detected": false
+    },
+    "poc": {
+      "sampleCount": 0,
+      "unavailableSampleCount": 30,
+      "unavailableReasons": {
+        "evidence_not_recorded": 30
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0,
+      "precision": null,
+      "recall": null,
+      "no_incremental_value_detected": false
+    }
+  },
+  "selectedLayers": [
+    "slither",
+    "ir-reconcile",
+    "invariants",
+    "poc"
+  ],
+  "metricsScope": "按显式层分别统计；缺少某层证据不计为通过，静态信号不代表确认漏洞",
+  "samples": [
+    {
+      "caseId": "01-arbitrary_location_write_simple",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "detectedIssues": [
+        "controlled-array-length",
+        "tautology"
+      ],
+      "inputSourceSha256": "bbbdb5367463fd3d1e11b2c569695d8b4734e3f88fcf937a34469a23121b01ab",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 2,
+          "falseNegativeCount": 1,
+          "detectedIssues": [
+            "controlled-array-length",
+            "tautology"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 2,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "02-incorrect_constructor_name1",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "d918731cebddf34ad385dd799691237e0ec1aab09f34ce7eb6bbe83ec86cd8c8",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "03-simple_suicide",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "d210fc21c6fdf273cfe2af52408b09ec82df89ebdea554b0c6356ad8b5d8796d",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "04-unprotected0",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "detectedIssues": [
+        "missing-zero-check"
+      ],
+      "inputSourceSha256": "8cfc8702a1a0afe407c2ea83e0c48e97909f66af1955ee5e1321f1dc2818a045",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 1,
+          "falseNegativeCount": 1,
+          "detectedIssues": [
+            "missing-zero-check"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "05-BECToken",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "5765dccd66c76ce39da689c314364dc380e0b6a984ad351c5f81eb8e35e749b9",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "06-integer_overflow_minimal",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "ca539303822841840452b2aa1bf8607dc7b46d32de7261e11861da1bc9c6e915",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "07-overflow_simple_add",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "641f6d9e0a4ff8f91c6340a38af72f4ab48749635f5ebb9815123c8ae2e0a46e",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "08-guess_the_random_number",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "bad_randomness"
+      ],
+      "detectedIssues": [
+        "access_control",
+        "incorrect-equality",
+        "time_manipulation"
+      ],
+      "inputSourceSha256": "d27ca8263b122093d6798f08c58264dd8aa552b7dd2e567aac648928be6e17f5",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 3,
+          "falseNegativeCount": 1,
+          "detectedIssues": [
+            "access_control",
+            "incorrect-equality",
+            "time_manipulation"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 3,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "09-old_blockhash",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "bad_randomness"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "fcacbdf48076326222bd952ab15d0ef3a1cb2bd0acf983b8ff6cdb90633c30e7",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "10-dos_address",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "denial_of_service"
+      ],
+      "detectedIssues": [
+        "controlled-array-length"
+      ],
+      "inputSourceSha256": "4f6960a84c3da5f791faf0111033b1d6a425e2575fb03b31acd248210497794e",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 1,
+          "falseNegativeCount": 1,
+          "detectedIssues": [
+            "controlled-array-length"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "11-dos_simple",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "denial_of_service"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "53dcfd96beb66caaefc66373d6cef836a0b1f0320d3e4421426cb26590fc2c0c",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "12-eth_tx_order_dependence_minimal",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "front_running"
+      ],
+      "detectedIssues": [
+        "events-maths"
+      ],
+      "inputSourceSha256": "ff02571525b00a0261fa98cc57fc00822124d72ce0039b4e46423523154bf5ed",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 1,
+          "falseNegativeCount": 1,
+          "detectedIssues": [
+            "events-maths"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "13-etherstore",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "bffe7255c351724c3ab15f6c4c4909a3d756650791360e86cf2f71c48046aa79",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "14-reentrance",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [
+        "reentrancy"
+      ],
+      "inputSourceSha256": "78ebf8f92bb978386a96fb1b4bec2ad2aaa77916a6ed7e49c2ae74c92f466ea4",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 1,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 0,
+          "detectedIssues": [
+            "reentrancy"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 1,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "15-reentrancy_simple",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [
+        "reentrancy"
+      ],
+      "inputSourceSha256": "98b4c8b45c2e6711b1c58fb6991375f698a66f148799ca7aff6e27db8a9803e1",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 1,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 0,
+          "detectedIssues": [
+            "reentrancy"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 1,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "16-simple_dao",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [
+        "controlled-array-length",
+        "reentrancy"
+      ],
+      "inputSourceSha256": "bcd0fdfad9f6594fdbc940967321856490ed4bffbe8b6ab9c75c6b85072528a5",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 1,
+          "falsePositiveCount": 1,
+          "falseNegativeCount": 0,
+          "detectedIssues": [
+            "controlled-array-length",
+            "reentrancy"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 1,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "17-timed_crowdsale",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "time_manipulation"
+      ],
+      "detectedIssues": [
+        "time_manipulation"
+      ],
+      "inputSourceSha256": "52fa5d86b7ee71874f54c1973562f0ff76b58a0a2ba2371e5193f783bd30222e",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 1,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 0,
+          "detectedIssues": [
+            "time_manipulation"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 1,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "18-lotto",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "unchecked_low_level_calls"
+      ],
+      "detectedIssues": [
+        "access_control",
+        "unchecked_low_level_calls",
+        "uninitialized-state"
+      ],
+      "inputSourceSha256": "09c8886de37a52a987d1a40588bd8fe352b8bb8bbfb9960caf8a6664a893b223",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 1,
+          "falsePositiveCount": 2,
+          "falseNegativeCount": 0,
+          "detectedIssues": [
+            "access_control",
+            "unchecked_low_level_calls",
+            "uninitialized-state"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 1,
+      "falsePositiveCount": 2,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "19-mishandled",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "unchecked_low_level_calls"
+      ],
+      "detectedIssues": [
+        "missing-zero-check",
+        "unchecked_low_level_calls"
+      ],
+      "inputSourceSha256": "ac992f26a8a567c74fe30e0f48d0c421d3f483ff431f6672a6dae5dd6c9e168d",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 1,
+          "falsePositiveCount": 1,
+          "falseNegativeCount": 0,
+          "detectedIssues": [
+            "missing-zero-check",
+            "unchecked_low_level_calls"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 1,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "20-reentrancy_cross_function",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [
+        "controlled-array-length",
+        "reentrancy"
+      ],
+      "inputSourceSha256": "0196d033850b295690465d0f7d2baae8b3570df29c9d03d507496b45155a84e5",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 1,
+          "falsePositiveCount": 1,
+          "falseNegativeCount": 0,
+          "detectedIssues": [
+            "controlled-array-length",
+            "reentrancy"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 1,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 0
+    },
+    {
+      "caseId": "21-erc4626-donation",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "erc4626_donation"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "c65fb8a7560db1a1ec6b23ad6b5d34fa447e72febbac3c8731df4b459b5e05b1",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "22-erc4626-rounding",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "erc4626_rounding"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "2a65f9c2da2fef439304aa61a4e1e798bf3ac41a35d881fd5e972a69df7a416f",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "23-lending-health-factor",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "lending_health_factor"
+      ],
+      "detectedIssues": [
+        "uninitialized-state"
+      ],
+      "inputSourceSha256": "da7b88c9747175d2eae448b19df074d019bfa7658f1f5895f65c446ef8d2cd46",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 1,
+          "falseNegativeCount": 1,
+          "detectedIssues": [
+            "uninitialized-state"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "24-lending-bad-debt",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "lending_bad_debt"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "ae9dec6e7c03e9100f9262760f15f293a288c46bfc914026cdf4b2328094897e",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "25-amm-k-decrease",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "amm_k_decrease"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "c2aa2d2c6cf4f8b7ede60a5ac69633ab649f0d0d0a414ea5c7dfc30607037981",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "26-amm-fee",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "amm_fee_accounting"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "83d8de17cc5b3b5b7bce29a4637087926a6e79571330c2cf1b777f1f45d50e5f",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "27-oracle-stale",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "oracle_stale_price"
+      ],
+      "detectedIssues": [],
+      "inputSourceSha256": "0d34cc2d1984e820eeaf026926a7e9b545a332f7c74324a345fef97a855eb5df",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 1,
+          "detectedIssues": []
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "28-cross-call",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "unchecked_cross_contract_assumption"
+      ],
+      "detectedIssues": [
+        "missing-zero-check"
+      ],
+      "inputSourceSha256": "796b73d83823023a234fe51756faabda0776665554fb4d7fbd1142ab1e2ba89b",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 1,
+          "falseNegativeCount": 1,
+          "detectedIssues": [
+            "missing-zero-check"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "29-delegatecall",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "unprotected_upgrade"
+      ],
+      "detectedIssues": [
+        "controlled-delegatecall",
+        "missing-zero-check"
+      ],
+      "inputSourceSha256": "c664f6ab2814325b9ec7cded9376e1bfda500fb5e7fe7d4733ed2cad43c20895",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 0,
+          "falsePositiveCount": 2,
+          "falseNegativeCount": 1,
+          "detectedIssues": [
+            "controlled-delegatecall",
+            "missing-zero-check"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 0,
+      "falsePositiveCount": 2,
+      "falseNegativeCount": 1
+    },
+    {
+      "caseId": "30-reentrancy-withdraw",
+      "state": "scored",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "detectedIssues": [
+        "reentrancy"
+      ],
+      "inputSourceSha256": "1abffe17b53de8d20aa8690bfa62cdf8b806aebdd877a8ec6fbbd7a7e70033d1",
+      "layers": {
+        "slither": {
+          "state": "scored",
+          "truePositiveCount": 1,
+          "falsePositiveCount": 0,
+          "falseNegativeCount": 0,
+          "detectedIssues": [
+            "reentrancy"
+          ]
+        },
+        "ir-reconcile": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "invariants": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        },
+        "poc": {
+          "state": "unavailable",
+          "reason": "evidence_not_recorded"
+        }
+      },
+      "truePositiveCount": 1,
+      "falsePositiveCount": 0,
+      "falseNegativeCount": 0
+    }
+  ]
+}

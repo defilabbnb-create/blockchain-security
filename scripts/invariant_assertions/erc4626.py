@@ -70,10 +70,20 @@ def render_rounding_direction_correct(params, context):
     if checked is None:
         return None
     address, _, (assets, shares) = checked
+    conversion_field = params.get("conversionField", "convertToShares")
+    probe_assets = params.get("probeAssets", 1)
+    if not isinstance(conversion_field, str) or not conversion_field.isidentifier():
+        return None
+    if isinstance(probe_assets, bool) or not isinstance(probe_assets, int) or probe_assets <= 0:
+        return None
     return "\n".join((
         read_expr(address, assets, "roundingAssets"),
         read_expr(address, shares, "roundingShares"),
-        "require(roundingAssets == 0 || roundingShares == 0 || roundingAssets * roundingShares >= 0, \"rounding direction could not be established\");",
+        f"(bool roundingOk, bytes memory roundingData) = address({address}).staticcall(abi.encodeWithSignature(\"{conversion_field}(uint256)\", {probe_assets}));",
+        "require(roundingOk && roundingData.length >= 32, \"rounding conversion getter unavailable\");",
+        "uint256 observedShares = abi.decode(roundingData, (uint256));",
+        f"uint256 expectedShares = roundingAssets == 0 ? 0 : {probe_assets} * roundingShares / roundingAssets;",
+        "require(observedShares <= expectedShares, \"rounding direction favored the caller\");",
     ))
 
 

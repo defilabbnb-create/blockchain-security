@@ -4,13 +4,12 @@ pragma solidity ^0.8.20;
 contract Pool {
     mapping(address => uint256) public collateral;
     mapping(address => uint256) public debt;
-    uint256 public totalCash;
+    uint256 public totalCash = 1000;
+    uint256 public totalBorrows;
+    uint256 public totalSupply;
+    uint256 public healthFactor = type(uint256).max;
 
-    function depositCollateral(uint256 amount) external { collateral[msg.sender] += amount; }
+    function depositCollateral(uint256 amount) external { collateral[msg.sender] += amount; totalSupply += amount; }
     function borrow(uint256 amount) external { totalCash -= amount; }
-    function healthFactor(address account) external view returns (uint256) {
-        if (debt[account] == 0) return type(uint256).max;
-        return collateral[account] * 1e18 / debt[account];
-    }
-    function accrue(uint256 interest) external { totalCash += interest * 2; }
+    function accrue(uint256 interest) external { totalBorrows += interest * 2; totalSupply += interest; totalCash += interest * 2; }
 }
