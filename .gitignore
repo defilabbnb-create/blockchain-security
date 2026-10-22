@@ -18,3 +18,9 @@ flare-scan/tools/*-slither.json
 work/
 reports/
 .DS_Store
+
+# 本地生成物：语料与训练语料快照、体量大，不入库（work/ 之外的）。
+training-data/
+benchmark/results/
+benchmark/dynamic/
+benchmark/contracts/*/poc-result.json

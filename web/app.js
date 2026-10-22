@@ -2,6 +2,7 @@ import * as overviewView from './views/overview.js';
 import * as protocolView from './views/protocol.js';
 import * as findingView from './views/finding.js';
 import * as executionView from './views/execution.js';
+import * as corpusView from './views/corpus.js';
 import { getJSON } from './lib/api.js';
 
 const state = { snapshot: null, showAllChains: false, showAllFindings: false, selectedPath: null, asking: false, lastVulnRender: '', taskPage: null, taskCursors: [null], taskPageIndex: 0, loadingTasks: false, workspaceRoute: null, workspaceRequest: 0 };
@@ -902,6 +903,56 @@ async function renderTasksWorkspace() {
   return workspaceFrame({ kicker: '任务 / 队列', title: '任务中心', description: '所有状态来自任务状态存储；打开任务可查看检查点、错误和归档报告。', body: workspaceCard('任务队列', rows), footer: `一致性版本 ${workspaceValue(result.data?.consistency?.revision ?? '未提供')} · ${workspaceValue(result.data?.page?.hasMore ? '结果已分页' : '当前页已完整')}` });
 }
 
+/* 离线语料控制台（LaneW）。轮询间隔 4 秒；接口无数据时保持空状态，不崩溃。 */
+const CORPUS_POLL_INTERVAL_MS = 4000;
+let corpusPollTimer = null;
+
+function stopCorpusPolling() {
+  if (corpusPollTimer) clearInterval(corpusPollTimer);
+  corpusPollTimer = null;
+}
+
+/** 刷新语料面板内容；轮询期间任何读取失败都保持当前视图，不清空页面。 */
+async function refreshCorpusWorkspace() {
+  const view = $('#workspace-view');
+  if (!view || state.workspaceRoute?.name !== 'corpus') return;
+  const requestId = ++state.workspaceRequest;
+  let html;
+  try { html = await renderCorpusWorkspace(); }
+  catch { return; }
+  if (requestId !== state.workspaceRequest) return;
+  if (!view.isConnected) return;
+  view.innerHTML = html;
+  wireWorkspaceForms();
+}
+
+function startCorpusPolling() {
+  stopCorpusPolling();
+  corpusPollTimer = setInterval(() => { void refreshCorpusWorkspace(); }, CORPUS_POLL_INTERVAL_MS);
+}
+
+async function renderCorpusWorkspace() {
+  const [overview, filters] = await Promise.all([
+    optionalResource('/api/v1/corpus/overview'),
+    optionalResource('/api/v1/corpus/filters'),
+  ]);
+  if (!overview.ok) {
+    return corpusView.render({
+      data: {
+        corpus: {},
+        heartbeat: {},
+        chainCollection: { code: 'chain_collection_disabled' },
+        tasks: [],
+        categories: [],
+        readError: overview.error.message,
+      },
+    });
+  }
+  const payload = overview.data?.data || {};
+  const categories = filters.ok && Array.isArray(filters.data?.data?.categories) ? filters.data.data.categories : [];
+  return corpusView.render({ ...payload, categories });
+}
+
 function renderArchivedReportSummary(report) {
   const findings = Array.isArray(report?.findings) ? report.findings.filter((item) => item && typeof item === 'object') : null;
   const confirmed = findings?.filter((item) => item.confirmed === true).length;
@@ -1279,6 +1330,42 @@ async function renderAiWorkspace() {
 }
 
 function wireWorkspaceForms() {
+  for (const button of document.querySelectorAll('#workspace-view [data-corpus-action]')) button.addEventListener('click', async () => {
+    const laneId = button.dataset.corpusLane;
+    const action = button.dataset.corpusAction;
+    const result = button.closest('.corpus-lane-card')?.querySelector('.corpus-action-result');
+    if (!laneId || !action || button.disabled) return;
+    if (action === 'apply-filter') return;
+    button.disabled = true;
+    if (result) { result.textContent = '正在提交…'; result.dataset.state = 'loading'; }
+    try {
+      const path = `/api/v1/corpus/tasks/${encodeURIComponent(laneId)}/${encodeURIComponent(action)}`;
+      const body = action === 'start' ? { category: $('#workspace-view [data-corpus-category]')?.value || undefined } : {};
+      await apiJSON(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      if (result) { result.textContent = `已提交「${button.textContent}」`; result.dataset.state = 'ready'; }
+      await refreshCorpusWorkspace();
+    } catch (error) {
+      if (result) { result.textContent = `操作失败：${error.message}`; result.dataset.state = 'error'; }
+      button.disabled = false;
+    }
+  });
+  for (const button of document.querySelectorAll('#workspace-view [data-corpus-apply-filter]')) button.addEventListener('click', async () => {
+    const result = $('#workspace-view [data-corpus-filter-result]');
+    const laneId = $('#workspace-view [data-corpus-filter-lane]')?.value || 'static';
+    const category = $('#workspace-view [data-corpus-category]')?.value || '';
+    button.disabled = true;
+    if (result) { result.textContent = '正在创建任务…'; result.dataset.state = 'loading'; }
+    try {
+      await apiJSON('/api/v1/corpus/tasks', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(category ? { laneId, category } : { laneId }),
+      });
+      if (result) { result.textContent = '已按过滤条件创建任务'; result.dataset.state = 'ready'; }
+      await refreshCorpusWorkspace();
+    } catch (error) {
+      if (result) { result.textContent = `创建失败：${error.message}`; result.dataset.state = 'error'; }
+    } finally { button.disabled = false; }
+  });
   for (const button of document.querySelectorAll('#workspace-view [data-task-action]')) button.addEventListener('click', async () => {
     const controls = button.closest('.task-operator-actions');
     const result = controls?.querySelector('.task-action-result');
@@ -1392,7 +1479,7 @@ function parseWorkspaceRoute() {
   try { raw = decodeURIComponent(location.hash.replace(/^#/, '') || 'map'); }
   catch { return { name: 'overview', anchor: 'overview' }; }
   const [name, id] = raw.split('/');
-  if (['map', 'protocols', 'discoveries', 'execution', 'projects', 'collection', 'scan', 'tasks', 'findings-view', 'finding', 'dynamic', 'reverse', 'permissions', 'replay', 'ai', 'task'].includes(name)) return { name, id: id || null };
+  if (['map', 'protocols', 'discoveries', 'execution', 'projects', 'collection', 'scan', 'tasks', 'findings-view', 'finding', 'dynamic', 'reverse', 'permissions', 'replay', 'ai', 'task', 'corpus'].includes(name)) return { name, id: id || null };
   return { name: 'overview', anchor: name };
 }
 async function renderAuditRoute(route) {
@@ -1440,6 +1527,7 @@ async function routeWorkspace() {
   const route = parseWorkspaceRoute();
   state.workspaceRoute = route.name === 'overview' ? null : route;
   setActiveView(route);
+  if (route.name !== 'corpus') stopCorpusPolling();
   if (auditViews[route.name]) {
     try { await renderAuditRoute(route); }
     catch (error) {
@@ -1472,11 +1560,13 @@ async function routeWorkspace() {
     else if (route.name === 'permissions') html = await renderPermissionsWorkspace();
     else if (route.name === 'replay') html = await renderReplayWorkspace();
     else if (route.name === 'ai') html = await renderAiWorkspace();
+    else if (route.name === 'corpus') html = await renderCorpusWorkspace();
   } catch (error) { html = workspaceFrame({ kicker: '实时资源', title: '读取失败', description: error.message, body: workspaceStatus(error.message, 'error') }); }
   if (requestId !== state.workspaceRequest) return;
   workspace.innerHTML = html || workspaceStatus('没有匹配的视图。', 'error');
   wireWorkspaceForms();
   if (route.name === 'findings-view') renderFindingRows(state.workspaceFindings || []);
+  if (route.name === 'corpus') startCorpusPolling();
 }
 
 document.addEventListener('audit:navigate', (event) => {

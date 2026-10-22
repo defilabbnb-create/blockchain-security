@@ -24,3 +24,12 @@
 - 采集、模型源码审查、Slither、本地复现分别计数；接口请求量不代表分析量。
 - 当前任务以 `work/defi-campaign.json` 及独立原始证据目录为准；心跳新鲜且 PID 存活才能称仍在运行。
 - 模型源码审查可能仅覆盖明确记录的摘录；completed 仅表示采集窗口结束，不能当作完整审计通过。
+
+## 离线语料控制面（LaneW）
+
+- 离线语料任务由 `src/corpus-control.js` 管理，五条泳道：static / dynamic / decompiler / fetch / eval；接口前缀 `/api/v1/corpus`，前端为侧边栏「离线语料控制台」。状态持久化在 `work/corpus-control/tasks.json`（原子写入），证据报告为 `work/lane-W-report.json`。
+- 链上采集在离线阶段一律后端拒绝（`chain_collection_disabled`）；`POST /api/v1/corpus/chain-collection/start`、`POST /api/v1/collection`、`POST /api/v1/tasks`（采集语义类型）都返回 HTTP 400。放开只能由用户显式设置 `CORPUS_CHAIN_COLLECTION=1`。
+- 暂停只在样本边界生效（`pauseSemantics=sample_boundary`），当前样本跑完才挂起；只有停止才会终止子进程（先进程组 SIGTERM，5 秒后 SIGKILL）。
+- 心跳阈值 120 秒；心跳过期或 PID 已死的任务不显示为 running，恢复时标为 interrupted。语料统计来自本地已保存内容，不是实时任务。
+- 静态泳道只用 `work/compiler-cache` 已缓存的 soljson，缺失记 `failed` 且不联网下载；评测泳道以 `--layers slither` 运行，输出是静态告警线索，不是漏洞确认。
+- 四泳道目前只做过单样本级验证，未跑完整批次；引用计数时必须说明这一点。

@@ -24,11 +24,12 @@ import {
   taskEnvelope,
   taskErrorBody,
 } from './task-api-v1.js';
+import { CorpusControlPlane, corpusErrorBody, isChainCollectionStart } from './corpus-control.js';
 
 const WEB_ROOT = join(PROJECT_ROOT, 'web');
 const loopback = new Set(['localhost', '127.0.0.1', '[::1]']);
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
-const assets = new Set(['/', '/index.html', '/styles.css', '/app.js', '/lib/api.js', '/lib/format.js', '/lib/severity.js', '/views/overview.js', '/views/protocol.js', '/views/finding.js', '/views/execution.js']);
+const assets = new Set(['/', '/index.html', '/styles.css', '/app.js', '/lib/api.js', '/lib/format.js', '/lib/severity.js', '/views/overview.js', '/views/protocol.js', '/views/finding.js', '/views/execution.js', '/views/corpus.js']);
 const securityHeaders = {
   'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
@@ -67,6 +68,10 @@ const API_V1_CAPABILITIES = Object.freeze({
   rules: { state: 'available', executionState: 'available', path: '/api/v1/rules' },
   invariants: { state: 'available', executionState: 'available', path: '/api/v1/invariants' },
   reports: { state: 'available', executionState: 'available', path: '/api/v1/reports', formats: ['json', 'sarif', 'html'], formatQuery: 'format' },
+  corpus: {
+    state: 'available', executionState: 'available', path: '/api/v1/corpus/overview',
+    limitation: '只做离线语料任务控制；链上采集启动请求由后端拒绝，不在本阶段开放。',
+  },
 });
 
 function sendJson(response, status, value) {
@@ -927,8 +932,11 @@ async function callExternalCloudAi(question, context, signal, configuration) {
   };
 }
 
-export function startServer({ port = Number(process.env.PORT || 8788), host = process.env.HOST || '127.0.0.1', snapshotProvider = buildSnapshot, explanationProvider = null, eventIntervalMs = 15000, readTimeoutMs = 5000, sourceFingerprint = null, taskStore = null, resourceStore = null, resourceOperations = null, resourceArtifactRoots = [join(PROJECT_ROOT, 'work'), join(PROJECT_ROOT, 'flare-scan', 'reports'), join(PROJECT_ROOT, 'flare-scan', 'contracts')], evidenceRoot = ANALYSIS_EVIDENCE_ROOT, reviewAuditPath = join(PROJECT_ROOT, 'work', 'review-audit.jsonl'), eventSink = null, startCollectionWorker = false, collectionWorkerId = null, collectionWorkerConcurrency = 1, collectionWorkerPollIntervalMs = 250, collectionWorkerLeaseTtlMs = 45_000, collectionWorkerMaxHandlerRuntimeMs = 300_000, collectionWorkerRpcRequest = null } = {}) {
+export function startServer({ port = Number(process.env.PORT || 8788), host = process.env.HOST || '127.0.0.1', snapshotProvider = buildSnapshot, explanationProvider = null, eventIntervalMs = 15000, readTimeoutMs = 5000, sourceFingerprint = null, taskStore = null, resourceStore = null, resourceOperations = null, resourceArtifactRoots = [join(PROJECT_ROOT, 'work'), join(PROJECT_ROOT, 'flare-scan', 'reports'), join(PROJECT_ROOT, 'flare-scan', 'contracts')], evidenceRoot = ANALYSIS_EVIDENCE_ROOT, reviewAuditPath = join(PROJECT_ROOT, 'work', 'review-audit.jsonl'), eventSink = null, startCollectionWorker = false, collectionWorkerId = null, collectionWorkerConcurrency = 1, collectionWorkerPollIntervalMs = 250, collectionWorkerLeaseTtlMs = 45_000, collectionWorkerMaxHandlerRuntimeMs = 300_000, collectionWorkerRpcRequest = null, chainCollectionEnabled = null } = {}) {
   if (!loopback.has(host)) throw new Error('本地服务只能绑定 loopback 地址');
+  // 链上采集守卫：离线阶段的服务实例默认拒绝创建链上采集任务。
+  // 库调用方保持历史行为（默认不拦截），命令行服务显式传入 chainCollectionEnabled。
+  const chainCollectionOn = chainCollectionEnabled === null ? true : chainCollectionEnabled === true;
   const started = Date.now();
   const instanceId = randomUUID();
   const clients = new Set();
@@ -942,6 +950,7 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
   let taskEventSyncPromise = null;
   const metrics = { total: 0, failures: 0, clientErrors: 0, active: 0, snapshotReads: 0, snapshotFailures: 0, cloudAiCalls: 0, cloudAiFailures: 0, cloudAiActive: 0, lastSnapshotAt: null, lastSnapshotError: null };
   const operations = resourceOperations || new ResourceApiOperations({ path: join(PROJECT_ROOT, 'work', 'resource-api-state.json'), auditPath: reviewAuditPath });
+  const corpusControl = new CorpusControlPlane({ projectRoot: PROJECT_ROOT });
   const projectResourceApi = createResourceApiV1({ store: resourceStore || createTaskResourceStore(taskStore, evidenceRoot), artifactRoots: resourceArtifactRoots });
   const collectionWorkerRuntime = {
     enabled: startCollectionWorker === true,
@@ -1192,14 +1201,31 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
       if ([...requestUrl.searchParams.keys()].length) return sendJson(response, 400, { apiVersion: 'v1', schemaVersion: 1, error: { code: 'unknown_query_parameter', message: '能力清单不接受查询参数' } });
       return sendJson(response, 200, { apiVersion: 'v1', schemaVersion: 1, generatedAt: new Date().toISOString(), capabilities: { ...API_V1_CAPABILITIES, collection: { ...API_V1_CAPABILITIES.collection, runtimeState: workerStatus().state } }, workers: { collection: workerStatus() }, interpretation: 'executionState 表示已有处理器实现；runtimeState 和 workers.collection 表示当前进程是否正在运行。不可用或未生成的数据保持显式缺失状态。' });
     }
+    if (pathname === '/api/v1/corpus' || pathname.startsWith('/api/v1/corpus/')) {
+      const requestId = randomUUID();
+      try {
+        const body = ['POST', 'PUT', 'PATCH'].includes(request.method) ? await parseBody(request) : null;
+        const result = await corpusControl.handle(request, requestUrl, body);
+        if (!result) return sendJson(response, 404, { apiVersion: 'v1', schemaVersion: 1, generatedAt: new Date().toISOString(), error: { code: 'not_found', message: '语料控制台接口不存在', requestId } });
+        return sendJson(response, result.status, result.body);
+      } catch (error) {
+        const failure = corpusErrorBody(error, requestId);
+        return sendJson(response, failure.status, failure.body);
+      }
+    }
     if (/^\/api\/v1\/(projects|contracts|collection|collections|bytecode|decompile|decompilations)(?:\/|$)/.test(pathname)) {
       const requestId = randomUUID();
       try {
         const body = request.method === 'POST' ? await parseBody(request, 12 * 1024 * 1024) : null;
+        // 离线阶段后端拒绝链上采集启动请求：前端置灰只是提示，真正的拒绝在后端。
+        if (!chainCollectionOn && isChainCollectionStart(pathname, request.method, body)) {
+          throw new TaskApiV1Error('chain_collection_disabled', '离线阶段不开放链上采集，链上采集启动请求已被后端拒绝。', 400);
+        }
         const result = await projectResourceApi({ method: request.method, pathname, searchParams: requestUrl.searchParams, body, requestId });
         if (result) return sendJson(response, result.status, result.body);
       } catch (error) {
-        const failure = resourceErrorBody(error, requestId);
+        const wrapped = error instanceof TaskApiV1Error ? error : new TaskApiV1Error('invalid_request', String(error?.message || '资源请求失败'), error?.status || 400);
+        const failure = taskErrorBody(wrapped, requestId);
         return sendJson(response, failure.status, failure.body);
       }
     }
@@ -1265,6 +1291,10 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
       const requestId = randomUUID();
       try {
         const body = ['POST', 'PUT', 'PATCH'].includes(request.method) ? await parseBody(request) : null;
+        // 离线阶段后端拒绝链上采集任务创建：类型命中采集语义时直接拒绝。
+        if (!chainCollectionOn && isChainCollectionStart(pathname, request.method, body)) {
+          throw new TaskApiV1Error('chain_collection_disabled', '离线阶段不开放链上采集，链上采集启动请求已被后端拒绝。', 400);
+        }
         const result = await taskRouteV1(taskStore, request, requestUrl, body, evidenceRoot, withReportReadSlot, withArtifactReadSlot);
         if (!result) return sendJson(response, 404, taskEnvelope({ error: { code: 'not_found', message: '任务接口不存在', requestId } }));
         return sendJson(response, result.status, result.body);
@@ -1392,7 +1422,15 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const taskStore = new TaskStateStore({ path: join(PROJECT_ROOT, 'work', 'task-state.json') });
-  const workerEnabled = !['0', 'false', 'off', 'no'].includes(String(process.env.WEB_COLLECTION_WORKER || '1').toLowerCase());
-  const server = startServer({ sourceFingerprint: await runtimeFingerprint(), taskStore, startCollectionWorker: workerEnabled });
+  // 离线阶段（代号 LaneW）：默认不启动链上采集 worker，且后端拒绝链上采集启动请求。
+  // 需要显式设置 WEB_COLLECTION_WORKER=1 与 CORPUS_CHAIN_COLLECTION=1 才放开。
+  const workerEnabled = ['1', 'true', 'on', 'yes'].includes(String(process.env.WEB_COLLECTION_WORKER || '').toLowerCase());
+  const chainEnabled = ['1', 'true', 'on', 'yes'].includes(String(process.env.CORPUS_CHAIN_COLLECTION || '').toLowerCase());
+  const server = startServer({
+    sourceFingerprint: await runtimeFingerprint(),
+    taskStore,
+    startCollectionWorker: workerEnabled,
+    chainCollectionEnabled: chainEnabled,
+  });
   for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { void server.stop().finally(() => process.exit(0)); });
 }

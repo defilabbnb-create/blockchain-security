@@ -94,6 +94,23 @@ node scripts/run-analysis-tasks.mjs enqueue --source /absolute/verified-bundle.j
 node scripts/run-analysis-tasks.mjs drain --concurrency 2
 ```
 
+## 离线语料控制台
+
+链上采集在离线阶段不开放，语料工作由本地控制面承接。侧边栏第 15 项「离线语料控制台」对应后端 `src/corpus-control.js` 的五条离线泳道：
+
+- `static` 静态分析（`scripts/review-static.py`）、`dynamic` 动态复现（`scripts/benchmark-dynamic-*.cjs`）、`decompiler` 反编译（`scripts/bytecode_analysis.py` + heimdall）、`fetch` 离线抓取校验（`work/corpus-fetch-cache`）、`eval` 本地评测（`scripts/eval_pipeline.py`）。
+- 控制面只读本地语料目录、`benchmark/contracts` 与 `work/`，只允许调用白名单内的本地脚本；任务状态原子写入 `work/corpus-control/tasks.json`，整体证据见 `work/lane-W-report.json`。
+- 暂停只在样本边界生效：暂停请求后当前样本跑完才挂起，正在运行的 compiler/forge/node 子进程不会被杀；停止才会终止进程组（先 SIGTERM，5 秒宽限后 SIGKILL）。
+- 心跳超过 120 秒或进程 PID 已死的任务不再显示为「运行中」，恢复时标为「已中断」并落盘。界面上的语料统计来自本地已保存内容，不是实时任务。
+- 链上采集启动按钮置灰只是提示，真正的拒绝在后端：`POST /api/v1/corpus/chain-collection/start`、`POST /api/v1/collection`、`POST /api/v1/tasks`（采集语义类型）一律返回 HTTP 400 与 `chain_collection_disabled`，不会创建任务。只有显式设置 `CORPUS_CHAIN_COLLECTION=1` 才放开。
+
+```bash
+curl http://127.0.0.1:8788/api/v1/corpus/overview
+curl http://127.0.0.1:8788/api/v1/corpus/tasks
+```
+
+静态泳道只使用 `work/compiler-cache` 已缓存的 soljson，缺失即记为失败，不联网下载；评测泳道以 `--layers slither` 运行，输出是静态告警线索，不是漏洞确认。本地测试通过不等于确认漏洞，也不等于部署合约安全。
+
 ## Etherscan 地址交易历史
 
 ```bash
@@ -129,6 +146,60 @@ python3 flare-scan/tools/collect.py
 
 报告包含真实分析合约数量、100 个检测器、源码 SHA-256、编译器及配置、发现和错误。告警是线索，不等于已确认漏洞；不同入口导入相同代码时会有重复告警。自动分析成功也不证明合约安全。
 
+### SmartBugs 与历史 Solidity 版本
+
+历史 Solidity 源码不依赖 Foundry 当前安装的单一 `solc`。静态分析和字节码生成通过项目的 `solc-js` 适配器按需加载 `work/compiler-cache/` 中按版本保存的官方 `soljson`，下载时按 solc-bin 发布清单的 SHA-256 校验，并在后续使用时复核缓存文件。发布目录只在首次缺失或损坏时获取；每个版本有独立下载锁和原子缓存写入，损坏编译器会隔离后自动重取，便于多版本首次并行准备。分析证据记录编译器精确版本、构建标识、soljson SHA-256 与发布目录 SHA-256。当前缓存包含 Solidity `0.4.18+commit.9cf6e910`，因此 SmartBugs 固定 `0.4.18` 的样本可直接编译，无需改写源码或更换 Foundry。
+
+版本选择遵循源码 pragma：基准样本若有明确 `solcVersion`，优先使用该固定版本并验证其满足 pragma；其他精确版本只用该版本，范围约束先取可用的最高兼容缓存版本，并保留最高官方兼容版本作回退；多个 pragma 取交集。没有 pragma 时才使用有界历史版本矩阵，结果会标为推断选择，不能当作源码原始编译器版本。所有尝试及退出码、stdout/stderr 哈希和诊断都进入 evidence；非零退出不能被分析器输出的 JSON 状态覆盖。
+
+```bash
+CAMPAIGN_SOLJSON="$PWD/work/compiler-cache/soljson-v0.4.18+commit.9cf6e910.cjs" \
+  node scripts/campaign-solc.cjs --version
+npm run training:analyze -- --workers 4
+npm run training:artifacts -- --workers 4
+```
+
+大批量首次扫描前，可并行预热 manifest 中已经选择的精确编译器版本；也可传入版本列表。版本会去重，下载由缓存层按版本加锁并做哈希校验，某个版本失败会单独报告：
+
+```bash
+npm run solc:prefetch -- --manifest training-data/github-vulnerabilities/manifest.json --workers 8
+npm run solc:prefetch -- --version 0.4.18,0.4.25,0.8.28 --workers 3
+# 一次预热全部训练语料与 benchmark 的精确 pin；范围 pragma 只解析为每条样本的一个首选版本
+npm run solc:prefetch -- --all-manifests --include-benchmarks --workers 8
+```
+
+`--version` 和 manifest 也接受带 `+commit...` 的完整版本号，预热时会归一化到对应的官方发布版本并保留完整构建号在分析证据中。
+
+`--manifest` 可重复传入多个文件；`--all-manifests` 会扫描 `training-data/*/manifest.json`，并按同一套 pragma 选择器解析 `compilerPragmas`。`--include-benchmarks` 会加入 `benchmark/contracts/*/ground-truth.json` 的精确 `solcVersion`。预热只下载每条范围约束的首选版本，实际扫描仍保留自己的失败回退候选，避免一次性下载全部历史编译器。
+
+正常扫描仍按需加载，预热只是减少大批任务中的首次下载等待；不会切换机器全局 `solc`，也不会改写历史源码。
+
+Foundry 仍用于执行本地测试 harness；它不是历史 Solidity 编译器的分发或版本选择层。若某条 PoC 必须用旧版 Solidity 编译攻击合约，应通过 `solc-js` 先生成该版本的字节码，再由隔离 EVM 执行，并把源码与编译器哈希一并保存在证据中。动态 harness 不可用时保留 `not_run`，不以静态结果替代动态验证。
+
+需要直接运行 Foundry 测试时，可用项目入口把同一份已校验的 `soljson` 暴露给 Forge：
+
+```bash
+mkdir -p work/smartbugs-14/src
+cp benchmark/contracts/14-reentrance/reentrance.sol work/smartbugs-14/src/Reentrance.sol
+npm run forge:solc -- --compiler-version 0.4.18 -- \
+  build --root work/smartbugs-14 --offline
+```
+
+入口会拒绝命令中的第二个 `--use`，自动追加 `--offline`，并把版本、构建号、soljson SHA-256 和 solc-bin 清单 SHA-256 打到 stderr。这样 Foundry 不会从 SVM 下载或误选其它版本；每次调用固定一个编译器版本，切换到 `0.4.25` 等版本只需改变 `--compiler-version`，每个版本仍使用独立的缓存和校验锁。混合版本的工程应按 pragma/构建目标分组调用；需要跨编译器运行的 PoC 继续使用单独编译目标的本地 EVM runner。
+
+桥接器按当前 Foundry profile 的 `src`、`test`、`script`、`libs` 配置和 `--contracts` 路径确定自动选版范围，不扫描仓库中无关目录。Foundry-only 输出兼容层会规范化 Solidity `0.4.10` 的字符串源码 ID，并在旧版缺少 `gasEstimates.creation.totalCost` 时从两项分量计算；未启用 Foundry 兼容模式时，solc-js 标准 JSON 输出不变。SmartBugs 有精确 `solcVersion` ground truth 的案例应传该版本（例如 `0.4.18`）；`auto` 对 `^0.4.18` 可能选择缓存中更高的兼容版本，适用于遵循 pragma 的构建，不适用于复现固定编译器基准。
+
+如果不想手工判断版本，可使用 `--compiler-version auto`。它读取 `--root` 项目中 `src/`、`test/` 等目录的 Solidity pragma，求所有源码约束的交集，优先选择本地已校验缓存中的最高兼容版本，再从官方目录补齐缺失版本，并把选择原因写入 stderr。源码约束没有交集时会在运行 Forge 前失败；这比让 Foundry 自动挑一个版本更安全。一个项目若同时包含 `0.4.18` 源码和 `^0.8.19` 测试，应该拆成两个编译目标，旧源码的 PoC 使用下面的 solc-js 隔离 EVM runner。
+
+```bash
+npm run forge:solc -- --compiler-version auto -- \
+  build --root work/smartbugs-14 --offline
+```
+
+由 `poc_generator.py` 从验证源码 bundle 生成的 PoC 会保存 bundle 中的精确 `compilerVersion`；`poc_runner.py` 用该版本调用同一桥接器，并在运行前检查 `src/` 与 `test/` 的 pragma。若目标源码是 `0.4.x`、模板测试要求 `>=0.8.19`，执行会明确返回 `compiler_version_conflict_use_solcjs_runner`，不会启动错误版本的 Foundry 编译。此类跨版本验证应使用按原始编译器编译源码、再在隔离 EVM 部署执行的 runner；SmartBugs benchmark 已按此路径运行。
+
+流水线的 `poc` 阶段也执行同一检查：带精确旧版本的 bundle 会通过 `forge-with-solc.py` 运行，旧源码与现代测试模板混用时直接保存冲突原因并保持 `unconfirmed`，不会把编译失败当成漏洞证据。
+
 编译适配器支持 standard-json、combined-json、remappings、优化器、EVM 与 viaIR，保留 AST、字节码和 source map。未知参数或编译失败明确报错。它是本地分析用适配器，不是完整的原生 solc 替代品；请勿对不可信源码目录当作隔离沙箱使用。
 
 Slither 0.11.4 的同名库结构体解析兼容代码在 `flare-scan/tools/slither_compat.py`，按 AST referencedDeclaration 和源码位置绑定，未修改合约源码或 AST。测试验证了两个同名库、同名结构体但不同字段的解析结果。其他 Slither 版本不启用此补丁。
@@ -153,15 +224,17 @@ npm run validate:vault-detector -- \
 
 ## 四层漏洞发现与加速
 
-流水线按目标有界并行，默认 4 路，可用 `PIPELINE_TARGET_CONCURRENCY` 或命令行 `--target-concurrency 1..8` 调整；单个目标内部仍按阶段顺序执行，失败只阻断该目标的后续阶段。
+流水线使用共享的 8 路总并发预算：默认最多 4 个目标、每目标最多 2 个独立阶段并行；可用 `PIPELINE_TARGET_CONCURRENCY` / `--target-concurrency 1..8` 和 `PIPELINE_STAGE_CONCURRENCY` / `--stage-concurrency 1..4` 调整。实际阶段并发会按目标并发自动收缩，保证两者乘积不超过 8。完整流程中 recon/collect 可并行；collect 后表示、反编译和部署准备可并行，静态分析等待表示缓存完成；dynamic、review、PoC、report 按证据依赖等待。Foundry invariant harness 默认 2 线程，可用 `PIPELINE_FORGE_THREADS` 或 `--forge-threads 1..8` 调整，并按 CPU 自动收缩。失败只阻断依赖它的后续阶段；指定非零预算时阶段串行执行，防止并行超支。
 
 ```bash
 python3 scripts/pipeline.py run --targets targets.json \
   --stages recon,collect,repr,static,deploy,dynamic,decompile,review,poc,report \
-  --target-concurrency 4 --output work/pipeline-run
+  --target-concurrency 4 --stage-concurrency 2 --forge-threads 2 --output work/pipeline-run
 ```
 
 并发硬上限为 8 路，超过上限会直接拒绝，避免同时抢占 Forge、CPU、内存和 RPC 配额。反向断言 fixture 可用真实 Forge 闸门验证：`bash scripts/verify-reverse-fixtures.sh --output work/reverse-fixtures-report.json`。评测使用 `npm run eval -- --layers all`；没有真实层证据的样本会标为 `unavailable`，不会被统计成“零发现”。
+
+每次流水线运行的 `run.json` 还会保存 `performance`：总墙钟时间、用户/系统 CPU 时间、进程峰值 RSS、阶段累计墙钟时间和阶段 worker 利用率；每个目标的 `state.json` 会保存对应阶段的 `pipelineWallMs`。这些指标只用于定位瓶颈，不参与漏洞状态或证据哈希判断。
 
 1. **静态线索与业务性质**：每个源码分析 bundle 自动生成 `discovery-plan.json` 和可交互 `discovery-plan.html`，从调用效果和入口提示生成带源码位置、现有 modifiers、独立 oracle 的验证计划。函数名只用于选择待验证假设，不判断漏洞或权限缺失。
 2. **动态状态序列**：VaultV2 夹具用独立账本、整数舍入参考模型和多个角色逐步验证业务性质，记录真实动作与相邻转换；测试只有全部断言通过才列出 `propertyIds`，失败记录 `targetPropertyIds` 供定位，不把该场景所有性质都判为失败。
