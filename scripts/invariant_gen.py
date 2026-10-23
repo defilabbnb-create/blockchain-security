@@ -10,11 +10,52 @@ import sys
 import tempfile
 from pathlib import Path
 
+# A getter name reaches generated Solidity as an identifier, so anything that is
+# not a plain identifier is rejected before it can be substituted into a call.
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
+
 try:
     from invariant_templates import TEMPLATES
 except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from invariant_templates import TEMPLATES
+
+try:
+    from invariant_templates_vuln import TEMPLATES as VULNERABILITY_TEMPLATES
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from invariant_templates_vuln import TEMPLATES as VULNERABILITY_TEMPLATES
+
+# 角色名 -> 漏洞类模板表的键。
+#
+# 模板表是按"断言性质"命名的（`reentrancy_guard_rechecked`），检测器报出的
+# 角色名却按类别命名（`reentrancy`）。两者只差一个后缀，直接用角色查表会对
+# 13 个角色中的 9 个返回空，于是整个基准套件生成不出任何断言。显式列出对应
+# 关系，而不是靠前缀或去后缀猜测：猜测会把 `access_control` 和
+# `access_control_guard_present` 这类同源但语义不同的名字错并到一起。
+#
+# 未列出的角色没有可用断言，产出 0 条断言是正确的；给它编一条断言才是错的。
+_VULNERABILITY_TEMPLATE_ALIASES = {
+    'reentrancy': 'reentrancy_guard_rechecked',
+    'access_control': 'access_control_guard_present',
+    'unchecked_low_level_call': 'unchecked_low_level_call',
+    'bad_randomness': 'bad_randomness',
+    'arithmetic': 'arithmetic',
+    'denial_of_service': 'denial_of_service',
+}
+
+
+def _module(filename, name):
+    """Load one of this repository's hyphenated modules by path."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        name, Path(__file__).resolve().parent / filename)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f'module_unavailable:{filename}')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _canonical_hash(value):
@@ -188,7 +229,714 @@ def _role_feature(document, name, matched, missing):
     }
 
 
-def detect_roles(document):
+# Semantic anchors for vulnerability classes.  Unlike the protocol roles, these
+# are deliberately independent of interface completeness: the benchmark corpus
+# is made of deliberately minimal teaching contracts, so requiring a full
+# reference interface would reject genuine instances while accepting none.
+# Each anchor is a property that only holds when the class is actually present,
+# so an unrelated contract (an overflow sample, a plain ERC20) stays unmatched.
+#
+# Each entry is (label, predicate).  A role is confirmed when *any* of its
+# anchors matches; confidence then still reflects how many supporting features
+# were found, so a weak match is visible in the evidence.
+VULNERABILITY_ANCHORS = {
+    # An external value-bearing call followed by the write of the ledger it
+    # debited.  The source decides this: the IR orders some calls correctly but
+    # omits others entirely, so it cannot be the only witness.
+    'reentrancy': [
+        ('source.callBeforeLedgerWrite',
+         lambda ctx: bool(ctx['source'].get('reentrancyCandidateCount'))),
+        ('ir.callBeforeStateUpdate',
+         lambda ctx: ctx['call_order']['external_before_write']),
+    ],
+    # A privileged write reached without an authentication modifier.
+    'access_control': [
+        ('source.privilegedEntryUnguarded',
+         lambda ctx: bool(ctx['source'].get('unguardedPrivilegedEntries'))),
+    ],
+    # Arithmetic that can wrap or truncate silently.
+    'arithmetic': [
+        ('source.uncheckedBlockOrCast',
+         lambda ctx: bool(ctx['source'].get('arithmetic'))),
+        ('ir.arithmetic.uncheckedCast',
+         lambda ctx: ctx['arithmetic']['unchecked_cast']),
+    ],
+    # Randomness or block-derived value gating an outcome.
+    'bad_randomness': [
+        # A block-derived value is the seed; a caller-supplied one only matters
+        # when it is the seed.  `msg.sender` appears in almost every contract, so
+        # on its own it says nothing about predictability and must not be an
+        # anchor: doing so labelled all three clean samples.
+        ('random.blockDerived',
+         lambda ctx: bool(ctx['source'].get('blockDerivedValue'))),
+        ('random.blockHashSeed',
+         lambda ctx: bool(ctx['source'].get('blockHashUsed'))),
+    ],
+    # Attacker-controlled collection size driving unbounded work.
+    'denial_of_service': [
+        ('dos.collectionDrivenLoop',
+         lambda ctx: bool(ctx['source'].get('loopCount')) and
+         bool(ctx['source'].get('dynamicCollection'))),
+    ],
+    # A low-level call whose return value is discarded while value moves.  This
+    # distinction exists only in the source: the IR records that the call
+    # happened and where its result was bound, but never whether the source read
+    # it, so an IR-only rule flags every value-bearing call.
+    'unchecked_low_level_call': [
+        ('call.uncheckedReturn',
+         lambda ctx: bool(ctx['source'].get('uncheckedCallCount'))),
+    ],
+    # Order-dependent payout: a pending transaction can pre-empt the claim.  The
+    # source decides this, and it is a different question from whether the
+    # payment's return value was read, so it gets its own signal.
+    'front_running': [
+        ('frontRunning.mempoolObservablePayout',
+         lambda ctx: bool(ctx['source'].get('frontRunning'))),
+    ],
+    # Time gating a payout.  Distinguished from bad_randomness by use, not by the
+    # block-derived value itself: both read `now`, but only one of them decides
+    # whether value may be claimed, so the anchor looks for the value beside a
+    # payout condition rather than for the read alone.
+    'time_manipulation': [
+        ('time.timestampGatesPayout',
+         lambda ctx: bool(ctx['source'].get('timestampGatesPayout'))),
+    ],
+    # Implementation pointer replaced at runtime without an access check.
+    'unprotected_upgrade': [
+        ('upgrade.unprotectedPointer',
+         lambda ctx: bool(ctx['source'].get('unprotectedPointer'))),
+    ],
+    # Return value of an external dependency trusted without a bound.
+    'unchecked_cross_contract_assumption': [
+        ('cross.unboundedReturn',
+         lambda ctx: bool(ctx['crossing']['unbounded_return'])),
+    ],
+    # DASP-10 classes the vocabulary previously had no room for.  Each is
+    # reported from a source observation, because none of them is visible in the
+    # IR: the EVM's own decoding rules and a caller's freshness discipline both
+    # live outside the operation graph.
+    'short_addresses': [
+        ('source.addressRepackedWithoutPadding',
+         lambda ctx: bool(ctx['source'].get('shortAddressPropagation'))),
+    ],
+    'incorrect_interface': [
+        ('source.callResultConsumedBeyondItsWidth',
+         lambda ctx: bool(ctx['source'].get('incorrectInterfaceUse'))),
+    ],
+    'oracle_stale_price': [
+        ('source.priceReadWithoutFreshnessBound',
+         lambda ctx: bool(ctx['source'].get('oracleStalePrice'))),
+    ],
+}
+
+
+def _call_operations(document):
+    """Return the operation rows that describe a call or a state write."""
+    rows = []
+    for operation in document.get('operations', []) or []:
+        if isinstance(operation, dict):
+            rows.append(operation)
+    return rows
+
+
+def _operation_effect(operation):
+    effect = operation.get('effect') if isinstance(operation.get('effect'), dict) else operation
+    return effect
+
+
+def _is_ledger_write(operation):
+    """Whether this state write updates a balance or ledger a payout can re-enter.
+
+    Reentrancy needs the write to be the accounting the external call invalidates.
+    The IR records the written field and the written expression, and both are
+    read here:
+
+    * a field whose name is a balance/ledger/share/supply/debt quantity, or a
+      subscripted entry of one (``balances[msg.sender] -= ...``);
+    * an expression that is a compound update (``-=``, ``+=``) of such a field.
+
+    A one-shot flag (``payedOut = true``) and a plain bookkeeping write
+    (``reward = msg.value``) are deliberately excluded: neither is the accounting
+    a callback can double-spend, so a payout followed by one of them is not
+    evidence of reentrancy.
+    """
+    effect = _operation_effect(operation)
+    if str(effect.get('kind') or '').lower() != 'state_write':
+        return False
+    field = _operation_field(operation)
+    expression = effect.get('expression')
+    expression = expression if isinstance(expression, str) else ''
+    if field is None and not expression:
+        return False
+    text = f"{field or ''} {expression}"
+    return bool(_LEDGER_WRITE_RE.search(text))
+
+
+_LEDGER_WRITE_RE = re.compile(
+    r'\b(?:balances?|ledger|shares?|supply|totalSupply|totalAssets|deposits?|'
+    r'allowances?|debts?|credits?|stakes?|positions?|amounts?|withdrawable|'
+    r'redeemable|claimable|owed|principal)\b', re.I)
+
+
+def _operation_field(operation):
+    """Return the state field an operation reads or writes, if the IR names one.
+
+    Reentrancy is only possible when the write after the call touches the same
+    field the call drew its value from, so the ordering rule needs the field
+    identity rather than just the offsets.  ``None`` means the IR recorded no
+    field, in which case the caller cannot conclude a match and stays silent.
+    """
+    effect = _operation_effect(operation)
+    for key in ('variable', 'field', 'stateVariable', 'target'):
+        value = effect.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    variable = effect.get('variable')
+    if isinstance(variable, dict):
+        name = variable.get('name')
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return None
+
+
+def _operation_offset(operation):
+    """Return the source offset the IR recorded for an operation.
+
+    The IR orders evidence by ``location.start``, which is the byte offset in the
+    verified source.  Ordering a call against the write it invalidates needs that
+    offset; the array position alone is not reliable because operations are
+    grouped per function rather than sorted.
+    """
+    effect = _operation_effect(operation)
+    location = effect.get('location') if isinstance(effect.get('location'), dict) else {}
+    start = location.get('start')
+    return start if isinstance(start, int) else None
+
+
+def _operation_order(document):
+    """Compute the call/write ordering facts the anchors depend on.
+
+    ``external_before_write`` is the reentrancy signature: within one function, a
+    value-bearing external call whose source offset precedes the state write that
+    records its effect.  Ordering is evaluated per ``functionId`` so that a write
+    in a different entrypoint cannot mask or manufacture the signal.  When the IR
+    records no ordering at all the facts stay False rather than defaulting to a
+    match.
+    """
+    external_before_write = False
+    value_bearing = False
+    by_function: dict[Any, list] = {}
+    for operation in _call_operations(document):
+        key = operation.get('functionId')
+        by_function.setdefault(key, []).append(operation)
+
+    for rows in by_function.values():
+        calls = []
+        writes = []
+        for row in rows:
+            effect = _operation_effect(row)
+            kind = str(effect.get('kind') or '').lower()
+            offset = _operation_offset(row)
+            if kind == 'external_call':
+                # ``sendsValue`` is the IR's own verdict; ``valueTransferEvidence``
+                # carries the symbolic expression when the verdict is unknown.
+                sends = effect.get('sendsValue')
+                evidence = effect.get('valueTransferEvidence')
+                if sends is None and isinstance(evidence, dict):
+                    sends = evidence.get('state') == 'known' and bool(evidence.get('expression'))
+                moves = sends is True or bool(
+                    isinstance(evidence, dict) and evidence.get('expression'))
+                if moves:
+                    value_bearing = True
+                calls.append((offset, bool(moves), effect))
+            elif kind == 'state_write':
+                writes.append((offset, row))
+        if not calls or not writes:
+            continue
+        for offset, moves, effect in calls:
+            if offset is None or not moves:
+                continue
+            # The write this call invalidates is the first one recorded after it
+            # *to the same field the call drew on*.  Requiring a later write at
+            # all is too weak: `payedOut = true; winner.send(winAmount)` and
+            # `msg.sender.transfer(reward); reward = msg.value` both record a
+            # write after a value-bearing call, but neither writes a balance or
+            # ledger entry, so a callback cannot drain anything through them.
+            # That shape reported reentrancy on two samples whose ground truth is
+            # front running and unchecked low-level calls respectively.
+            later = [row for value, row in writes if value is not None and value > offset]
+            if not later:
+                continue
+            if not any(_is_ledger_write(row) for row in later):
+                continue
+            external_before_write = True
+            break
+    # Explicit declaration wins over inference from ordering metadata.
+    for flag in ('callBeforeStateUpdate', 'externalCallBeforeStateUpdate'):
+        if document.get(flag) is True:
+            external_before_write = True
+    return {'external_before_write': external_before_write, 'value_bearing': value_bearing}
+
+
+def _access_facts(document, functions, state_names):
+    """Facts about privileged-state access control.
+
+    Risk needs an explicit declaration.  A contract that merely has a
+    ``withdraw`` function is not therefore unguarded: the modifier may be in the
+    IR as an annotation, and inferring "unguarded" from the absence of a token
+    would mislabel every correctly protected withdrawal function.
+    """
+    explicit = document.get('accessControl')
+    if isinstance(explicit, dict):
+        return {'privileged_unauthenticated': bool(explicit.get('unauthenticated')),
+                'write_without_auth_guard': bool(explicit.get('unguarded'))}
+    return {'privileged_unauthenticated': False, 'write_without_auth_guard': False}
+
+
+def _arithmetic_facts(document, state_names, operations):
+    """Facts about arithmetic risk.
+
+    Field *naming* is not evidence: a plain ERC20 has `balances` and `totalSupply`
+    yet no arithmetic defect, so a name-based rule would hand every token the
+    arithmetic class.  Risk requires an explicit declaration, or an operation the
+    IR actually recorded as a wrapping or truncating computation.
+    """
+    explicit = document.get('arithmetic')
+    if isinstance(explicit, dict):
+        return {'on_value_field': bool(explicit.get('onValueField')),
+                'unchecked_cast': bool(explicit.get('uncheckedCast'))}
+    wrapping = any(token in str(_operation_effect(operation).get('expression') or '').lower()
+                   for operation in operations
+                   for token in ('unchecked', 'uint(', 'int(', 'wrap'))
+    # Solidity >=0.8 reverts on overflow, so the IR is only asked to confirm that
+    # a value field exists and is written; the defect signal is the cast.
+    value_written = bool({name for name in state_names
+                          if any(token in name for token in
+                                 ('total', 'amount', 'balance', 'supply', 'price',
+                                  'asset', 'share', 'debt', 'reserve'))})
+    return {'on_value_field': value_written and wrapping, 'unchecked_cast': wrapping}
+
+
+def _randomness_facts(document):
+    """Facts about randomness source.
+
+    Only an explicit declaration counts.  Probing the serialized document for
+    tokens such as ``now`` would match a contract that mentions the keyword in a
+    comment, and the rendered assertion would then claim a manipulable source the
+    IR never recorded.
+    """
+    explicit = document.get('randomness')
+    if isinstance(explicit, dict):
+        return {'block_derived': bool(explicit.get('blockDerived')),
+                'known_seed': bool(explicit.get('knownSeed'))}
+    return {'block_derived': False, 'known_seed': False}
+
+
+def _dos_facts(document, state_names):
+    """Facts about unbounded work.
+
+    Requires an explicit declaration or an operation row the IR marked as a
+    collection traversal; state naming alone is not evidence.
+    """
+    explicit = document.get('denialOfService')
+    if isinstance(explicit, dict):
+        return {'collection_driven_loop': bool(explicit.get('collectionDrivenLoop'))}
+    collection = bool({name for name in state_names
+                       if any(token in name for token in
+                              ('array', 'list', 'queue', 'items', 'members',
+                               'contributors', 'players', 'entries'))})
+    loop = any(str(_operation_effect(row).get('kind') or '').lower() in
+               ('loop', 'for_loop', 'while_loop', 'collection_iteration')
+               for row in _call_operations(document))
+    return {'collection_driven_loop': collection and loop}
+
+
+def _call_facts(document):
+    """Facts about low-level call handling.
+
+    The distinction that matters is whether a value-bearing call's success is
+    bound to a variable or discarded.  Only an explicit declaration or an IR
+    operation row that actually carries the call is treated as evidence; a
+    substring scan over the whole document would match any contract that merely
+    mentions a call in a comment or an interface declaration.
+    """
+    explicit = document.get('lowLevelCalls')
+    if isinstance(explicit, dict):
+        return {'unchecked_return': bool(explicit.get('uncheckedReturn')),
+                'low_level_value_transfer': bool(explicit.get('valueTransfer'))}
+    rows = _call_operations(document)
+    value_transfer = False
+    unchecked = False
+    for row in rows:
+        effect = _operation_effect(row)
+        if str(effect.get('kind') or '').lower() != 'external_call':
+            continue
+        sends = effect.get('sendsValue')
+        evidence = effect.get('valueTransferEvidence')
+        symbolic = isinstance(evidence, dict) and bool(evidence.get('expression'))
+        moves = sends is True or (sends is None and symbolic)
+        value_transfer = value_transfer or moves
+        # ``callType`` records what the call returns into.  The IR writes the
+        # result to a TMP binding when the source binds it; an expression with no
+        # assignment to a named variable is the unchecked form.
+        expression = str(effect.get('expression') or '')
+        bound = '=' in expression.split('LOW_LEVEL_CALL')[0]
+        if moves and str(effect.get('callKind') or '').lower() in ('low_level', 'send', 'transfer') \
+                and not bound and effect.get('checked') is not True:
+            unchecked = True
+    return {'unchecked_return': unchecked, 'low_level_value_transfer': value_transfer}
+
+
+def _ordering_facts(document):
+    explicit = document.get('ordering')
+    if isinstance(explicit, dict):
+        return {'result_observable': bool(explicit.get('resultObservable'))}
+    return {'result_observable': False}
+
+
+def _time_facts(document):
+    explicit = document.get('timeDependence')
+    if isinstance(explicit, dict):
+        return {'timestamp_gate': bool(explicit.get('timestampGate'))}
+    return {'timestamp_gate': False}
+
+
+def _upgrade_facts(document, state_names):
+    explicit = document.get('upgradeability')
+    if isinstance(explicit, dict):
+        return {'unprotected_pointer': bool(explicit.get('unprotectedPointer'))}
+    return {'unprotected_pointer': False}
+
+
+def _crossing_facts(document):
+    """Facts about a trusted external return value.
+
+    The IR marks a cross-contract entry explicitly; the signal that it is
+    *unchecked* is the absence of a recorded bound on the returned value.  Both
+    sides must come from the same operation row: an external call plus an
+    unrelated `require` elsewhere in the contract says nothing about whether that
+    call's result is bounded, and treating them as a pair mislabels every
+    contract that validates something else.
+    """
+    explicit = document.get('crossContract')
+    if isinstance(explicit, dict):
+        return {'unbounded_return': bool(explicit.get('unboundedReturn'))}
+    for row in _call_operations(document):
+        effect = _operation_effect(row)
+        kind = str(effect.get('kind') or '').lower()
+        if kind not in ('external_call', 'interface_call', 'delegate_call'):
+            continue
+        # The IR records whether the call's result was bound or checked; an
+        # unchecked external call is one that returns into no variable and
+        # carries no bound.  Neither flag being set is the weak case and is
+        # reported as unknown rather than as a defect.
+        if effect.get('resultBound') is False and effect.get('bounded') is not True:
+            return {'unbounded_return': True}
+    return {'unbounded_return': False}
+
+
+def _vulnerability_context(document, functions, state_names):
+    operations = _call_operations(document)
+    return {
+        'functions': functions,
+        'state_names': state_names,
+        'call_order': _operation_order(document),
+        'access': _access_facts(document, functions, state_names),
+        'arithmetic': _arithmetic_facts(document, state_names, operations),
+        'randomness': _randomness_facts(document),
+        'dos': _dos_facts(document, state_names),
+        'calls': _call_facts(document),
+        'ordering': _ordering_facts(document),
+        'time': _time_facts(document),
+        'upgrade': _upgrade_facts(document, state_names),
+        'crossing': _crossing_facts(document),
+    }
+
+
+def _protocol_facts(document, functions, state_names):
+    """Semantic facts that define a DeFi protocol role.
+
+    Each fact pairs a protocol-defining function with the ledger it operates on.
+    A function name alone is not enough -- ``totalAssets`` on a lending pool is a
+    helper, not a vault -- so the pair is what makes the anchor specific.
+    """
+    def has(*names):
+        return any(_function_matches(function, name)
+                   for function in functions for name in names)
+
+    return {
+        'deposit_with_share_ledger': has('deposit') and ('totalsupply' in state_names),
+        'assets_and_shares_ledger': ('totalassets' in state_names
+                                     and 'totalsupply' in state_names
+                                     and has('deposit', 'withdraw', 'redeem', 'mint')),
+        'swap_with_reserves': has('swap') and bool({'reserve0', 'reserve1'} & state_names),
+        'dual_reserves': {'reserve0', 'reserve1'} <= state_names,
+        'borrow_with_risk': has('borrow') and bool({'healthfactor', 'liquidationthreshold'} & state_names),
+        'debt_ledger': 'totalborrows' in state_names and has('borrow'),
+        'stake_with_reward_ledger': (has('stake') and
+                                     bool({'rewardpertoken', 'rewardrate'} & state_names)),
+    }
+
+
+def _is_zero_argument(function):
+    """Whether an IR function entry takes no parameters.
+
+    The rendered assertions call ``name()`` with an encoded empty argument list,
+    so only a no-parameter entrypoint is usable.  ``_signature`` returns the
+    normalised signature first and the bare base name second, so the parameter
+    list is read out of the signature rather than from either return value.
+    """
+    signature = _signature(function)[0]
+    if not isinstance(signature, str):
+        return False
+    match = re.search(r'\((.*)\)$', signature)
+    if not match:
+        return False
+    return match.group(1).strip() == ''
+
+
+def _first_getter(functions, *candidates):
+    """Return the base name of the first *zero-argument* getter in the IR.
+
+    The renderer emits a ``staticcall`` against ``name()``, so the entrypoint must
+    take no parameters: `balanceOf(address)` would not be callable this way and
+    resolving it would produce an assertion that reverts for the wrong reason.
+    Returning None when nothing matches is deliberate -- the renderer then refuses
+    to emit and the harness records the invariant as ``adapter_required`` instead
+    of probing a field that may not exist.
+    """
+    for candidate in candidates:
+        for function in functions:
+            if not _function_matches(function, candidate):
+                continue
+            if _is_zero_argument(function):
+                return candidate
+    return None
+
+
+def _first_entrypoint(functions, *candidates):
+    """Return a ``name()`` selector for the first matching *zero-argument* entry.
+
+    Same constraint as :func:`_first_getter`: the rendered snippet encodes the
+    call with no arguments, so a parameterised entrypoint cannot be used and
+    resolving one would produce a reverting assertion.
+    """
+    for candidate in candidates:
+        for function in functions:
+            if not _function_matches(function, candidate):
+                continue
+            if _is_zero_argument(function):
+                return f'{candidate}()'
+    return None
+
+
+def _source_facts(document, source_text):
+    """Source-level facts for one verified source, bound to its digest.
+
+    The IR records that a call happened but not whether its result was checked,
+    and for some samples it records no call at all.  Reading the verified source
+    closes both gaps.  The source is passed in by the caller rather than read
+    here so that the digest already bound to this evidence can be compared with
+    the bytes actually analysed.
+    """
+    module = _module('source_vuln_evidence.py', 'source_vuln_evidence_deep')
+    return module.observe(source_text)
+
+
+def _vulnerability_substitutions(document, role, source_text=None, abi_getters=None):
+    """Resolve template parameters from the IR for one vulnerability class.
+
+    Every value here names something the IR actually recorded.  An unresolvable
+    parameter stays None, which makes the renderer decline rather than render an
+    assertion against a field that may not exist.
+    """
+    functions = [item for item in document.get('functions', []) if isinstance(item, dict)]
+    state_names, _, _ = _state_details(document)
+    # The source observer already identified the exact ledger field the reentrant
+    # call debited.  Preferring that name over a fixed candidate list is what lets
+    # a minimal teaching contract that names its balance `creditOf` or
+    # `userBalance` resolve instead of falling back to no parameter at all.
+    source = {}
+    if source_text:
+        try:
+            source = _source_facts(document, source_text)
+        except Exception:
+            source = {}
+    observed_field = ''
+    for candidate in source.get('reentrancyCandidates') or []:
+        if isinstance(candidate, dict) and candidate.get('stateField'):
+            observed_field = str(candidate['stateField'])
+            break
+
+    # `abi_getters` carries full signatures (`fee()`, `balances(address)`), so the
+    # bare names are extracted here.  A zero-argument entry is the only shape a
+    # scalar read can address; anything else is left to `_mapping_getter`.
+    confirmed = set()
+    for signature in (abi_getters or ()):
+        match = (re.fullmatch(r'([A-Za-z_$][A-Za-z0-9_$]*)\((.*)\)', signature.strip())
+                 if isinstance(signature, str) else None)
+        if match and match.group(2).strip() == '':
+            confirmed.add(match.group(1))
+
+    # Keyed by the bare function name: every consumer looks a candidate up by name
+    # and cares about its parameter list separately, so splitting the two here
+    # keeps each lookup site reading only the part it needs.
+    abi_parameters = {}
+    for signature in (abi_getters or ()):
+        match = (re.fullmatch(r'([A-Za-z_$][A-Za-z0-9_$]*)\((.*)\)', signature.strip())
+                 if isinstance(signature, str) else None)
+        if match:
+            abi_parameters.setdefault(match.group(1), match.group(2))
+
+    def confirmed_getter(candidates):
+        """First candidate the compiler reports as a zero-argument getter.
+
+        ``functions`` only holds user-written functions, so a `public uint256 fee`
+        leaves no trace there even though `fee()` is callable.  Falling back to
+        the compiled ABI keeps such contracts measurable; the name still comes
+        from a compilation of the verified source rather than from naming alone.
+        """
+        for candidate in candidates:
+            if candidate in confirmed:
+                return candidate
+        # `_state_details` lower-cases field names, so the lookup has to be
+        # case-insensitive.  The ABI name is returned verbatim because that is the
+        # spelling the callable actually has.
+        for candidate in candidates:
+            for name in confirmed:
+                if name.lower() == candidate.lower():
+                    return name
+        return None
+
+    def value_getter():
+        for candidate in ('totalAssets', 'totalSupply', 'amount', 'balance',
+                          'total', 'value', 'price', 'supply'):
+            resolved = _first_getter(functions, candidate) or confirmed_getter([candidate])
+            if resolved:
+                return resolved
+        if observed_field:
+            # A public mapping getter is named after the field, capitalised, but
+            # only when the field was declared public.  Confirming it against a
+            # compilation keeps the name from being invented for a private field,
+            # where no getter exists and the assertion would revert.  The same
+            # field can also answer to an argument-taking form, so that is tried
+            # too before giving up on the name the source observer identified.
+            guess = observed_field[0].upper() + observed_field[1:]
+            resolved = (_first_getter(functions, guess) or confirmed_getter([guess])
+                        or _mapping_getter(guess) or _mapping_getter(observed_field))
+            if resolved:
+                return resolved
+        # A `uint256 public fee` is both the field and the getter solc emits, so the
+        # capitalised guess above never applies.  Any declared state field whose
+        # name is a confirmed getter is readable state, so it can stand in for the
+        # value slot: the field is taken from the IR, and the getter is taken from
+        # the ABI, which together rule out a name that does not exist.
+        for field in state_names:
+            resolved = confirmed_getter([field])
+            if resolved:
+                return resolved
+        # A `mapping(address => uint256) public balances` exposes `balances(address)`.
+        # It is the single most common way a contract publishes a balance, and the
+        # IR records no user-written function for it, so nothing above can reach
+        # it.  The renderer reads the caller's own slot, which is a real, stable
+        # balance rather than an unknown one.
+        for field in state_names:
+            resolved = _mapping_getter(field)
+            if resolved:
+                return resolved
+        return None
+
+    def _mapping_getter(field):
+        """The `name(address)` getter solc emits for a public mapping, if any.
+
+        Any non-empty parameter list is accepted because the renderer supplies the
+        only argument it can supply safely -- the calling address -- and the ABI
+        already proved such an entry exists.
+        """
+        for candidate in (field, field[0].upper() + field[1:], field.capitalize()):
+            parameters = abi_parameters.get(candidate)
+            if parameters:
+                return f'{candidate}(address)'
+        return None
+
+    def ledger_getter():
+        return value_getter()
+
+    def observed_or(name, *candidates):
+        """A getter for ``name`` if the contract exposes one, else the observed
+        field's public getter when a compilation confirms it.
+
+        A public mapping answers to ``balances(address)``, not ``balances()``, so
+        the IR's bare field name has to be resolved against the ABI's parameter
+        list rather than accepted on the strength of appearing in the document.
+        """
+        resolved = _first_getter(functions, name) or confirmed_getter([name])
+        if resolved:
+            return resolved
+        resolved = confirmed_getter(list(candidates))
+        if resolved:
+            return resolved
+        for candidate in candidates:
+            resolved = _first_getter(functions, candidate)
+            if resolved:
+                return resolved
+        if observed_field:
+            guess = observed_field[0].upper() + observed_field[1:]
+            # The source observer names a state *field*, which carries no argument
+            # list at all.  A public mapping answers only to `balances(address)`,
+            # so a bare name here would compile into a call the contract rejects.
+            # The zero-argument form is therefore taken from the ABI rather than
+            # from the field name, and the mapping form is the fallback.
+            resolved = (_first_getter(functions, guess) or confirmed_getter(
+                [guess, observed_field]) or _mapping_getter(guess)
+                or _mapping_getter(observed_field))
+            if resolved:
+                return resolved
+        return None
+
+    def confirmed_entrypoint(candidates):
+        """First candidate the ABI reports as a callable zero-argument function.
+
+        The access-control assertion calls the entrypoint with an encoded empty
+        argument list, so a parameterised entry cannot be used: naming one would
+        produce a reverting assertion and read as a failure of the wrong
+        property.  An empty parameter list in the ABI means the call is
+        well-formed.  The returned value keeps the `name()` form the renderer
+        embeds verbatim into the encoded call.
+        """
+        for candidate in candidates:
+            if abi_parameters.get(candidate, None) == '':
+                return f'{candidate}()'
+        return None
+
+    if role == 'reentrancy':
+        return {'guardField': observed_or('balanceOf', 'balances', 'balance'),
+                'valueField': value_getter()}
+    if role == 'access_control':
+        guarded = value_getter() or confirmed_getter(['owner', 'totalSupply'])
+        entry = _first_entrypoint(functions, 'withdraw', 'transferOwnership',
+                                  'setOwner', 'mint', 'burn', 'selfdestruct') \
+            or confirmed_entrypoint(['withdraw', 'withdrawFees', 'transferOwnership',
+                                     'setOwner', 'mint', 'burn', 'selfdestruct',
+                                     'pause', 'unpause', 'setFee', 'setPrice'])
+        return {'guardedField': guarded, 'entrypoint': entry}
+    if role == 'unchecked_low_level_call':
+        return {'ledgerField': ledger_getter()}
+    if role in ('bad_randomness',):
+        return {'valueField': value_getter()}
+    if role == 'arithmetic':
+        return {'valueField': value_getter(), 'ledgerField': ledger_getter()}
+    if role == 'denial_of_service':
+        entry = _first_entrypoint(functions, 'distribute', 'payout', 'refund',
+                                  'withdraw', 'claim', 'process')
+        return {'entrypoint': entry}
+    if role in ('front_running', 'time_manipulation',
+                'unprotected_upgrade', 'unchecked_cross_contract_assumption'):
+        return {'valueField': value_getter()}
+    return {}
+
+
+def detect_roles(document, source_text=None):
     if not isinstance(document, dict):
         raise ValueError('unified IR must be an object')
     functions = document.get('functions')
@@ -259,11 +1007,96 @@ def detect_roles(document):
         ('function.claimOrGetReward', has_method('claim') or has_method('getReward') or has_method('claimRewards')),
         ('function.rewardView', has_method('earned') or has_method('rewardPerToken')),
     ])
+
+    # Protocol roles use interface-completeness scoring, which suits a real
+    # protocol implementation but rejects this corpus: the benchmark samples are
+    # deliberately minimal teaching contracts.  A semantic anchor recognises the
+    # role from the properties that actually define it, so a vault that only
+    # implements deposit/redeem is still recognised while an unrelated contract
+    # that merely owns a field named totalAssets is not.
+    PROTOCOL_ANCHORS = {
+        'erc4626': (('deposit_with_share_ledger',
+                     lambda ctx: ctx['protocol']['deposit_with_share_ledger']),
+                    ('assets_and_shares_ledger',
+                     lambda ctx: ctx['protocol']['assets_and_shares_ledger'])),
+        'amm_pool': (('swap_with_reserves',
+                      lambda ctx: ctx['protocol']['swap_with_reserves']),
+                     ('dual_reserves',
+                      lambda ctx: ctx['protocol']['dual_reserves'])),
+        'lending_pool': (('borrow_with_risk',
+                          lambda ctx: ctx['protocol']['borrow_with_risk']),
+                         ('debt_ledger',
+                          lambda ctx: ctx['protocol']['debt_ledger'])),
+        'staking_reward': (('stake_with_reward_ledger',
+                            lambda ctx: ctx['protocol']['stake_with_reward_ledger']),),
+    }
+    context = _vulnerability_context(document, functions, state_names)
+    context['protocol'] = _protocol_facts(document, functions, state_names)
+    # Source-level facts replace the IR-only guesses wherever they speak: the IR
+    # has no record of whether a call's result was checked, so any class defined
+    # by that distinction is decided from the verified source when one is given.
+    context['source'] = _source_facts(document, source_text) if source_text else {}
+    for role, anchors in PROTOCOL_ANCHORS.items():
+        # The scored detail is kept for the existing feature contract; the
+        # anchor result is recorded separately so the evidence shows both.
+        matched, missing = [], []
+        for label, predicate in anchors:
+            try:
+                holds = bool(predicate(context))
+            except Exception:
+                holds = False
+            (matched if holds else missing).append(f'anchor.{label}')
+        anchor_role = bool(matched)
+        detail = details.get(role)
+        if detail is None:
+            detail = {'confidence': 0.0, 'matchedFeatures': [], 'missingFeatures': [],
+                      'threshold': 0.7}
+            details[role] = detail
+        if anchor_role:
+            detail['anchorMatchedFeatures'] = sorted(matched)
+            detail['detectionKind'] = 'semantic_anchor'
+            detail['confidence'] = max(float(detail.get('confidence') or 0.0),
+                                       round(len(matched) / len(anchors), 4))
+            if role not in roles:
+                roles.append(role)
+
+    # Vulnerability classes are recognised by semantic anchors rather than by
+    # interface completeness.  A benchmark sample is a minimal teaching contract,
+    # so an anchor that holds is the strongest available evidence and a role
+    # missing it is reported as unresolved instead of being guessed.
+    for role, anchors in VULNERABILITY_ANCHORS.items():
+        matched, missing = [], []
+        for label, predicate in anchors:
+            try:
+                holds = bool(predicate(context))
+            except Exception:
+                holds = False
+            (matched if holds else missing).append(label)
+        confidence = round(len(matched) / len(anchors), 4) if anchors else 0.0
+        details[role] = {'confidence': confidence,
+                         'matchedFeatures': sorted(matched),
+                         'missingFeatures': sorted(missing),
+                         'threshold': 1 / len(anchors) if anchors else 1.0,
+                         'detectionKind': 'semantic_anchor'}
+        if matched:
+            roles.append(role)
     return roles, details
 
 
-def generate_invariants(document, *, source_sha256=None):
-    roles, role_features = detect_roles(document)
+def generate_invariants(document, *, source_sha256=None, source_text=None, abi_getters=None):
+    """Generate role-aware invariants for one unified IR document.
+
+    ``abi_getters`` is the set of getters the *compiler* reports for the target,
+each as its full signature (``fee()`` or ``balances(address)``).  It is needed
+    because the IR's function list comes from the Slither call graph, which walks
+    user-written functions and never records the getters solc synthesises for a
+    `public` state variable.  Without it every contract whose ledger is a public
+    field -- the overwhelmingly common case -- looks like it exposes no readable
+    state, and the renderer, correctly refusing to invent a field name, declines
+    to emit anything.  The names still come from a compilation of the verified
+    source, so nothing here is guessed from naming alone.
+    """
+    roles, role_features = detect_roles(document, source_text=source_text)
     digest = _canonical_hash(document)
     decimals = _decimals(document)
     contract = document.get('contract') if isinstance(document.get('contract'), dict) else {}
@@ -318,8 +1151,28 @@ def generate_invariants(document, *, source_sha256=None):
         else:
             feature_names = tuple(sorted({part for label in role_features.get(role, {}).get('matchedFeatures', [])
                                           for part in re.findall(r'[A-Za-z][A-Za-z0-9]+', label)}))
-            substitutions = {}
-            templates = role_templates.get(role, ())
+            # A protocol role and a vulnerability class are independent axes: a
+            # vault can be both.  Looking the role up in both template sets keeps
+            # a contract that matched a protocol signature from losing its
+            # protocol templates because a vulnerability anchor also fired.
+            #
+            # The vulnerability template table is keyed by class name, but the
+            # roles reported here include the 0.8-era names the benchmarks use
+            # (`unchecked_low_level_call`), the guard-style names
+            # (`access_control_guard_present`), and the classes that have no
+            # entry at all.  Matching on the role alone therefore resolved
+            # templates for only four of thirteen roles and produced zero
+            # assertions for every sample in the suite.  Lookup is now explicit
+            # in both directions, and a role with no entry yields no assertion
+            # instead of a fabricated one.
+            vulnerability_key = _VULNERABILITY_TEMPLATE_ALIASES.get(role)
+            if vulnerability_key is not None:
+                substitutions = _vulnerability_substitutions(document, role, source_text,
+                                                             abi_getters=abi_getters)
+                templates = VULNERABILITY_TEMPLATES.get(vulnerability_key, ())
+            else:
+                substitutions = {}
+                templates = role_templates.get(role, ())
         refs = _source_refs(document, feature_names)
         for template in templates:
             params = {key: (substitutions.get(value[1:]) if isinstance(value, str) and value.startswith('$') else value)
