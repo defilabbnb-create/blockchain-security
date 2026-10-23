@@ -305,6 +305,46 @@ def reachable_sources(data):
             else:missing.append({'importer':name,'import':imp,'resolvedPath':candidate})
     return {k:sources[k] for k in ordered},targets,missing
 
+def invariant_source_text(data):
+    """Concatenate a verified source bundle for the source-level observers.
+
+    `invariant_gen` reasons over one Solidity text and has no notion of a file
+    boundary, so the bundle's units are joined with a blank line -- the same
+    separator `_source_units` splits on, which is what lets a conjunctive fact be
+    re-decided inside a single file rather than across the whole bundle.
+
+    Only the units the deployment actually reaches are included: an unrelated
+    test or example file that happens to ship in the same bundle is not part of
+    the deployed source and must not contribute evidence.  When the bundle does
+    not declare a compilation target the raw `sources` are used rather than
+    nothing, because withholding a source that is already on disk is what
+    produced zero detected roles for every real contract in this campaign.
+    """
+    try:
+        sources,targets,missing=reachable_sources(data)
+    except Exception:
+        sources={k:v['content'] for k,v in (data.get('sources') or {}).items() if isinstance(v,dict) and isinstance(v.get('content'),str)}
+    return '\n\n'.join(text for text in sources.values() if text)
+
+def invariant_abi_getters(data):
+    """Return the compiler-reported getter signatures for this deployment.
+
+    The IR's function list comes from Slither's call graph, which walks
+    user-written functions and never records the getters solc synthesises for a
+    `public` state variable -- so a contract whose ledger is a plainly readable
+    `uint256 public fee` looks like it exposes no readable state and every role
+    assertion resolves to nothing.  Reading them out of the deployment's own ABI
+    keeps the names compiler-reported rather than guessed; a bundle that reports
+    no ABI yields None and the generator stays silent rather than inventing a
+    getter that may not exist.
+    """
+    abi=data.get('abi')
+    if not isinstance(abi,list):return None
+    getters=sorted({'%s(%s)'%(entry['name'],','.join(str(argument.get('type','')) for argument in entry.get('inputs') or []))
+        for entry in abi
+        if isinstance(entry,dict) and entry.get('type')=='function' and isinstance(entry.get('name'),str) and entry.get('name')})
+    return getters or None
+
 def build_queue(protocols, chains, threshold=10000):
     buckets=collections.defaultdict(list)
     for p in protocols:
@@ -717,7 +757,13 @@ class Campaign:
             if key in self.seen:self.counts['duplicateAddresses']+=1;return
             self.seen.add(key);self.counts['contractCandidates']+=1
         folder=self.run/'contracts'/f'{item["chainId"]}-{address.lower()}';folder.mkdir(parents=True)
-        record={**item,**address_info,'address':address,'directory':str(folder),'startedAt':now(),'state':'collecting','confirmed':False,'localTestStatus':'not_performed','dynamicAnalysis':{'state':'not_performed','reason':'No target-specific local EVM harness is defined for this contract.'},'reviewCompleteness':'pending','scope':'adapter-associated contract; not proof of per-contract value or exploitable vulnerability'}
+        record={**item,**address_info,'address':address,'directory':str(folder),'startedAt':now(),'state':'collecting','confirmed':False,'localTestStatus':'not_performed','dynamicAnalysis':{'state':'not_performed','reason':'No target-specific local EVM harness is defined for this contract.'},'reviewCompleteness':'pending',
+            # 不变量维度在任何路径上都必须存在于证据里：下游索引把缺失的键读成
+            # "这一维度没有结论"，而不是"这一维度没有证据"。未解析之前它记为
+            # `pending`，这样即使合约在任何一步被阻断，落盘的证据也仍然声明
+            # 该维度未完成，而不是把它整体省略掉。
+            'invariants':{'state':'pending','detectedRoles':[],'invariantCount':0,'sourceFactsObserved':False,'reason':'Invariant generation has not reached a verdict for this deployment yet.'},
+            'scope':'adapter-associated contract; not proof of per-contract value or exploitable vulnerability'}
         try:
             height=address_info.get('proxyBlock')
             if not height:height,_=self.pool.call(item['chainId'],'eth_blockNumber',[])
@@ -832,13 +878,35 @@ class Campaign:
                         record['irReconciliation']={'state':'unavailable','reason':f'{type(reconcile_error).__name__}: {str(reconcile_error)[:250]}'}
                     try:
                         source_ir_path=folder/'unified-ir.json'
+                        # 角色识别必须拿到已验证源码和部署自身的 ABI。
+                        #
+                        # 此前调用只传了 IR：六个漏洞锚点依赖 ctx['source']，而源码
+                        # 事实仅在传入 source_text 时才会被采集，于是本目录里每一份
+                        # 真实合约的 detectedRoles 都是空数组，`template_unavailable`
+                        # 看上去与"这份合约确实没有缺陷"无法区分。两份输入都已经在
+                        # 同一文件夹里（verified-source.json 就是写出这份 IR 的那次
+                        # 编译），因此在这里读取它们，而不是改动任何检测阈值——收窄
+                        # 匹配以换取零误报正是这里要避免的。
                         if source_ir_path.is_file():
-                            invariant_result=generate_invariants(json.loads(source_ir_path.read_text(encoding='utf-8')))
+                            invariant_result=generate_invariants(json.loads(source_ir_path.read_text(encoding='utf-8')),
+                                source_sha256=source_hash,source_text=invariant_source_text(data),
+                                abi_getters=invariant_abi_getters(data))
                             invariant_path=folder/'invariants.json'
                             atomic(invariant_path,invariant_result)
                             record['invariants']={'state':invariant_result['state'],'detectedRoles':invariant_result['detectedRoles'],
                                 'invariantCount':len(invariant_result['invariants']),'report':str(invariant_path.relative_to(ROOT)),
-                                'sourceIrSha256':invariant_result['sourceIrSha256']}
+                                'sourceIrSha256':invariant_result['sourceIrSha256'],
+                                # 是否真的看过源码。缺失时零角色不构成无缺陷的证据，
+                                # 下游索引必须能区分这两种情况。
+                                'sourceFactsObserved':invariant_result.get('sourceFactsObserved'),
+                                'unresolved':invariant_result.get('unresolved',[])}
+                        else:
+                            # 证据字段在每条路径上都要写入。没有 IR 时生成不了断言，
+                            # 但把 `invariants` 整个键留空会让下游索引把这份合约读成
+                            # "没有该维度"，而不是"没有该维度的证据"。
+                            record['invariants']={'state':'no_source_ir','detectedRoles':[],
+                                'invariantCount':0,'sourceFactsObserved':False,
+                                'reason':'No source unified IR was produced for this deployment.'}
                     except Exception as invariant_error:
                         record['invariants']={'state':'unavailable','reason':f'{type(invariant_error).__name__}: {str(invariant_error)[:250]}'}
                     try:

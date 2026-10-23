@@ -1,0 +1,859 @@
+{
+  "schemaVersion": 1,
+  "scope": "样本可信度分级；本报告只判定 ground-truth 标注与所附源码是否一致，不判定检测器能力，也不构成任何漏洞确认",
+  "method": "逐样本读取其 .sol 与 ground-truth.json，对照 source-verification.json 的来源状态分级；每个判定必须给出源码行号证据，无行号证据者记 uncertain",
+  "grades": {
+    "A": "真实项目 + 标注可信",
+    "B": "真实项目 + 标注存疑",
+    "C": "本地伪造桩 + 标注自洽",
+    "D": "本地伪造桩 + 标注错误"
+  },
+  "counts": {
+    "A": 20,
+    "B": 1,
+    "C": 6,
+    "D": 6
+  },
+  "uncertainCount": 4,
+  "ungradedCount": 0,
+  "byGrade": {
+    "A": [
+      "01-arbitrary_location_write_simple",
+      "02-incorrect_constructor_name1",
+      "03-simple_suicide",
+      "04-unprotected0",
+      "05-BECToken",
+      "06-integer_overflow_minimal",
+      "07-overflow_simple_add",
+      "08-guess_the_random_number",
+      "09-old_blockhash",
+      "10-dos_address",
+      "11-dos_simple",
+      "12-eth_tx_order_dependence_minimal",
+      "13-etherstore",
+      "14-reentrance",
+      "15-reentrancy_simple",
+      "16-simple_dao",
+      "17-timed_crowdsale",
+      "18-lotto",
+      "19-mishandled",
+      "20-reentrancy_cross_function"
+    ],
+    "B": [
+      "27-oracle-stale"
+    ],
+    "C": [
+      "24-lending-bad-debt",
+      "29-delegatecall",
+      "30-reentrancy-withdraw",
+      "31-clean-vault",
+      "32-clean-lending",
+      "33-clean-amm"
+    ],
+    "D": [
+      "21-erc4626-donation",
+      "22-erc4626-rounding",
+      "23-lending-health-factor",
+      "25-amm-k-decrease",
+      "26-amm-fee",
+      "28-cross-call"
+    ]
+  },
+  "uncertain": [
+    "22-erc4626-rounding",
+    "23-lending-health-factor",
+    "27-oracle-stale",
+    "30-reentrancy-withdraw"
+  ],
+  "ungraded": [],
+  "samples": [
+    {
+      "caseId": "01-arbitrary_location_write_simple",
+      "knownIssues": [
+        "access_control"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "arbitrary_location_write_simple.sol",
+      "sourceSha256": "bbbdb5367463fd3d1e11b2c569695d8b4734e3f88fcf937a34469a23121b01ab",
+      "sourceLineCount": 40,
+      "grade": "A",
+      "rationale": "PopBonusCode 对无符号数组长度做 `length--`，下溢即写越界存储；缺陷在第 28 行可直接定位，与 ACCESS_CONTROL 标注一致。",
+      "evidence": [
+        {
+          "line": 28,
+          "quote": "bonusCodes.length--; // an underflow can be caused here"
+        },
+        {
+          "line": 27,
+          "quote": "require(0 <= bonusCodes.length); // always true"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "02-incorrect_constructor_name1",
+      "knownIssues": [
+        "access_control"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "incorrect_constructor_name1.sol",
+      "sourceSha256": "d918731cebddf34ad385dd799691237e0ec1aab09f34ce7eb6bbe83ec86cd8c8",
+      "sourceLineCount": 34,
+      "grade": "A",
+      "rationale": "构造函数名写成 IamMissing 而非 Missing（L20），任何地址可调用它抢占 owner，使 withdraw 的 onlyowner 失效。缺陷真实且第 20 行可直接定位。",
+      "evidence": [
+        {
+          "line": 20,
+          "quote": "function IamMissing()"
+        },
+        {
+          "line": 30,
+          "quote": "onlyowner"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "03-simple_suicide",
+      "knownIssues": [
+        "access_control"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "incorrect_constructor_name2.sol",
+      "sourceSha256": "d210fc21c6fdf273cfe2af52408b09ec82df89ebdea554b0c6356ad8b5d8796d",
+      "sourceLineCount": 32,
+      "grade": "A",
+      "rationale": "构造函数名写成 missing 而非 Missing（L18），同样使 owner 未初始化即被任意调用，缺陷真实且第 18 行可直接定位。注：目录名为 03-simple_suicide 但文件内容是 incorrect_constructor_name2.sol，两者都属 ACCESS_CONTROL，标注类别不受影响。",
+      "evidence": [
+        {
+          "line": 18,
+          "quote": "function missing()"
+        },
+        {
+          "line": 27,
+          "quote": "onlyowner"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "04-unprotected0",
+      "knownIssues": [
+        "access_control"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "unprotected0.sol",
+      "sourceSha256": "8cfc8702a1a0afe407c2ea83e0c48e97909f66af1955ee5e1321f1dc2818a045",
+      "sourceLineCount": 39,
+      "grade": "A",
+      "rationale": "changeOwner 声明 public 且无 onlyowner 修饰，第 25-28 行可直接定位权限缺失。",
+      "evidence": [
+        {
+          "line": 25,
+          "quote": "function changeOwner(address _newOwner)"
+        },
+        {
+          "line": 28,
+          "quote": "owner = _newOwner;"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "05-BECToken",
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "BECToken.sol",
+      "sourceSha256": "5765dccd66c76ce39da689c314364dc380e0b6a984ad351c5f81eb8e35e749b9",
+      "sourceLineCount": 306,
+      "grade": "A",
+      "rationale": "BECToken 为真实 ERC20（306 行）。L264 `uint256(amount) * _value` 在 0.4.x 无 SafeMath 保护，余额乘法可溢出，对应 SWC-101，标注 arithmetic 与源码一致。",
+      "evidence": [
+        {
+          "line": 264,
+          "quote": "uint256 amount = uint256(cnt) * _value;"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "06-integer_overflow_minimal",
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "integer_overflow_minimal.sol",
+      "sourceSha256": "ca539303822841840452b2aa1bf8607dc7b46d32de7261e11861da1bc9c6e915",
+      "sourceLineCount": 19,
+      "grade": "A",
+      "rationale": "`count -= input` 在 0.4.19 下可下溢且结果公开可读，缺陷第 17 行可直接定位。",
+      "evidence": [
+        {
+          "line": 17,
+          "quote": "count -= input;"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "07-overflow_simple_add",
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "overflow_simple_add.sol",
+      "sourceSha256": "641f6d9e0a4ff8f91c6340a38af72f4ab48749635f5ebb9815123c8ae2e0a46e",
+      "sourceLineCount": 16,
+      "grade": "A",
+      "rationale": "`balance += deposit` 在 0.4.25 下可溢出，缺陷第 14 行可直接定位。",
+      "evidence": [
+        {
+          "line": 14,
+          "quote": "balance += deposit;"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "08-guess_the_random_number",
+      "knownIssues": [
+        "bad_randomness"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "guess_the_random_number.sol",
+      "sourceSha256": "d27ca8263b122093d6798f08c58264dd8aa552b7dd2e567aac648928be6e17f5",
+      "sourceLineCount": 29,
+      "grade": "A",
+      "rationale": "L15 `keccak256(block.blockhash(block.number - 1), now)` 用区块派生值与当前时间块作种子，且 answer 为 public storage，矿工可在出块时确定结果，对应 SWC-120，标注 bad_randomness 与源码一致。",
+      "evidence": [
+        {
+          "line": 15,
+          "quote": "answer = uint8(keccak256(block.blockhash(block.number - 1), now));"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "09-old_blockhash",
+      "knownIssues": [
+        "bad_randomness"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "old_blockhash.sol",
+      "sourceSha256": "fcacbdf48076326222bd952ab15d0ef3a1cb2bd0acf983b8ff6cdb90633c30e7",
+      "sourceLineCount": 42,
+      "grade": "A",
+      "rationale": "L35 直接以 `blockhash(guesses[msg.sender].block)` 为种子，区块哈希调用者可预先计算，对应 SWC-120，标注 bad_randomness 一致。",
+      "evidence": [
+        {
+          "line": 35,
+          "quote": "bytes32 answer = blockhash(guesses[msg.sender].block);"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "10-dos_address",
+      "knownIssues": [
+        "denial_of_service"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "dos_address.sol",
+      "sourceSha256": "4f6960a84c3da5f791faf0111033b1d6a425e2575fb03b31acd248210497794e",
+      "sourceLineCount": 36,
+      "grade": "A",
+      "rationale": "addCreditors 以 350 次循环 push（L23-25）把 creditorAddresses 撑大，使 emptyCreditors 的处理（L16-18）超出区块 gas 上限，SWC-128 DoS with block gas limit。",
+      "evidence": [
+        {
+          "line": 23,
+          "quote": "for(uint i=0;i<350;i++) {"
+        },
+        {
+          "line": 16,
+          "quote": "if(creditorAddresses.length>1500) {"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "11-dos_simple",
+      "knownIssues": [
+        "denial_of_service"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "dos_simple.sol",
+      "sourceSha256": "53dcfd96beb66caaefc66373d6cef836a0b1f0320d3e4421426cb26590fc2c0c",
+      "sourceLineCount": 27,
+      "grade": "A",
+      "rationale": "L17 循环 350 次 push 无上限控制，数组可被撑到任意长度，后续处理必然超出区块 gas，SWC-128，标注 denial_of_service 一致。",
+      "evidence": [
+        {
+          "line": 17,
+          "quote": "for(uint i=0;i<350;i++) {"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "12-eth_tx_order_dependence_minimal",
+      "knownIssues": [
+        "front_running"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "eth_tx_order_dependence_minimal.sol",
+      "sourceSha256": "ff02571525b00a0261fa98cc57fc00822124d72ce0039b4e46423523154bf5ed",
+      "sourceLineCount": 34,
+      "grade": "A",
+      "rationale": "setReward（L18-25）先 require(msg.sender == owner) 才把 reward 转给 owner，奖励在下注前对所有人可见，owner 交易上链前任何人可在 claimReward 中抢先领取，SWC-114 交易顺序依赖，标注 front_running 与源码一致。",
+      "evidence": [
+        {
+          "line": 23,
+          "quote": "owner.transfer(reward);"
+        },
+        {
+          "line": 31,
+          "quote": "msg.sender.transfer(reward);"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "13-etherstore",
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "etherstore.sol",
+      "sourceSha256": "bffe7255c351724c3ab15f6c4c4909a3d756650791360e86cf2f71c48046aa79",
+      "sourceLineCount": 31,
+      "grade": "A",
+      "rationale": "withdrawFunds 在 L27 先 `msg.sender.call.value(...)` 转账，L28 才扣 balances，CEI 顺序颠倒，经典重入，标注 reentrancy 与源码一致。",
+      "evidence": [
+        {
+          "line": 27,
+          "quote": "require(msg.sender.call.value(_weiToWithdraw)());"
+        },
+        {
+          "line": 28,
+          "quote": "balances[msg.sender] -= _weiToWithdraw;"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "14-reentrance",
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "reentrance.sol",
+      "sourceSha256": "78ebf8f92bb978386a96fb1b4bec2ad2aaa77916a6ed7e49c2ae74c92f466ea4",
+      "sourceLineCount": 32,
+      "grade": "A",
+      "rationale": "withdraw 在 L24 先 `msg.sender.call.value(_amount)()`，L27 才扣 balances，Ethernaut Level 1 形态，标注 reentrancy 与源码一致。",
+      "evidence": [
+        {
+          "line": 24,
+          "quote": "if(msg.sender.call.value(_amount)()) {"
+        },
+        {
+          "line": 27,
+          "quote": "balances[msg.sender] -= _amount;"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "15-reentrancy_simple",
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "reentrancy_simple.sol",
+      "sourceSha256": "98b4c8b45c2e6711b1c58fb6991375f698a66f148799ca7aff6e27db8a9803e1",
+      "sourceLineCount": 29,
+      "grade": "A",
+      "rationale": "withdrawBalance 在 L24 先转账，L27 才 `userBalance = 0`，Trail of Bits reentrancy/Reentrancy.sol 形态，标注一致。",
+      "evidence": [
+        {
+          "line": 24,
+          "quote": "if( ! (msg.sender.call.value(userBalance[msg.sender])() ) ){"
+        },
+        {
+          "line": 27,
+          "quote": "userBalance[msg.sender] = 0;"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "16-simple_dao",
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "0x23a91059fdc9579a9fbd0edc5f2ea0bfdb70deb4.sol",
+      "sourceSha256": "bcd0fdfad9f6594fdbc940967321856490ed4bffbe8b6ab9c75c6b85072528a5",
+      "sourceLineCount": 74,
+      "grade": "A",
+      "rationale": "CashOut 在 L38 先 `msg.sender.call.value(_am)()`，扣减 balances 在其后的分支内（第 40 行），CEI 顺序颠倒，标注一致。",
+      "evidence": [
+        {
+          "line": 38,
+          "quote": "if(msg.sender.call.value(_am)())"
+        },
+        {
+          "line": 40,
+          "quote": "balances[msg.sender]-=_am;"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "17-timed_crowdsale",
+      "knownIssues": [
+        "time_manipulation"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "timed_crowdsale.sol",
+      "sourceSha256": "52fa5d86b7ee71874f54c1973562f0ff76b58a0a2ba2371e5193f783bd30222e",
+      "sourceLineCount": 15,
+      "grade": "A",
+      "rationale": "L13 `block.timestamp >= 1546300800` 以区块时间戳决定状态，出块者可微调时间戳改变众筹结果，SWC-116，标注 time_manipulation 一致。",
+      "evidence": [
+        {
+          "line": 13,
+          "quote": "return block.timestamp >= 1546300800;"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "18-lotto",
+      "knownIssues": [
+        "unchecked_low_level_calls"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "lotto.sol",
+      "sourceSha256": "09c8886de37a52a987d1a40588bd8fe352b8bb8bbfb9960caf8a6664a893b223",
+      "sourceLineCount": 29,
+      "grade": "A",
+      "rationale": "`winner.send(winAmount)` 与 `msg.sender.send(this.balance)` 均丢弃返回值，SWC-104 unchecked return value，缺陷第 20、27 行可直接定位。",
+      "evidence": [
+        {
+          "line": 20,
+          "quote": "winner.send(winAmount);"
+        },
+        {
+          "line": 27,
+          "quote": "msg.sender.send(this.balance);"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "19-mishandled",
+      "knownIssues": [
+        "unchecked_low_level_calls"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "unchecked_return_value.sol",
+      "sourceSha256": "ac992f26a8a567c74fe30e0f48d0c421d3f483ff431f6672a6dae5dd6c9e168d",
+      "sourceLineCount": 19,
+      "grade": "A",
+      "rationale": "callnotchecked 直接丢弃 `callee.call()` 返回值，与 callchecked 形成对照，缺陷第 17 行可直接定位。",
+      "evidence": [
+        {
+          "line": 17,
+          "quote": "callee.call();"
+        },
+        {
+          "line": 12,
+          "quote": "require(callee.call());"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "20-reentrancy_cross_function",
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "clean": false,
+      "provenanceState": "verified",
+      "isSynthetic": false,
+      "sourceFile": "0x01f8c4e3fa3edeb29e514cba738d87ce8c091d3f.sol",
+      "sourceSha256": "0196d033850b295690465d0f7d2baae8b3570df29c9d03d507496b45155a84e5",
+      "sourceLineCount": 96,
+      "grade": "A",
+      "rationale": "Collect 在 L54 先 `msg.sender.call.value(_am)()`，L56 才扣 balances[msg.sender]，且 PutMessage/Collect 分属不同函数构成跨函数重入，标注 reentrancy 与源码一致。",
+      "evidence": [
+        {
+          "line": 54,
+          "quote": "if(msg.sender.call.value(_am)())"
+        },
+        {
+          "line": 56,
+          "quote": "balances[msg.sender]-=_am;"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "21-erc4626-donation",
+      "knownIssues": [
+        "erc4626_donation"
+      ],
+      "clean": false,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "Vault.sol",
+      "sourceSha256": "c65fb8a7560db1a1ec6b23ad6b5d34fa447e72febbac3c8731df4b459b5e05b1",
+      "sourceLineCount": 2,
+      "grade": "D",
+      "rationale": "标注 erc4626_donation，但第 2 行的 donate 同时给 totalAssets 与 totalSupply 各加同样的 amount，份额价格 totalAssets/totalSupply 保持不变，不存在捐赠抬高份额价格进而首存套利的条件；且全合约无 deposit/redeem/铸造路径。标注所述缺陷与代码直接矛盾。",
+      "evidence": [
+        {
+          "line": 2,
+          "quote": "function donate(uint256 amount) external { totalAssets += amount; totalSupply += amount; }"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null,
+      "contradiction": "捐赠同时增加分子分母 → 份额价格不变 → donation/inflation 攻击不成立"
+    },
+    {
+      "caseId": "22-erc4626-rounding",
+      "knownIssues": [
+        "erc4626_rounding"
+      ],
+      "clean": false,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "Vault.sol",
+      "sourceSha256": "2a65f9c2da2fef439304aa61a4e1e798bf3ac41a35d881fd5e972a69df7a416f",
+      "sourceLineCount": 2,
+      "grade": "D",
+      "rationale": "标注 erc4626_rounding，但 L2 的 convertToShares 用 `(assets * totalSupply + totalAssets - 1) / totalAssets` 向上取整（round-up），正是 EIP-4626 规定的正确方向。该桩实现的是「舍入正确」，与标注所述「舍入缺陷」方向相反，属标注与代码矛盾。",
+      "evidence": [
+        {
+          "line": 2,
+          "quote": "return (assets * totalSupply + totalAssets - 1) / totalAssets;"
+        }
+      ],
+      "uncertain": true,
+      "uncertainReason": "可争辩之处：若出题人本意是「实现正确舍入作为对照」，则它应被标为 clean 而非 erc4626_rounding 漏洞样本；无论哪种解读，它都不该作为 erc4626_rounding 的正样本计分。本轮按字面判 D。",
+      "contradiction": "+totalAssets-1 是标准 round-up 写法，实现的是正确舍入，标注所述缺陷不存在"
+    },
+    {
+      "caseId": "23-lending-health-factor",
+      "knownIssues": [
+        "lending_health_factor"
+      ],
+      "clean": false,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "Pool.sol",
+      "sourceSha256": "da7b88c9747175d2eae448b19df074d019bfa7658f1f5895f65c446ef8d2cd46",
+      "sourceLineCount": 2,
+      "grade": "D",
+      "rationale": "标注 lending_health_factor，但 healthFactor 只是 collateral/(debt+1) 的普通比值，无清算阈值、无清算函数、无价格源；borrow 也不检查抵押品。「health factor 算错」这一缺陷在源码中没有对应实现可定位，标注与代码矛盾。",
+      "evidence": [
+        {
+          "line": 2,
+          "quote": "function healthFactor(address user) external view returns (uint256) { return collateral[user] / (debt[user] + 1); }"
+        }
+      ],
+      "uncertain": true,
+      "uncertainReason": "可争辩之处：debt+1 的 +1 是防止除零的常见写法，若出题人意图是「阈值计算缺失」，那缺陷存在但不可静态定位（B）；若按字面要求 health factor 计算正确，则源码根本不存在该缺陷（D）。本轮按字面判 D。",
+      "contradiction": "无清算阈值/清算逻辑/health factor 公式中的价格与阈值项，标注所述缺陷无对应代码"
+    },
+    {
+      "caseId": "24-lending-bad-debt",
+      "knownIssues": [
+        "lending_bad_debt"
+      ],
+      "clean": false,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "Pool.sol",
+      "sourceSha256": "ae9dec6e7c03e9100f9262760f15f293a288c46bfc914026cdf4b2328094897e",
+      "sourceLineCount": 2,
+      "grade": "C",
+      "rationale": "liquidate 在 repay=0 时把全额剩余 debt 记入 badDebt 且不冲减债务，零成本清算制造坏账的缺陷真实存在于第 2 行；标注自洽。但无 borrow 路径，坏账来源不可完整复现。",
+      "evidence": [
+        {
+          "line": 2,
+          "quote": "function liquidate(address user, uint256 repay) external { debt[user] -= repay; badDebt += debt[user]; }"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null,
+      "note": "缺陷成立但仅有 2 行、无 borrow 与抵押品路径，属最小桩"
+    },
+    {
+      "caseId": "25-amm-k-decrease",
+      "knownIssues": [
+        "amm_k_decrease"
+      ],
+      "clean": false,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "Pool.sol",
+      "sourceSha256": "c2aa2d2c6cf4f8b7ede60a5ac69633ab649f0d0d0a414ea5c7dfc30607037981",
+      "sourceLineCount": 2,
+      "grade": "D",
+      "rationale": "标注 amm_k_decrease，但第 2 行 swap 为 `reserve0 += input; reserve1 -= output + 1;`——全合约不存在 k 不变量、不存在常数乘积公式、不存在输入校验，output 由调用方任意给定甚至可下溢 reserve1。这不是 AMM 实现，「k 值下降」这一缺陷没有可定位的代码。",
+      "evidence": [
+        {
+          "line": 2,
+          "quote": "function swap(uint256 input, uint256 output) external { reserve0 += input; reserve1 -= output + 1; }"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null,
+      "contradiction": "无常数乘积、无 k 计算、无输入校验；标注所述 k 不变量下降无对应实现"
+    },
+    {
+      "caseId": "26-amm-fee",
+      "knownIssues": [
+        "amm_fee_accounting"
+      ],
+      "clean": false,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "Pool.sol",
+      "sourceSha256": "83d8de17cc5b3b5b7bce29a4637087926a6e79571330c2cf1b777f1f45d50e5f",
+      "sourceLineCount": 2,
+      "grade": "D",
+      "rationale": "标注 amm_fee_accounting，但 swap 只是 `fee = amount`，无 AMM、无费率常数、无按比例计费、withdrawFees 直接清零。「手续费记账错误」在源码中无对应实现。",
+      "evidence": [
+        {
+          "line": 2,
+          "quote": "function swap(uint256 amount) external { fee = amount; } function withdrawFees() external { fee = 0; }"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null,
+      "contradiction": "无 AMM 与费率逻辑；fee 记账缺陷无对应实现"
+    },
+    {
+      "caseId": "27-oracle-stale",
+      "knownIssues": [
+        "oracle_stale_price"
+      ],
+      "clean": false,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "Oracle.sol",
+      "sourceSha256": "0d34cc2d1984e820eeaf026926a7e9b545a332f7c74324a345fef97a855eb5df",
+      "sourceLineCount": 2,
+      "grade": "B",
+      "rationale": "标注 oracle_stale_price。read() 返回 price 而不检查 updatedAt，因此价格确实永不过期——缺陷成立（陈旧价格可被使用）。但缺陷的正确修法是「增加 staleness 检查」，也就是说源码里没有任何错误逻辑可供静态定位：缺少检查这一事实无法从源码的正向特征判定。属标注可信但静态层判据不适用，故归 B（真实项目级语义下更接近「缺陷存在、不可静态定位」）。",
+      "evidence": [
+        {
+          "line": 2,
+          "quote": "function read() external view returns (uint256) { return price; }"
+        }
+      ],
+      "uncertain": true,
+      "uncertainReason": "本样本既是 synthetic 桩（应归 C/D 域）又具有「缺陷存在但不可静态定位」的特征（应归 B 域）。按四档定义 synthetic 样本只能进 C/D，而按可定位性它更像 B，故标 uncertain 待用户裁决。",
+      "note": "缺陷成立（无时效约束），但「缺少 staleness 检查」不可由源码正向特征定位，静态层应记 unavailable 而非漏报"
+    },
+    {
+      "caseId": "28-cross-call",
+      "knownIssues": [
+        "unchecked_cross_contract_assumption"
+      ],
+      "clean": false,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "Router.sol",
+      "sourceSha256": "796b73d83823023a234fe51756faabda0776665554fb4d7fbd1142ab1e2ba89b",
+      "sourceLineCount": 2,
+      "grade": "D",
+      "rationale": "标注 unchecked_cross_contract_assumption，但第 2 行 callTarget 把返回值绑定到 ok 并 require(ok) 检查。返回值被检查，标注所述「未检查外部依赖返回值」与代码直接矛盾。",
+      "evidence": [
+        {
+          "line": 2,
+          "quote": "(bool ok,) = target.call(data); require(ok);"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null,
+      "contradiction": "返回值已绑定并 require 检查，标注所述缺陷不存在"
+    },
+    {
+      "caseId": "29-delegatecall",
+      "knownIssues": [
+        "unprotected_upgrade"
+      ],
+      "clean": false,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "Proxy.sol",
+      "sourceSha256": "c664f6ab2814325b9ec7cded9376e1bfda500fb5e7fe7d4733ed2cad43c20895",
+      "sourceLineCount": 2,
+      "grade": "C",
+      "rationale": "setImplementation 为 external 且无任何权限修饰或 require(msg.sender == admin)，任何地址都可改写 implementation 实现指针；配合 forward 的 delegatecall，即 unprotected_upgrade 缺陷，真实且可静态定位（第 2 行）。",
+      "evidence": [
+        {
+          "line": 2,
+          "quote": "function setImplementation(address next) external { implementation = next; }"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null
+    },
+    {
+      "caseId": "30-reentrancy-withdraw",
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "clean": false,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "Vault.sol",
+      "sourceSha256": "1abffe17b53de8d20aa8690bfa62cdf8b806aebdd877a8ec6fbbd7a7e70033d1",
+      "sourceLineCount": 2,
+      "grade": "C",
+      "rationale": "第 2 行 withdraw 先 `call{value: amount}` 转账并 require(ok)，之后才 `balances[msg.sender] -= amount`，CEI 顺序颠倒，重入缺陷真实且可静态定位，标注自洽。按四档定义 synthetic 样本归 C。",
+      "evidence": [
+        {
+          "line": 2,
+          "quote": "(bool ok,) = msg.sender.call{value: amount}(\"\"); require(ok); balances[msg.sender] -= amount;"
+        }
+      ],
+      "uncertain": true,
+      "uncertainReason": "四档定义以来源真实性划分（synthetic 只能进 C/D），但该样本的缺陷质量与 A 级等价；档位归属存在定义层面的分歧，待用户裁决。",
+      "note": "缺陷质量等同 A 级真实样本（明确可静态定位），仅因是本地桩而归 C；若用户希望分档反映「缺陷可信度」而非「来源真实性」，可改判 A"
+    },
+    {
+      "caseId": "31-clean-vault",
+      "knownIssues": [],
+      "clean": true,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "CleanVault.sol",
+      "sourceSha256": "be5c0c53754d19ce0f6bce8cce81e4f63a4b9da4f7f268e5a1bd642086d1450f",
+      "sourceLineCount": 23,
+      "grade": "C",
+      "rationale": "标注 clean。deposit/withdraw 均先检查后改状态（CEI 正确），无重入、无外部调用、无算术溢出风险；作为负控成立。",
+      "evidence": [
+        {
+          "line": 15,
+          "quote": "require(assets > 0 && shares[msg.sender] >= assets, \"insufficient shares\");"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null,
+      "note": "clean 对照组，标注自洽"
+    },
+    {
+      "caseId": "32-clean-lending",
+      "knownIssues": [],
+      "clean": true,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "CleanLending.sol",
+      "sourceSha256": "946ef29bde9740ff2f4e0b6d5308af392186d34bafc65ffac89697cb7a9962f8",
+      "sourceLineCount": 27,
+      "grade": "C",
+      "rationale": "标注 clean。borrow 要求 collateral >= debt+amount，healthFactor 对零债返回 max，无清算函数；作为负控成立。",
+      "evidence": [
+        {
+          "line": 14,
+          "quote": "require(amount > 0 && collateral[msg.sender] >= debt[msg.sender] + amount, \"under-collateralized\");"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null,
+      "note": "clean 对照组，标注自洽"
+    },
+    {
+      "caseId": "33-clean-amm",
+      "knownIssues": [],
+      "clean": true,
+      "provenanceState": "synthetic_local_fixture",
+      "isSynthetic": true,
+      "sourceFile": "CleanAMM.sol",
+      "sourceSha256": "165fb0409dc1c4c2eb819023d2565bf51ffa4cd9af29442ca57fb1d2343f38f6",
+      "sourceLineCount": 21,
+      "grade": "C",
+      "rationale": "标注 clean。swap 先检查流动性，扣减后 require(reserve0*reserve1 >= oldK)，恒定乘积不下降；作为负控成立。",
+      "evidence": [
+        {
+          "line": 19,
+          "quote": "require(reserve0 * reserve1 >= oldK, \"constant product decreased\");"
+        }
+      ],
+      "uncertain": false,
+      "uncertainReason": null,
+      "note": "clean 对照组，标注自洽"
+    }
+  ],
+  "denominatorNotes": {
+    "A": "A 级为唯一可信分母：真实项目且标注可静态定位",
+    "B_plus_C": "B+C 对照分母：标注存疑与自洽桩计入，但 D 级（标注与代码矛盾）排除"
+  }
+}

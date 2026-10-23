@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "说明": "仅下载固定提交的文本源码与许可证；扩展来源前先修改本白名单。Code4rena/Sherlock 只接受白名单中逐个固定提交且附源码路径的公开报告仓库，不使用组织通配符。",
+  "sources": [
+    {"repo": "smartbugs/smartbugs-curated", "commit": "230e649123477eff332742a59a1c7cc6dc286cab", "license": "Apache-2.0", "licensePath": "LICENSE", "kind": "原仓库分类", "prefixes": ["dataset/"], "default": true},
+    {"repo": "crytic/not-so-smart-contracts", "commit": "020dbdbde3e0c2e8de5f3944e7455e438b0995d5", "license": "Apache-2.0", "licensePath": "LICENSE", "kind": "原仓库分类", "prefixes": [""], "default": true},
+    {"repo": "SmartContractSecurity/SWC-registry", "commit": "1b6227074ecd180b374e4844153afdda0332f979", "license": "MIT", "licensePath": "LICENSE", "kind": "原仓库分类", "prefixes": ["test_cases/"], "default": true},
+    {"repo": "SunWeb3Sec/DeFiHackLabs", "commit": "23c7bd83ccb4524972a9493617fcc8764ab6269b", "license": "MIT", "licensePath": "LICENSE", "kind": "无标签", "pairs": [], "default": false, "说明": "必须补充 pairs：每项含 pocPath 与 sourcePaths；仅下载配对文件，禁止递归抓取全部 PoC。"}
+  ]
+}

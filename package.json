@@ -40,6 +40,9 @@
     "rpc:refresh": "python3 scripts/rpc_pool.py",
     "research:hour": "python3 scripts/defi-campaign.py --duration 3600",
     "benchmark:static": "python3 scripts/benchmark-static-analysis.py",
-    "eval": "python3 scripts/eval_pipeline.py"
+    "eval": "python3 scripts/eval_pipeline.py",
+    "bench:audit": "python3 scripts/evidence-matrix.py",
+    "bench:poc": "python3 scripts/run-local-pocs.py --table",
+    "poc:evidence": "python3 scripts/audit-poc-evidence.py --table"
   }
 }

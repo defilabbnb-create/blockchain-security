@@ -1,1 +1,17 @@
-{"knownIssues":["erc4626_donation"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Vault.sol","solcVersion":"0.8.19"}
+{
+  "knownIssues": [
+    "erc4626_donation"
+  ],
+  "clean": false,
+  "source": "https://github.com/example/defi-benchmarks",
+  "sourceFile": "Vault.sol",
+  "solcVersion": "0.8.19",
+  "excludedReason": {
+    "grade": "D",
+    "summary": "D 级，标注与源码不一致",
+    "adjudication": "标注 erc4626_donation，但第 2 行的 donate 同时给 totalAssets 与 totalSupply 各加同样的 amount，份额价格 totalAssets/totalSupply 保持不变，不存在捐赠抬高份额价格进而首存套利的条件；且全合约无 deposit/redeem/铸造路径。标注所述缺陷与代码直接矛盾。",
+    "evidenceLines": [
+      2
+    ]
+  }
+}

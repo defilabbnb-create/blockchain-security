@@ -1,6 +1,6 @@
 """Executable Solidity assertion snippets for lending pools."""
 
-from ._common import guard, read_expr, ratio_assertion
+from ._common import guard, read_expr, require_statement
 
 
 def render_health_factor_monotonic_on_borrow(params, context):
@@ -9,10 +9,11 @@ def render_health_factor_monotonic_on_borrow(params, context):
         return None
     address, _, (risk,) = checked
     return "\n".join((
-        read_expr(address, risk, "healthBefore"),
+        read_expr(address, risk, "healthBefore", context),
         "// The adapter borrows against the same account between snapshots.",
-        read_expr(address, risk, "healthAfter"),
-        "require(healthAfter < healthBefore, \"borrow did not reduce the account health factor\");",
+        read_expr(address, risk, "healthAfter", context),
+        require_statement(context, "healthAfter < healthBefore",
+                          "borrow did not reduce the account health factor"),
     ))
 
 
@@ -27,10 +28,12 @@ def render_liquidation_does_not_create_bad_debt(params, context):
         return None
     address, tolerance_bps, (field,) = checked
     return "\n".join((
-        read_expr(address, field, "badDebtBefore"),
+        read_expr(address, field, "badDebtBefore", context),
         "// The adapter liquidates the selected account between snapshots.",
-        read_expr(address, field, "badDebtAfter"),
-        f"require(badDebtAfter * 10000 <= badDebtBefore * (10000 + {tolerance_bps}), \"liquidation created unrecorded bad debt\");",
+        read_expr(address, field, "badDebtAfter", context),
+        require_statement(context,
+                          f"badDebtAfter * 10000 <= badDebtBefore * (10000 + {tolerance_bps})",
+                          "liquidation created unrecorded bad debt"),
     ))
 
 
@@ -40,13 +43,17 @@ def render_interest_accrual_conserves_value(params, context):
         return None
     address, tolerance_bps, (debt, supply) = checked
     return "\n".join((
-        read_expr(address, debt, "debtBefore"),
-        read_expr(address, supply, "supplyBefore"),
+        read_expr(address, debt, "debtBefore", context),
+        read_expr(address, supply, "supplyBefore", context),
         "// The adapter accrues interest between snapshots.",
-        read_expr(address, debt, "debtAfter"),
-        read_expr(address, supply, "supplyAfter"),
-        f"require(debtAfter >= debtBefore && supplyAfter >= supplyBefore, \"interest accrual decreased a tracked balance\");",
-        f"require((debtAfter - debtBefore) * 10000 <= (supplyAfter - supplyBefore) * (10000 + {tolerance_bps}), \"interest accrual exceeded supplied value\");",
+        read_expr(address, debt, "debtAfter", context),
+        read_expr(address, supply, "supplyAfter", context),
+        require_statement(context,
+                          "debtAfter >= debtBefore && supplyAfter >= supplyBefore",
+                          "interest accrual decreased a tracked balance"),
+        require_statement(context,
+                          f"(debtAfter - debtBefore) * 10000 <= (supplyAfter - supplyBefore) * (10000 + {tolerance_bps})",
+                          "interest accrual exceeded supplied value"),
     ))
 
 

@@ -24,3 +24,9 @@ training-data/
 benchmark/results/
 benchmark/dynamic/
 benchmark/contracts/*/poc-result.json
+# 深度层证据产物：ir-reconcile.json / invariants.json 由
+# scripts/benchmark-deep-layers.py 按需生成，不入库；deep-layers-work/ 是编译与
+# forge 中间产物，可随时重跑重建。
+benchmark/contracts/*/deep-layers-work/
+benchmark/contracts/*/ir-reconcile.json
+benchmark/contracts/*/invariants.json

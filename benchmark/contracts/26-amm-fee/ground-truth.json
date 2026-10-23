@@ -1,1 +1,17 @@
-{"knownIssues":["amm_fee_accounting"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Pool.sol","solcVersion":"0.8.19"}
+{
+  "knownIssues": [
+    "amm_fee_accounting"
+  ],
+  "clean": false,
+  "source": "https://github.com/example/defi-benchmarks",
+  "sourceFile": "Pool.sol",
+  "solcVersion": "0.8.19",
+  "excludedReason": {
+    "grade": "D",
+    "summary": "D 级，标注与源码不一致",
+    "adjudication": "标注 amm_fee_accounting，但 swap 只是 `fee = amount`，无 AMM、无费率常数、无按比例计费、withdrawFees 直接清零。「手续费记账错误」在源码中无对应实现。",
+    "evidenceLines": [
+      2
+    ]
+  }
+}

@@ -301,7 +301,20 @@ class BytecodeAnalysisTests(unittest.TestCase):
             report = json.loads(report_path.read_text())
             ir = json.loads(ir_path.read_text())
             decompilation = report['decompilation']
-            self.assertEqual(result, 0)
+            # Heimdall can exit non-zero without writing anything to stderr, so
+            # assert with the adapter's own record instead of a bare exit code.
+            self.assertEqual(
+                result, 0,
+                'heimdall decompilation did not complete: '
+                f'state={decompilation.get("state")} '
+                f'error={decompilation.get("error")} '
+                f'exitCode={decompilation.get("exitCode")} '
+                f'timedOut={decompilation.get("timedOut")} '
+                f'toolVersion={decompilation.get("toolVersion")} '
+                f'artifacts={[item.get("path") for item in decompilation.get("artifacts") or []]} '
+                f'inputSha256={decompilation.get("inputSha256")} '
+                f'binarySha256={decompilation.get("binarySha256")}',
+            )
             self.assertEqual(decompilation['state'], 'completed')
             self.assertEqual(decompilation['inputSha256'], expected_hash)
             self.assertEqual(decompilation['crossValidation']['state'], 'opcode_consistent')

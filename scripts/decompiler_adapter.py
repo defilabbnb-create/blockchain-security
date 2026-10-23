@@ -776,6 +776,19 @@ def _base_result(raw, output_dir, *, tool_version=None, state='failed', error=No
         'sourceVerified': False,
         'highLevelSemanticsRecovered': False,
         'outputKind': 'inferred_pseudocode_not_verified_source',
+        # The layer this artifact belongs to, and the layer analysis must read.
+        # Pseudocode is a heuristic reconstruction: the compiler inlines and
+        # unrolls, so the recovered control flow is not the control flow that
+        # executes.  Elipmoc's result is that analyses are run over exported
+        # three-address code, not over the reconstruction; this records that
+        # boundary in the artifact so a consumer cannot mistake one for the
+        # other.  See benchmark/analysis-policy.json (`decompiler`).
+        'analysisLayer': 'human_readable_only',
+        'analysisInputForDetection': 'bytecode_ir',
+        'whyNotAnalysisInput': (
+            'Pseudocode is heuristic; analyses run on the bytecode/TAC IR, so '
+            'a finding derived from this text is not evidence about execution.'
+        ),
         'command': command or [],
         'exitCode': exit_code,
         'timedOut': timed_out,

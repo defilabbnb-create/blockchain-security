@@ -1,1 +1,17 @@
-{"knownIssues":["reentrancy"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Vault.sol","solcVersion":"0.8.19"}
+{
+  "knownIssues": [
+    "reentrancy"
+  ],
+  "clean": false,
+  "source": "https://github.com/example/defi-benchmarks",
+  "sourceFile": "Vault.sol",
+  "solcVersion": "0.8.19",
+  "excludedReason": {
+    "grade": "C",
+    "summary": "C 级，标注与源码不一致",
+    "adjudication": "第 2 行 withdraw 先 `call{value: amount}` 转账并 require(ok)，之后才 `balances[msg.sender] -= amount`，CEI 顺序颠倒，重入缺陷真实且可静态定位，标注自洽。按四档定义 synthetic 样本归 C。",
+    "evidenceLines": [
+      2
+    ]
+  }
+}

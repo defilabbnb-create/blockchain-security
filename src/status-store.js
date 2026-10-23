@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 import { buildVulnerabilityChains } from './vulnerability-chain.js';
 import { readCampaignState, campaignAnswer, campaignProgress } from './campaign-status.js';
+import { createSeverityResolver } from './severity-resolver.js';
 
 const PROJECT_ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const REPORT_DIR = join(PROJECT_ROOT, 'flare-scan', 'reports');
@@ -24,6 +25,8 @@ function isSha256(value) {
   return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value);
 }
 
+// 只做形状归一，不做评级。评级来自 severity-resolver：它按漏洞字典条目与可见证据推导，
+// 并记录 severityBasis/severityFactors。这里再退回固定值就等于凭空断言严重度。
 function findingSeverity(value, kind) {
   const normalized = String(value || '').toLowerCase();
   if (['high', 'medium', 'low', 'info'].includes(normalized)) return normalized;
@@ -54,6 +57,21 @@ function makeCampaignFinding({ sourceSha256, kind, title, severity = 'info', con
     evidence, conditions, localTestPlan, sourceSha256, runId, observedAt, origin: 'campaign' };
 }
 
+// 推导严重度：来源没写等级时才需要。它只改严重度与可追溯因子，不动 status 与确认语义。
+function applyDerivedSeverity(finding, statedSeverity, resolver) {
+  const derived = resolver.resolve({ ...finding, statedSeverity });
+  return {
+    ...finding,
+    severity: derived.severity,
+    severityBasis: derived.severityBasis,
+    severityFactors: derived.severityFactors,
+    severityScore: derived.severityFactors.severityScore ?? null,
+    severityDowngrade: derived.severityDowngrade ?? null,
+    severityEntryMatchReason: derived.severityEntryMatchReason ?? null,
+    severityEntryAmbiguity: derived.severityEntryAmbiguity ?? null,
+  };
+}
+
 function safeObservedAt(...values) {
   for (const value of values) {
     const parsed = isoOrNull(value);
@@ -76,7 +94,7 @@ async function readContractContext(contractDir) {
   };
 }
 
-async function scanCampaignEvidence(workDir = WORK_DIR, generatedAt = new Date().toISOString()) {
+async function scanCampaignEvidence(workDir = WORK_DIR, generatedAt = new Date().toISOString(), resolver = null) {
   let campaignRoot;
   try { campaignRoot = await realpath(resolve(workDir, 'defi-campaign')); } catch { return []; }
   let runEntries;
@@ -124,12 +142,16 @@ async function scanCampaignEvidence(workDir = WORK_DIR, generatedAt = new Date()
           if (!sourceHash) continue;
           const confidence = confidenceValue(observation.confidence);
           const kind = String(observation.kind || 'campaign_review_observation').slice(0, 100);
-          findings.push(makeCampaignFinding({ sourceSha256: sourceHash, kind,
+          // statedSeverity 只保留来源真正写下的等级；findingSeverity() 的兜底值不算来源声明。
+          const statedSeverity = ['high', 'medium', 'low', 'info', 'informational']
+            .includes(String(observation.severity || '').toLowerCase()) ? String(observation.severity).toLowerCase() : null;
+          findings.push({ finding: makeCampaignFinding({ sourceSha256: sourceHash, kind,
             title: String(observation.title || '采集审查观察').slice(0, 300), severity: findingSeverity(observation.severity, kind),
             confidence, status: 'unconfirmed_observation', protocol, chain, address, evidence,
             conditions: [observation.conditions, observation.missingEvidence].filter((item) => typeof item === 'string' && item.trim()).map((item) => item.slice(0, 1000)),
             localTestPlan: typeof observation.localTestPlan === 'string' ? observation.localTestPlan.slice(0, 1500) : null,
-            runId: runEntry.name, observedAt: safeObservedAt(record.finishedAt, cloudReview.retrievedAt, generatedAt) }));
+            runId: runEntry.name, observedAt: safeObservedAt(record.finishedAt, cloudReview.retrievedAt, generatedAt) }),
+            statedSeverity });
         }
       }
       for (const { name, value } of reportValues) {
@@ -141,28 +163,29 @@ async function scanCampaignEvidence(workDir = WORK_DIR, generatedAt = new Date()
         const quote = name === 'runtime-bytecode-analysis.json'
           ? `bytecodeSha256=${bytecodeHash || '未记录'}; blockHash=${deploymentBlockHash || '未记录'}; instructionCount=${Number.isSafeInteger(value.instructionCount) ? value.instructionCount : '未记录'}`
           : `依赖追踪状态=${String(value.state || '未记录')}; blockHash=${deploymentBlockHash || '未记录'}`;
-        findings.push(makeCampaignFinding({ sourceSha256: inputHash, kind: name === 'runtime-bytecode-analysis.json' ? 'runtime_bytecode_analysis' : 'dependency_trace',
+        findings.push({ finding: makeCampaignFinding({ sourceSha256: inputHash, kind: name === 'runtime-bytecode-analysis.json' ? 'runtime_bytecode_analysis' : 'dependency_trace',
           title: name === 'runtime-bytecode-analysis.json' ? '运行时字节码分析记录' : '依赖关系追踪记录', severity: 'info', confidence: 'low',
           status: 'unconfirmed_observation', protocol, chain: String(record.chain || value.chainId || record.chainId || '未知链'),
           address: String(record.address || value.address || ''), evidence: [{ file: name, lineStart: 0, lineEnd: 0, quote,
             ...(bytecodeHash ? { bytecodeSha256: bytecodeHash } : {}), ...(deploymentBlockHash ? { blockHash: deploymentBlockHash } : {}) }],
           conditions: ['该记录本身不证明可达性、语义或漏洞。'], localTestPlan: null, runId: runEntry.name,
-          observedAt: safeObservedAt(value.generatedAt, record.finishedAt, generatedAt) }));
+          observedAt: safeObservedAt(value.generatedAt, record.finishedAt, generatedAt) }), statedSeverity: 'info' });
       }
       if (reconciliation && Array.isArray(reconciliation.bytecodeOnlyFunctions) && reconciliation.bytecodeOnlyFunctions.length && sourceSha256) {
         const functions = reconciliation.bytecodeOnlyFunctions.slice(0, 40);
         const evidence = functions.map((item) => ({ file: 'ir-reconciliation.json', lineStart: 0, lineEnd: 0,
           quote: `selector=${String(item.selector || '未知')}; riskHints=${Array.isArray(item.riskHints) ? item.riskHints.join(',') : '无'}` }));
-        findings.push(makeCampaignFinding({ sourceSha256, kind: 'source_bytecode_divergence',
+        findings.push({ finding: makeCampaignFinding({ sourceSha256, kind: 'source_bytecode_divergence',
           title: '源码与运行时字节码存在未对齐函数候选', severity: functions.some((item) => Array.isArray(item.riskHints) && item.riskHints.length) ? 'medium' : 'info',
           confidence: 'low', status: 'static_signal', protocol, chain, address, evidence,
           conditions: ['selector 与 opcode 仅为静态候选；需核验代理实现、编译设置及运行时可达性。'],
           localTestPlan: null, runId: runEntry.name,
-          observedAt: safeObservedAt(record.finishedAt, reconciliation.generatedAt, generatedAt) }));
+          observedAt: safeObservedAt(record.finishedAt, reconciliation.generatedAt, generatedAt) }),
+          statedSeverity: functions.some((item) => Array.isArray(item.riskHints) && item.riskHints.length) ? 'medium' : 'info' });
       }
       if (dynamicResult?.state === 'violated' && typeof dynamicResult.invariantId === 'string' && sourceSha256) {
         const evidenceHash = isSha256(dynamicResult.evidenceSha256) ? dynamicResult.evidenceSha256 : null;
-        findings.push(makeCampaignFinding({ sourceSha256, kind: 'invariant_violated',
+        findings.push({ finding: makeCampaignFinding({ sourceSha256, kind: 'invariant_violated',
           title: '本地执行观察到不变量被打破', severity: 'medium', confidence: 'medium',
           status: 'invariant_violated', protocol, chain, address,
           evidence: [{ file: 'dynamic-result.json', lineStart: 0, lineEnd: 0,
@@ -170,35 +193,47 @@ async function scanCampaignEvidence(workDir = WORK_DIR, generatedAt = new Date()
             ...(evidenceHash ? { evidenceSha256: evidenceHash } : {}) }],
           conditions: ['不变量被打破不等于漏洞已确认；需复核 harness、执行模式和复现前置条件。'],
           localTestPlan: null, runId: runEntry.name,
-          observedAt: safeObservedAt(record.finishedAt, dynamicResult.observedAt, generatedAt) }));
+          observedAt: safeObservedAt(record.finishedAt, dynamicResult.observedAt, generatedAt) }), statedSeverity: 'medium' });
       }
       if (pocResult && typeof pocResult.findingId === 'string'
           && isSha256(pocResult.sourceSha256) && pocResult.sourceSha256 === sourceSha256
           && isSha256(pocResult.pocEvidenceSha256) && isSha256(pocResult.evidenceSha256)) {
-        const finding = findings.find((item) => item.id === pocResult.findingId);
-        if (finding) {
+        const entry = findings.find((item) => item.finding.id === pocResult.findingId);
+        if (entry) {
+          // PoC 证据先落地，再推导严重度：PoC 自带的因子来自真实执行，比派生值更可信。
+          const finding = applyDerivedSeverity(entry.finding, entry.statedSeverity, resolver);
           finding.pocState = ['confirmed', 'unconfirmed', 'error'].includes(pocResult.pocState) ? pocResult.pocState : 'unconfirmed';
           finding.pocArtifactPath = typeof pocResult.pocArtifactPath === 'string' ? pocResult.pocArtifactPath : null;
           finding.minCapitalRequiredWei = typeof pocResult.minCapitalRequiredWei === 'string' && /^\d+$/.test(pocResult.minCapitalRequiredWei)
             ? pocResult.minCapitalRequiredWei : null;
-          finding.severityFactors = pocResult.severityFactors && typeof pocResult.severityFactors === 'object' ? pocResult.severityFactors : null;
-          finding.severityScore = Number.isFinite(pocResult.severityScore) && pocResult.severityScore >= 0 ? pocResult.severityScore : null;
+          if (pocResult.severityFactors && typeof pocResult.severityFactors === 'object') {
+            finding.severityFactors = { ...finding.severityFactors, ...pocResult.severityFactors, source: 'poc_result' };
+          }
+          finding.severityScore = Number.isFinite(pocResult.severityScore) && pocResult.severityScore >= 0 ? pocResult.severityScore : finding.severityScore;
           finding.pocEvidenceSha256 = pocResult.pocEvidenceSha256;
           if (pocResult.pocState === 'confirmed' && pocResult.confirmedVulnerability === true) {
             finding.status = 'poc_confirmed';
             finding.confirmedVulnerability = true;
           }
+          entry.finding = finding;
+          entry.resolved = true;
         }
       }
     }
   }
   const unique = new Map();
-  for (const finding of findings) if (!unique.has(finding.id)) unique.set(finding.id, finding);
+  for (const entry of findings) {
+    // 未被 PoC 覆盖的条目在这里统一推导严重度。
+    const finding = entry.resolved ? entry.finding : applyDerivedSeverity(entry.finding, entry.statedSeverity, resolver);
+    if (!unique.has(finding.id)) unique.set(finding.id, finding);
+  }
   return [...unique.values()];
 }
 
-export async function writeFindingIndex(workDir = WORK_DIR, generatedAt = new Date().toISOString()) {
-  const findings = await scanCampaignEvidence(workDir, generatedAt);
+export async function writeFindingIndex(workDir = WORK_DIR, generatedAt = new Date().toISOString(), resolver = null) {
+  const severityResolver = resolver || await createSeverityResolver(PROJECT_ROOT);
+  const findings = await scanCampaignEvidence(workDir, generatedAt, severityResolver);
+  // 保持 schemaVersion=1 的既有信封形状：严重度模型信息只写进每条 finding，避免破坏下游读取方。
   const index = { schemaVersion: 1, generatedAt, findings };
   await writeAtomic(join(workDir, 'finding-index.json'), index);
   return index;
@@ -432,8 +467,13 @@ async function buildSnapshotFresh() {
   const vulnerabilityChains = await buildVulnerabilityChains({ projectRoot: PROJECT_ROOT, reports: detailReports, testReport });
   const severityCounts = { High: 0, Medium: 0, Low: 0, Informational: 0 };
   for (const finding of staticReports) severityCounts[finding.impact] = (severityCounts[finding.impact] || 0) + 1;
-  const campaignSeverityCounts = { high: 0, medium: 0, low: 0, info: 0 };
+  const campaignSeverityCounts = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
   for (const finding of campaignFindings) campaignSeverityCounts[finding.severity] = (campaignSeverityCounts[finding.severity] || 0) + 1;
+  const campaignSeverityBasisCounts = {};
+  for (const finding of campaignFindings) {
+    const basis = finding.severityBasis || 'unrated';
+    campaignSeverityBasisCounts[basis] = (campaignSeverityBasisCounts[basis] || 0) + 1;
+  }
   const generatedAt = [screen?.generatedAt, flare?.generatedAt, summary?.generatedAt].map(isoOrNull).filter(Boolean).sort().at(-1) || null;
   const readyChains = chains.filter((chain) => chain.readyForDeepDive);
   const candidateChains = chains.filter((chain) => chain.selectedForDeepDive);
@@ -462,7 +502,8 @@ async function buildSnapshotFresh() {
     routes: quoteRoutes,
     findings,
     staticReports: staticReports.slice(0, 80),
-    findingIndex: { schemaVersion: findingIndex?.schemaVersion || 1, generatedAt: findingIndex?.generatedAt || null, findingCount: campaignFindings.length },
+    findingIndex: { schemaVersion: findingIndex?.schemaVersion || 1, generatedAt: findingIndex?.generatedAt || null, findingCount: campaignFindings.length,
+      severityModel: await createSeverityResolver(PROJECT_ROOT).then((resolver) => resolver.describe()) },
     highPriorityFindings: findings.filter((finding) => finding.impact === 'High' || (finding.impact === 'Medium' && finding.confidence === 'High')).slice(0, 16),
     vulnerabilityChains,
     staticAnalysis: {
@@ -474,6 +515,8 @@ async function buildSnapshotFresh() {
       campaignFindingCount: campaignFindings.length,
       severityCounts,
       campaignSeverityCounts,
+      campaignSeverityBasisCounts,
+      campaignSeverityCaveat: '采集观察项的严重度是未确认估算影响，不是已确认漏洞；高严重度只表示按漏洞字典与可见证据推导出的上限，不代表可达或可利用。',
       targets: Array.isArray(summary?.targets) ? summary.targets.map((target) => ({
         name: target.target?.name || 'unknown', success: target.success === true, findingCount: numberOrZero(target.findingCount), severityCounts: target.severityCounts || {}, analyzedContracts: numberOrZero(target.analyzedContracts),
       })) : [],

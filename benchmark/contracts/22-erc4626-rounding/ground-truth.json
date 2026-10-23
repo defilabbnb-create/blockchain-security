@@ -1,1 +1,17 @@
-{"knownIssues":["erc4626_rounding"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Vault.sol","solcVersion":"0.8.19"}
+{
+  "knownIssues": [
+    "erc4626_rounding"
+  ],
+  "clean": false,
+  "source": "https://github.com/example/defi-benchmarks",
+  "sourceFile": "Vault.sol",
+  "solcVersion": "0.8.19",
+  "excludedReason": {
+    "grade": "D",
+    "summary": "D 级，标注与源码不一致",
+    "adjudication": "标注 erc4626_rounding，但 L2 的 convertToShares 用 `(assets * totalSupply + totalAssets - 1) / totalAssets` 向上取整（round-up），正是 EIP-4626 规定的正确方向。该桩实现的是「舍入正确」，与标注所述「舍入缺陷」方向相反，属标注与代码矛盾。",
+    "evidenceLines": [
+      2
+    ]
+  }
+}

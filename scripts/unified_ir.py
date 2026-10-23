@@ -117,6 +117,30 @@ def _sort_unique(items):
     return [unique[key] for key in sorted(unique)]
 
 
+def _with_permission_source_ref(rows):
+    """Fold each row's raw `location` into a `sourceRef` before it is hashed.
+
+    Both permission sources in a call graph carry the same modifier gate, and the
+    entity id is derived from row content.  Leaving `location` in place on one
+    source and folding it on the other produced two entities with one id and two
+    different bodies, which the duplicate check rejects.  Normalising first makes
+    the two copies byte-identical so they collapse into a single permission.
+    """
+    if rows is None:
+        return []
+    if not isinstance(rows, list):
+        raise ValueError('permission rows must be a list')
+    normalised = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError('permission rows contain malformed entries')
+        row = dict(row)
+        if 'location' in row:
+            row['sourceRef'] = _location_ref(row.pop('location'))
+        normalised.append(row)
+    return normalised
+
+
 def _semantic_entities(items, *, kind, contract_id, evidence_id, source='analysis'):
     """Copy explicitly reported semantic dimensions without inventing meaning."""
     if items is None:
@@ -133,7 +157,13 @@ def _semantic_entities(items, *, kind, contract_id, evidence_id, source='analysi
         copied.pop('contractId', None)
         copied.pop('evidenceIds', None)
         entity = {
-            'id': entity_id(kind, {'contractId': contract_id, 'index': index, 'value': copied}),
+            # The identity is the row's own content, not its position.  An index
+            # made the same modifier gate id differently depending on whether the
+            # call graph reported it under `entrypoints[].permissionCandidates` or
+            # under the document-level `permissions`, so merging the two copies of
+            # one gate produced two entities that shared no id and quietly
+            # duplicated the permission instead of collapsing it.
+            'id': entity_id(kind, {'contractId': contract_id, 'value': copied}),
             'kind': kind,
             'contractId': contract_id,
             'source': source,
@@ -605,9 +635,15 @@ def from_call_graph(report):
                 raise ValueError('entrypoint permissionCandidates contain malformed entries')
             permission_rows.append({**value, 'function': entry['function']})
     parameters = _semantic_entities(parameter_rows, kind='parameter', contract_id=contract_id, evidence_id=evidence_id)
-    permissions = _semantic_entities(permission_rows, kind='permission', contract_id=contract_id, evidence_id=evidence_id)
-    for permission in permissions:
-        permission['sourceRef'] = _location_ref(permission.pop('location', None))
+    # The call graph reports each modifier gate twice: once under the entrypoint's
+    # `permissionCandidates` and once under the document-level `permissions`.  Both
+    # copies are the same row, but the location had to be folded into a `sourceRef`
+    # on one side only, which made the two entities share an id while differing in
+    # content -- and `_sort_unique` then rejected the whole document, so an ordinary
+    # contract produced no IR at all.  Normalising the location the same way on both
+    # sides before the merge is what lets them collapse into one permission.
+    permissions = _semantic_entities(_with_permission_source_ref(permission_rows),
+                                     kind='permission', contract_id=contract_id, evidence_id=evidence_id)
     operations = []
     links = []
     for edge in report.get('edges', []):
@@ -655,8 +691,9 @@ def from_call_graph(report):
                                            contract_id=contract_id, evidence_id=evidence_id)
     roles = _semantic_entities(report.get('roles', []), kind='role',
                                contract_id=contract_id, evidence_id=evidence_id)
-    permissions = _sort_unique(permissions + _semantic_entities(report.get('permissions', []), kind='permission',
-                                                                  contract_id=contract_id, evidence_id=evidence_id))
+    permissions = _sort_unique(permissions + _semantic_entities(_with_permission_source_ref(report.get('permissions', [])),
+                                                             kind='permission',
+                                                             contract_id=contract_id, evidence_id=evidence_id))
     for name, function_id in entrypoint_by_name.items():
         if not any(item['id'] == function_id for item in functions):
             functions.append({'id': function_id, 'kind': 'function', 'contractId': contract_id,

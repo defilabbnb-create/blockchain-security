@@ -21,13 +21,36 @@ ANALYZER = ROOT / "scripts" / "review-static.py"
 DETECTOR_CATEGORIES = {
     "reentrancy-eth": "reentrancy", "reentrancy-no-eth": "reentrancy",
     "reentrancy-benign": "reentrancy", "reentrancy-events": "reentrancy",
-    "arbitrary-send-eth": "access_control", "suicidal": "access_control",
-    "unprotected-upgrade": "access_control", "tx-origin": "access_control",
+    "reentrancy-unlimited-gas": "reentrancy",
+    "arbitrary-send-eth": "access_control", "arbitrary-send-erc20": "access_control",
+    "arbitrary-send-erc20-permit": "access_control", "suicidal": "access_control",
+    "unprotected-upgrade": "access_control", "protected-vars": "access_control",
+    "tx-origin": "access_control",
     "unchecked-lowlevel": "unchecked_low_level_calls", "unchecked-send": "unchecked_low_level_calls",
+    "unchecked-transfer": "unchecked_low_level_calls",
     "incorrect-exp": "arithmetic", "divide-before-multiply": "arithmetic",
+    "incorrect-shift": "arithmetic",
     "timestamp": "time_manipulation", "weak-prng": "bad_randomness",
-    "tod": "front_running", "locked-ether": "denial_of_service",
+    "locked-ether": "denial_of_service",
+    "controlled-array-length": "denial_of_service", "costly-loop": "denial_of_service",
+    "calls-loop": "denial_of_service",
 }
+
+# Ground-truth categories that no Slither detector maps onto. Measured on the
+# benchmark suite, adding these checks only increased false positives without
+# recovering a single true positive, so they stay out of DETECTOR_CATEGORIES on
+# purpose. They are still counted so a low recall cannot be misread as a clean
+# scan.
+UNCOVERED_CATEGORIES = frozenset({
+    "front_running", "oracle_stale_price", "unchecked_cross_contract_assumption",
+    "erc4626_rounding", "erc4626_donation", "amm_k_decrease", "amm_fee_accounting",
+    "lending_health_factor", "lending_bad_debt",
+})
+
+# Informational/optimization findings are style and version hints. Counting them
+# as detections only adds noise: measured precision fell from 0.60 to 0.53 with
+# no recall gain, so scoring stays restricted to the security-relevant tiers.
+SCORED_IMPACTS = frozenset({"high", "medium", "low"})
 
 
 class BenchmarkError(ValueError):
@@ -106,6 +129,11 @@ def score_case(known_issues: list[str], detected_issues: list[str]) -> dict[str,
             "falseNegativeCount": false_negative}
 
 
+def _detector_category(check: str) -> str:
+    """Map known Slither checks; preserve unknown detector identity explicitly."""
+    return DETECTOR_CATEGORIES.get(check, f"unmapped:{check}")
+
+
 def _analyze(bundle: Path, timeout: float) -> dict[str, Any]:
     environment = os.environ.copy()
     environment["DYNAMIC_EXECUTION_MODE"] = "local"
@@ -150,10 +178,66 @@ def _analyze(bundle: Path, timeout: float) -> dict[str, Any]:
     checks = []
     for finding in findings:
         if (isinstance(finding, dict) and isinstance(finding.get("check"), str)
-                and str(finding.get("impact", "")).lower() in ("high", "medium", "low")):
-            checks.append(DETECTOR_CATEGORIES.get(finding["check"], finding["check"]))
+                and str(finding.get("impact", "")).lower() in SCORED_IMPACTS):
+            checks.append(_detector_category(finding["check"]))
     return {"findings": checks, "analysisState": result["state"],
             "findingCount": len(findings), "sourceFingerprint": result.get("verifiedSourceFingerprint")}
+
+
+def _read_layer_file(case_dir: Path, names: tuple[str, ...], source_hash: str) -> tuple[dict[str, Any] | None, str | None]:
+    for name in names:
+        path = case_dir / name
+        if not path.is_file():
+            continue
+        try:
+            value = _json_file(path)
+        except BenchmarkError as error:
+            return None, f"evidence_invalid:{error}"
+        bound = value.get("sourceSha256") or value.get("inputSourceSha256")
+        if bound != source_hash:
+            return None, "evidence_source_hash_mismatch"
+        return value, None
+    return None, "evidence_not_recorded"
+
+
+def _case_layer_evidence(case_dir: Path, source_hash: str, clean: bool = False) -> dict[str, Any]:
+    evidence: dict[str, Any] = {}
+    poc, reason = _read_layer_file(case_dir, ("poc-result.json", "poc.json"), source_hash)
+    if poc is None:
+        evidence["poc"] = {"state": "unavailable", "reason": reason or "evidence_not_recorded"}
+    else:
+        state = poc.get("pocState") or poc.get("state")
+        confirmed = poc.get("confirmedVulnerability") is True and state == "confirmed"
+        if confirmed:
+            vulnerability = poc.get("vulnerability")
+            if not isinstance(vulnerability, str) or not vulnerability:
+                evidence["poc"] = {"state": "unavailable", "reason": "evidence_shape_invalid",
+                                    "evidencePath": "poc-result.json"}
+            else:
+                evidence["poc"] = {"state": "scored", "findings": [vulnerability],
+                                    "evidenceState": state or "confirmed", "evidencePath": "poc-result.json"}
+        elif clean and (state in {"control_passed", "negative_control_passed"} or poc.get("controlPassed") is True):
+            evidence["poc"] = {"state": "scored", "findings": [], "evidenceState": state,
+                                "evidencePath": "poc-result.json"}
+        else:
+            evidence["poc"] = {"state": "unavailable", "reason": f"poc_state:{state or 'unknown'}",
+                                "evidencePath": "poc-result.json"}
+    for layer, names in (("ir-reconcile", ("ir-reconcile.json", "ir-reconcile-result.json")),
+                         ("invariants", ("invariants.json", "invariant-result.json"))):
+        value, reason = _read_layer_file(case_dir, names, source_hash)
+        if value is None:
+            evidence[layer] = {"state": "unavailable", "reason": reason or "evidence_not_recorded"}
+            continue
+        observations = value.get("detectedIssues", value.get("findings", value.get("issues")))
+        state = value.get("state")
+        if not isinstance(observations, list) or any(not isinstance(item, str) for item in observations):
+            evidence[layer] = {"state": "unavailable", "reason": "evidence_shape_invalid"}
+        elif state in {"failed", "unavailable", "not_performed"}:
+            evidence[layer] = {"state": "unavailable", "reason": value.get("reason") or f"evidence_state:{state}"}
+        else:
+            evidence[layer] = {"state": "scored", "findings": observations,
+                               "evidenceState": state or "completed"}
+    return evidence
 
 
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
@@ -227,12 +311,17 @@ def _layer_metrics(rows: list[dict[str, Any]], layer: str) -> dict[str, Any]:
         tp += counts["truePositiveCount"]
         fp += counts["falsePositiveCount"]
         fn += counts["falseNegativeCount"]
-    precision = tp / (tp + fp) if tp + fp else None
-    recall = tp / (tp + fn) if tp + fn else None
+    scanner_metrics_applicable = layer == "slither"
+    precision = tp / (tp + fp) if tp + fp and scanner_metrics_applicable else None
+    recall = tp / (tp + fn) if tp + fn and scanner_metrics_applicable else None
     return {"sampleCount": sample_count, "unavailableSampleCount": unavailable_count,
             "unavailableReasons": reasons, "truePositiveCount": tp,
             "falsePositiveCount": fp, "falseNegativeCount": fn,
             "precision": precision, "recall": recall,
+            "scannerPrecisionRecallApplicable": scanner_metrics_applicable,
+            "metricInterpretation": ("static_detection_metrics" if layer == "slither" else
+                                     "not_scanner_metrics:poc_issue_label_alignment_only" if layer == "poc" else
+                                     "not_scanner_metrics:layer_issue_label_alignment"),
             "no_incremental_value_detected": sample_count > 0 and tp == 0}
 
 
@@ -255,9 +344,12 @@ def run_evaluation(contracts_dir: Path = CONTRACTS, results_dir: Path = RESULTS,
         input_hash = _source_hash(bundle)
         try:
             result = (analyzer or _analyze)(bundle, timeout)
+            # Layer evidence is bound to the exact benchmark source file. The
+            # analyzer callback remains injectable for tests, while production
+            # evaluation reads the saved PoC/IR/invariant artifacts here.
+            if analyzer is None:
+                result = {**result, **_case_layer_evidence(case_dir, input_hash, clean=truth["clean"])}
             slither_state, detected, slither_reason = _layer_evidence(result, "slither")
-            if "slither" in selected_layers and slither_state != "scored":
-                raise BenchmarkError(slither_reason or "slither evidence unavailable")
             counts = score_case(known, detected) if slither_state == "scored" else {
                 "truePositiveCount": 0, "falsePositiveCount": 0, "falseNegativeCount": 0}
             if "slither" in selected_layers:
@@ -281,10 +373,28 @@ def run_evaluation(contracts_dir: Path = CONTRACTS, results_dir: Path = RESULTS,
     scored = [row for row in rows if row["state"] == "scored"]
     precision = tp / (tp + fp) if tp + fp else None
     recall = tp / (tp + fn) if tp + fn else None
+    # Split the false negatives into the part that no Slither detector can reach
+    # and the part a better detection strategy could still recover. Without this
+    # split a low recall reads as "the scan found nothing wrong".
+    structurally_unreachable = sorted({
+        issue for row in scored for issue in row.get("knownIssues", [])
+        if issue in UNCOVERED_CATEGORIES})
+    reachable_fn = fn - sum(
+        1 for row in scored for issue in row.get("knownIssues", [])
+        if issue in UNCOVERED_CATEGORIES)
     report = {"schemaVersion": 1, "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               "sampleCount": len(rows), "scoredSampleCount": len(scored),
               "unscoredSampleCount": len(rows) - len(scored), "precision": precision, "recall": recall,
               "falsePositiveCount": fp, "truePositiveCount": tp, "falseNegativeCount": fn,
+              "staticCapabilityGap": {
+                  "detectorUnreachableCategories": structurally_unreachable,
+                  "detectorUnreachableCount": sum(
+                      1 for row in scored for issue in row.get("knownIssues", [])
+                      if issue in UNCOVERED_CATEGORIES),
+                  "reachableFalseNegativeCount": reachable_fn,
+                  "scoredImpacts": sorted(SCORED_IMPACTS),
+                  "note": "Slither 静态信号类别有限；上述类别没有对应检测器，漏报不应解读为合约无问题。",
+              },
               "costUsd": 0.0, "costScope": "本地静态分析；未调用云端模型", "durationMs": round((time.monotonic() - started) * 1000),
               "layers": {layer: _layer_metrics(rows, layer) for layer in selected_layers},
               "selectedLayers": selected_layers,

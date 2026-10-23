@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { constants as fsConstants } from 'node:fs';
 import { lstat, open, readFile, realpath, readdir, statfs } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { loadavg } from 'node:os';
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,6 +79,87 @@ function sendJson(response, status, value) {
   if (response.destroyed || response.writableEnded) return;
   response.writeHead(status, { ...securityHeaders, 'content-type': 'application/json; charset=utf-8' });
   response.end(JSON.stringify(value));
+}
+
+/**
+ * 读取基准证据矩阵：把样本分级、PoC 证据体检与覆盖率三份报告按 caseId 对齐。
+ *
+ * 这三份是不同的东西，不能合并成一个"通过率"：分级说的是标注本身可不可信，
+ * 证据体检说的是 poc-result 有没有前后对比，覆盖率说的是检测器准不准。
+ * 缺失的输入保持显式缺失，不推断为通过。
+ */
+function benchmarkEvidenceMatrix() {
+  const readJson = (relativePath) => {
+    try {
+      const filePath = join(PROJECT_ROOT, relativePath);
+      return JSON.parse(readFileSync(filePath, 'utf8'));
+    } catch {
+      return null;
+    }
+  };
+
+  const adjudication = readJson('benchmark/sample-adjudication.json');
+  const audit = readJson('benchmark/poc-evidence-audit.json');
+  const coverage = readJson('benchmark/coverage-report.json');
+  if (!adjudication && !audit && !coverage) {
+    return {
+      apiVersion: 'v1', schemaVersion: 1, generatedAt: new Date().toISOString(),
+      available: false,
+      reason: '证据报告尚未生成；先运行 scripts/evidence-matrix.py --json',
+      rows: [], counts: {},
+    };
+  }
+
+  const grades = new Map();
+  for (const sample of adjudication?.samples || []) {
+    if (sample?.caseId) grades.set(sample.caseId, sample);
+  }
+  const verdicts = new Map();
+  for (const item of audit?.cases || []) {
+    if (item?.caseId) verdicts.set(item.caseId, item);
+  }
+  const scored = new Map();
+  const split = coverage?.pocEvidenceSplit || {};
+  for (const bucket of ['withReproduction', 'evidenceStale', 'fabricated', 'staticOnly']) {
+    for (const item of split[bucket]?.cases || []) {
+      if (item?.caseId) scored.set(item.caseId, { bucket, ...item });
+    }
+  }
+
+  const rows = [];
+  const counts = {};
+  for (const [caseId, verdictRow] of verdicts) {
+    const gradeRow = grades.get(caseId) || {};
+    const scoreRow = scored.get(caseId) || {};
+    const verdict = verdictRow.verdict || 'unknown';
+    counts[verdict] = (counts[verdict] || 0) + 1;
+    const grade = gradeRow.grade || '-';
+    rows.push({
+      caseId,
+      grade,
+      clean: Boolean(verdictRow.clean),
+      excluded: (grade === 'C' || grade === 'D') && !gradeRow.clean,
+      verdict,
+      hasEvidence: Boolean(verdictRow.hasEvidence),
+      issues: verdictRow.knownIssues || [],
+      bindingOk: verdictRow.sourceBinding?.matched ?? null,
+      hit: Boolean(scoreRow.hit),
+      falseNegative: Boolean(scoreRow.falseNegative),
+      falsePositive: Boolean(scoreRow.falsePositive),
+    });
+  }
+
+  return {
+    apiVersion: 'v1', schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    available: rows.length > 0,
+    inputs: {
+      adjudication: Boolean(adjudication), evidenceAudit: Boolean(audit), coverage: Boolean(coverage),
+    },
+    counts, rows,
+    localPocs: null,
+    interpretation: '分级=标注可信度；证据判定=poc-result 是否有前后对比；检出=静态角色识别结果，不等于确认漏洞；本地 PoC=forge test 是否跑通。四者不可互相替代。',
+  };
 }
 
 function sendRaw(response, result) {
@@ -1196,6 +1278,9 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
         workers: { collection: workerStatus() },
         progress: latest?.progress || latest?.campaign?.progress || null,
       });
+    }
+    if (pathname === '/api/v1/benchmark/evidence-matrix' && request.method === 'GET') {
+      return sendJson(response, 200, benchmarkEvidenceMatrix());
     }
     if (pathname === '/api/v1/capabilities' && request.method === 'GET') {
       if ([...requestUrl.searchParams.keys()].length) return sendJson(response, 400, { apiVersion: 'v1', schemaVersion: 1, error: { code: 'unknown_query_parameter', message: '能力清单不接受查询参数' } });

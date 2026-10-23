@@ -39,13 +39,34 @@ def source_bundle_sha256(source_bundle) -> str:
     return hashlib.sha256(canonical_json(normalized)).hexdigest()
 
 
-def cache_key(source_bundle_sha256_value: str, solc_version: str, compile_settings) -> str:
+def _builder_fingerprint():
+    """Digest the code that decides what a cached artifact contains.
+
+    The cache key used to be derived from the source text, the compiler version
+    and the compile settings alone.  That is enough to say *which contract* was
+    analysed, but not *how*: after `unified_ir.py` was corrected, a run kept
+    replaying the previously cached IR, so the fix appeared to have no effect and
+    the same samples stayed undetectable.  Folding the builder's own digest into
+    the key makes a change to the analysis logic invalidate every entry it could
+    have produced, which is what a cache has to do to stay trustworthy.
+    """
+    here = Path(__file__).resolve().parent
+    parts = []
+    for name in ("repr_cache.py", "unified_ir.py", "review-static.py"):
+        path = here / name
+        parts.append(path.read_bytes() if path.is_file() else b"")
+    return hashlib.sha256(b"\x00".join(parts)).hexdigest()
+
+
+def cache_key(source_bundle_sha256_value: str, solc_version: str, compile_settings,
+              builder: str | None = None) -> str:
     if not isinstance(source_bundle_sha256_value, str) or not re.fullmatch(r"[0-9a-f]{64}", source_bundle_sha256_value):
         raise ValueError("sourceBundleSha256 must be a lowercase SHA-256 digest")
     if not isinstance(solc_version, str) or not solc_version:
         raise ValueError("solcVersion must be a non-empty string")
     payload = {"sourceBundleSha256": source_bundle_sha256_value,
-               "solcVersion": solc_version, "compileSettings": compile_settings}
+               "solcVersion": solc_version, "compileSettings": compile_settings,
+               "builder": builder or _builder_fingerprint()}
     return hashlib.sha256(canonical_json(payload)).hexdigest()
 
 

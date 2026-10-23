@@ -46,6 +46,12 @@ def _is_pre_0_4_22(pragma):
     return tuple(int(part) for part in match.groups()) < (0, 4, 22)
 
 
+# `view` and `pure` parse from 0.4.16.
+MUTABILITY_FLOOR = (0, 4, 16)
+# `interface` parses from 0.5.0.
+INTERFACE_FLOOR = (0, 5, 0)
+
+
 def _is_at_least(pragma, floor):
     """Whether a generated pragma names a compiler at or above ``floor``.
 
@@ -136,6 +142,17 @@ def generate_harness(invariants, source_bundle, output_dir, compiler_version=Non
     renderers = load_renderers()
     adapter_required = []
     seen_ids = set()
+    # The dialect is a property of the whole harness, not of one assertion, so it
+    # is resolved once before the loop.  The generated test lives in the same
+    # compilation unit as the target, so its pragma has to satisfy the target's
+    # own constraint.  A fixed `>=0.8.19` made every pre-0.8 benchmark sample
+    # uncompilable, which the run then reported as "no assertion executed" rather
+    # than as a compiler error -- the assertion existed but could never run.
+    pragma = _pragma_for_sources(sources, compiler_version)
+    # `uint` as an alias for `uint256` only exists from 0.4.22 on, so the
+    # generated locals spell the width out and parse on every release in the
+    # corpus rather than only on the recent half of it.
+    wide = "uint256" if _is_pre_0_4_22(pragma) else "uint"
     for invariant in invariants.get('invariants', []):
         if not isinstance(invariant, dict):
             raise ValueError('invariant rows must be objects')
@@ -147,7 +164,13 @@ def generate_harness(invariants, source_bundle, output_dir, compiler_version=Non
         seen_ids.add(invariant_id)
         template = invariant.get('template')
         renderer = renderers.get(template)
-        context = {'contract_name': target_name or 'Target', 'target_addr_expr': 'target'}
+        context = {'contract_name': target_name or 'Target', 'target_addr_expr': 'target',
+                   # The renderer needs the graded compiler, not the sample's own
+                   # pragma, to pick a dialect: `require` only takes a reason
+                   # string from 0.4.22 on.  Without this every assertion rendered
+                   # the two-argument form and 0.4.10 through 0.4.21 rejected the
+                   # harness with "Wrong argument count".
+                   'compiler_version': pragma}
         body = renderer(invariant.get('params') or {}, context) if renderer else None
         if not isinstance(body, str) or not body.strip():
             reason = 'invariant_renderer_missing' if renderer is None else 'invariant_renderer_requires_adapter'
@@ -156,36 +179,36 @@ def generate_harness(invariants, source_bundle, output_dir, compiler_version=Non
         test_name = f'Invariant_{invariant_id[:16]}.t.sol'
         id_literal = '0x' + invariant_id
         description = json.dumps(str(invariant.get('description') or invariant.get('name') or ''))
-        # The generated test lives in the same compilation unit as the target, so
-        # its pragma has to satisfy the target's own constraint.  A fixed
-        # `>=0.8.19` made every pre-0.8 benchmark sample uncompilable, which the
-        # run then reported as "no assertion executed" rather than as a compiler
-        # error -- the assertion existed but could never run.
-        pragma = _pragma_for_sources(sources, compiler_version)
-        # `uint` as an alias for `uint256` only exists from 0.4.22 on, so the
-        # generated locals spell the width out and parse on every release in the
-        # corpus rather than only on the recent half of it.
-        wide = "uint256" if _is_pre_0_4_22(pragma) else "uint"
-        # `interface` and the `view` data location were both introduced in Solidity
-        # 0.4.11.  A corpus sample pinned to 0.4.10 therefore failed to parse its
-        # own generated harness -- "Expected token LBrace got 'View'", and then
-        # "Expected import directive or contract definition" -- which the run
-        # reported as a failed deployment rather than as the version mismatch it
-        # was.  A plain `contract` with a body declares the same function and
-        # parses on every release the corpus pins; the declaration is only ever
-        # called through the cheat-code address, so the body never executes.
-        vm_declared = ('interface Vm' if _is_at_least(pragma, (0, 4, 11))
+        # The mutability keywords and `interface` arrived in different releases,
+        # and both are measured rather than remembered: `view` and `pure` parse
+        # from 0.4.16, while `interface` only parses from 0.5.0.  Treating both as
+        # 0.4.11 -- the value this file previously carried -- rejected 0.4.11
+        # through 0.4.15 with "Expected token LBrace got 'View'" and 0.4.11
+        # through 0.4.25 with "Expected identifier but got 'interface'".  A corpus
+        # sample pinned to any of those releases then failed to parse its own
+        # generated harness, and the run reported a failed deployment rather than
+        # the version mismatch it was.  A plain `contract` with a body declares the
+        # same function and parses on every release the corpus pins; the
+        # declaration is only ever called through the cheat-code address, so the
+        # body never executes.
+        vm_declared = ('interface Vm' if _is_at_least(pragma, INTERFACE_FLOOR)
                        else 'contract Vm')
         vm_body = ('function envAddress(bytes32 name) external view returns (address);'
-                   if _is_at_least(pragma, (0, 4, 11)) else
+                   if _is_at_least(pragma, INTERFACE_FLOOR) else
                    'function envAddress(bytes32 name) external returns (address) '
                    '{ return address(0); }')
-        # `view` on the harness's own helpers is the same pre-0.4.11 keyword, and
+        # `view` on the harness's own helpers is the same pre-0.4.16 keyword, and
         # dropping it changes nothing about what the helpers do: they read state
         # through `assembly` and never write.
-        view_kw = 'view ' if _is_at_least(pragma, (0, 4, 11)) else ''
-        # `pure` arrived in the same release as `view` and `interface`.
-        pure_kw = 'pure ' if _is_at_least(pragma, (0, 4, 11)) else ''
+        view_kw = 'view ' if _is_at_least(pragma, MUTABILITY_FLOOR) else ''
+        # `pure` arrived in the same release as `view`.
+        pure_kw = 'pure ' if _is_at_least(pragma, MUTABILITY_FLOOR) else ''
+        # The two-argument `require` -- condition plus reason string -- only
+        # exists from 0.4.22.  Below that it is rejected with "Wrong argument
+        # count", so the reason is dropped rather than the check.
+        require_form = ('require(_codeSizeAt(target) > 0, "INVARIANT_TARGET has no code");'
+                        if _is_at_least(pragma, (0, 4, 22))
+                        else 'require(_codeSizeAt(target) > 0);')
         # The cheat-code interface and the handles built on it use post-0.4
         # spellings (`calldata` parameters, `uint256` casts, `.code`), which do
         # not parse under the 0.4.x compilers these benchmark samples pin.  The
@@ -210,6 +233,11 @@ contract Invariant_{invariant_id[:16]} {{
     // contract-to-address cast is not available on the 0.4 compilers half of the
     // corpus pins.  The literal is still anchored in this contract's own code,
     // so the slot is resolved by the compiler rather than hand-computed.
+    //
+    // The address is taken with `div` rather than `shr(96, word)`: `shr` is an
+    // assembly builtin Solidity added in 0.5, and 0.4.16 through 0.4.21 rejected
+    // this helper with "Function not found", which the deep layer then reported as
+    // an unavailable deployment.
     function _cheatCodeAddress() private {view_kw}returns (address out) {{
         bytes32 slot;
         bytes32 word;
@@ -217,7 +245,7 @@ contract Invariant_{invariant_id[:16]} {{
             mstore(0x00, "hevm cheat code")
             slot := keccak256(0x00, 0x10)
             word := sload(slot)
-            out := shr(96, word)
+            out := div(word, 0x1000000000000000000000000000000000000000)
         }}
     }}
 
@@ -225,29 +253,148 @@ contract Invariant_{invariant_id[:16]} {{
         assembly {{ size := extcodesize(who) }}
     }}
 
-    // Selector + single-argument calldata, assembled by hand.  The library forms
-    // are all version-gated: `abi.encodeWithSignature` only accepts trailing
-    // arguments from 0.5 on, and the `abi.encodeWithSelector` spelling needs the
-    // one-argument `keccak256` that does not exist before 0.5 either.  Hashing the
-    // signature inside `assembly` and concatenating the encoded argument is the one
+    // Selector + calldata, assembled by hand.  Every library form is
+    // version-gated: `abi.encodeWithSignature` only accepts trailing arguments
+    // from 0.5 on, and `abi.encodeWithSelector` needs the one-argument
+    // `keccak256` that does not exist before 0.5 either.  Hashing the signature
+    // inside `assembly` and concatenating the encoded argument is the one
     // spelling a public mapping getter can be read through on every release this
     // corpus pins.
-    function _encodeCall(string memory signature, address argument) private {pure_kw}returns (bytes memory) {{
-        bytes memory encoded = new bytes(36);
+    //
+    // The hash starts at `add(signature, 32)`, not at `signature`.  A `string
+    // memory` parameter points at its own length word, so hashing `signatureLength`
+    // bytes from `signature` folds that prefix into the digest and yields a
+    // selector the target does not implement -- every read then reverted and the
+    // run reported "getter unavailable" for contracts whose getters are perfectly
+    // readable.  The compiler's own `abi.encodeWithSignature` skips the prefix.
+    //
+    // The selector occupies the low four bytes of the data area and the argument is
+    // written immediately after it, right-aligned in the following 32 bytes --
+    // byte for byte what `abi.encodeWithSignature` produces.  Storing the selector
+    // left-aligned and the argument one word further out looks equivalent and is
+    // not: a 36-byte buffer cannot hold two words, so the second store lands past
+    // the end of the data and the dispatch fails.  Verified against a live
+    // `mapping(address => uint256) public balances` getter rather than inferred.
+    function _encodeSelector(string memory signature) private {pure_kw}returns (bytes memory) {{
+        bytes memory encoded = new bytes(4);
         assembly {{
-            let scratch := mload(0x40)
-            mstore(scratch, signature)
-            let slot := keccak256(scratch, 0x20)
-            mstore(encoded, slot)
-            mstore(add(encoded, 0x04), and(argument, 0xffffffffffffffffffffffffffffffffffffffff))
+            let signatureLength := mload(signature)
+            mstore(add(encoded, 32), and(keccak256(add(signature, 32), signatureLength),
+                0xffffffff00000000000000000000000000000000000000000000000000000000))
         }}
         return encoded;
     }}
 
+    function _encodeSelectorWithAddress(string memory signature, address argument) private {pure_kw}returns (bytes memory) {{
+        bytes memory encoded = new bytes(36);
+        assembly {{
+            let signatureLength := mload(signature)
+            let out := encoded
+            mstore(add(out, 32), and(keccak256(add(signature, 32), signatureLength),
+                0xffffffff00000000000000000000000000000000000000000000000000000000))
+            mstore(add(out, 36), and(argument, 0xffffffffffffffffffffffffffffffffffffffff))
+        }}
+        return encoded;
+    }}
+
+    function _encodeSelectorWithUint256(string memory signature, uint256 argument) private {pure_kw}returns (bytes memory) {{
+        bytes memory encoded = new bytes(36);
+        assembly {{
+            let signatureLength := mload(signature)
+            let out := encoded
+            mstore(add(out, 32), and(keccak256(add(signature, 32), signatureLength),
+                0xffffffff00000000000000000000000000000000000000000000000000000000))
+            mstore(add(out, 36), argument)
+        }}
+        return encoded;
+    }}
+
+    // Probes for entry points that take arguments.  These carry a placeholder
+    // rather than a value the caller reads back: an access-control assertion
+    // asks whether the call was admitted, so an index of zero for an array
+    // position and an empty payload for an uninspected argument say everything
+    // the assertion needs.  Only the admission flag is read, so the contents of
+    // the payload never affect the verdict.
+    //
+    // The empty dynamic payload is an offset of 0x20 followed by a zero length,
+    // which is byte for byte what `abi.encodeWithSignature(sig, new bytes(0))`
+    // produces: the tail sits immediately behind the head, so the offset is the
+    // head size rather than a full two-word stride.
+    function _encodeSelectorWithBytes(string memory signature) private {pure_kw}returns (bytes memory) {{
+        bytes memory encoded = new bytes(68);
+        assembly {{
+            let signatureLength := mload(signature)
+            let out := encoded
+            mstore(add(out, 32), and(keccak256(add(signature, 32), signatureLength),
+                0xffffffff00000000000000000000000000000000000000000000000000000000))
+            mstore(add(out, 36), 0x20)
+            mstore(add(out, 68), 0)
+            mstore(out, 68)
+        }}
+        return encoded;
+    }}
+
+    function _encodeSelectorWithTwoUint256(string memory signature, uint256 first, uint256 second) private {pure_kw}returns (bytes memory) {{
+        bytes memory encoded = new bytes(68);
+        assembly {{
+            let signatureLength := mload(signature)
+            let out := encoded
+            mstore(add(out, 32), and(keccak256(add(signature, 32), signatureLength),
+                0xffffffff00000000000000000000000000000000000000000000000000000000))
+            mstore(add(out, 36), first)
+            mstore(add(out, 68), second)
+            mstore(out, 68)
+        }}
+        return encoded;
+    }}
+
+    // A low-level call whose success flag and first returned word are returned as
+    // a two-value tuple.  Neither `.call()` nor `abi.decode` has a spelling every
+    // compiler in this corpus accepts: `.call()` cannot be destructured at all
+    // before 0.5, and `abi.decode` is undeclared before 0.4.22 and absent from
+    // `abi` before 0.5.  Issuing the call inside `assembly` against an explicit
+    // memory buffer and reading the result with `mload` parses on every release,
+    // and callers never discard a tuple component -- a trailing-comma discard is
+    // rejected by every compiler from 0.4.22 on when the callee returns one
+    // value, which is why the boolean-only helper below is separate.
+    function _readWord(address callee, bytes memory payload) private returns (bool ok, uint256 value) {{
+        bytes memory out = new bytes(32);
+        assembly {{
+            let head := payload
+            let length := mload(head)
+            let data := add(head, 32)
+            let outPtr := add(out, 32)
+            ok := call(gas(), callee, 0, data, length, outPtr, 32)
+            value := mload(outPtr)
+        }}
+    }}
+
+    function _callSucceeded(address callee, bytes memory payload) private returns (bool ok) {{
+        bytes memory out = new bytes(32);
+        assembly {{
+            let head := payload
+            let length := mload(head)
+            let data := add(head, 32)
+            ok := call(gas(), callee, 0, data, length, add(out, 32), 32)
+        }}
+    }}
+
+    // The assertion body runs in its own frame rather than inline in the test.
+    // A protocol property is checked from several snapshots at once -- an
+    // ERC-4626 share price compares four ledger reads and cross-multiplies them --
+    // and the 0.4.x codegen has no `via_ir` to relieve the legacy 16-slot stack.
+    // Those compilers report the overflow as "Stack too deep, try removing local
+    // variables", pointing at the test entry rather than at the assertion, and the
+    // deep layer then recorded an unavailable deployment for every sample pinned
+    // below 0.5.  A separate frame gives the body the same headroom everywhere.
+    function _assertProtocol(address target) private {{
+        {body}
+    }}
+
     function testInvariant() public {{
         address target = Vm(_cheatCodeAddress()).envAddress(bytes32("INVARIANT_TARGET"));
-        require(_codeSizeAt(target) > 0, "INVARIANT_TARGET has no code");
-        {body}
+        {require_form}
+        _assertProtocol(target);
     }}
 }}
 '''

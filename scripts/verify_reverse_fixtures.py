@@ -23,6 +23,40 @@ FIXTURE_ROOT = ROOT / "tests" / "fixtures" / "assertions"
 
 sys.path.insert(0, str(ROOT / "scripts"))
 from invariant_assertions import load_renderers  # noqa: E402
+import harness_gen  # noqa: E402
+
+
+def _harness_helpers() -> str:
+    """The selector and call primitives, taken from the harness that owns them.
+
+    The fixture gate renders the same assertion bodies as the benchmark harness,
+    so it needs the same helpers.  When they lived only inside the harness
+    template, the gate compiled against a stale hand-written copy and every
+    fixture failed with "Undeclared identifier: _readWord" -- the fixtures stopped
+    testing the assertions at all, and the gate reported a compile error rather
+    than a missing helper.  Generating the harness and lifting the helper block
+    out of it keeps a single spelling of both.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        invariants = {"schemaVersion": 1, "sourceSha256": None,
+                      "invariants": [{"invariantId": "a" * 64,
+                                      "template": "share_price_monotonic",
+                                      "params": {"assetsField": "totalAssets",
+                                                 "sharesField": "totalSupply",
+                                                 "toleranceBps": 0}}]}
+        source = "pragma solidity >=0.8.19;\ncontract Target { }\n"
+        bundle = {"sources": {"Target.sol": {"content": source}},
+                  "metadata": {"settings": {"compilationTarget": {"Target.sol": "Target"}}},
+                  "abi": []}
+        manifest = harness_gen.generate_harness(invariants, bundle, root,
+                                                compiler_version="0.8.19")
+        tests = [row for row in manifest["tests"] if row.get("path")]
+        text = (root / tests[0]["path"]).read_text(encoding="utf-8")
+
+    start = text.index("    // Selector + calldata, assembled by hand.")
+    end = text.index("    // The assertion body runs in its own frame")
+    return text[start:end]
 
 
 def _source_file(directory: Path) -> Path:
@@ -125,8 +159,9 @@ interface Vm { function deal(address who, uint256 amount) external; }
 contract Gate {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256(\"hevm cheat code\")))));
 %s
+%s
 }
-""" % (import_name, "\n".join(functions))
+""" % (import_name, _harness_helpers(), "\n".join(functions))
     return source, "\n\n".join(bodies)
 
 
@@ -150,7 +185,15 @@ def _variant(fixture_dir: Path, variant: str, tests: list[tuple[str, str]], poc:
     else:
         test_source, body = _test_source(_contract_name(source), source_path.name, tests)
     (root / "test" / "Gate.t.sol").write_text(test_source, encoding="utf-8")
-    (root / "foundry.toml").write_text('[profile.default]\nsrc = "src"\ntest = "test"\nout = "out"\ncache_path = "cache"\nlibs = []\nauto_detect_solc = true\noffline = true\n', encoding="utf-8")
+    # The optimizer plus the IR pipeline is what lets a gate that holds several
+    # ledger reads at once compile at all: without it the legacy 16-slot stack
+    # limit is exceeded and solc fails with an internal "stack too deep" error
+    # that says nothing about the fixture.  `via_ir` exists from 0.8.13 on and is
+    # simply ignored by profiles that predate it.
+    (root / "foundry.toml").write_text(
+        '[profile.default]\nsrc = "src"\ntest = "test"\nout = "out"\ncache_path = "cache"\n'
+        'libs = []\nauto_detect_solc = true\noffline = true\n'
+        'optimizer = true\noptimizer_runs = 200\nvia_ir = true\n', encoding="utf-8")
     code, output = _run(root, forge)
     lowered = output.lower()
     compile_error = any(marker in lowered for marker in ("compilation failed", "compiler run failed", "error["))

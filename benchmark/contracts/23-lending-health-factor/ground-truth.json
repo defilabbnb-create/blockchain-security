@@ -1,1 +1,17 @@
-{"knownIssues":["lending_health_factor"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Pool.sol","solcVersion":"0.8.19"}
+{
+  "knownIssues": [
+    "lending_health_factor"
+  ],
+  "clean": false,
+  "source": "https://github.com/example/defi-benchmarks",
+  "sourceFile": "Pool.sol",
+  "solcVersion": "0.8.19",
+  "excludedReason": {
+    "grade": "D",
+    "summary": "D 级，标注与源码不一致",
+    "adjudication": "标注 lending_health_factor，但 healthFactor 只是 collateral/(debt+1) 的普通比值，无清算阈值、无清算函数、无价格源；borrow 也不检查抵押品。「health factor 算错」这一缺陷在源码中没有对应实现可定位，标注与代码矛盾。",
+    "evidenceLines": [
+      2
+    ]
+  }
+}

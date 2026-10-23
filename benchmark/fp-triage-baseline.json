@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "说明": "误报基线：对每个样本，逐条记录被确认的误报及其理由。未列入的检出仍然是待审告警，不得因本文件存在而被静默丢弃。对标 Slither --triage-mode 与社区 SLITHER_TRIAGE 实践：确认过的误报要留存判据，而不是永久静音。",
+  "method": "reviewed",
+  "reviewNote": "每条 acknowledged 记录都必须写明 reason（为什么这条在该样本上不成立）与 evidence 字段；缺 reason 的条目视为未审。",
+  "acknowledged": [
+    {
+      "caseId": "02-incorrect_constructor_name1",
+      "role": "unchecked_low_level_call",
+      "reason": "`owner.transfer(this.balance)` 是 02 的既有问题，但其 ground truth 只标注 access_control（构造器命名错误 SWC-118）。转账本身未被本样本标注为缺陷；此条属标注范围差异，不是检测缺陷。",
+      "category": "label_scope"
+    },
+    {
+      "caseId": "03-simple_suicide",
+      "role": "unchecked_low_level_call",
+      "reason": "同 02：`owner.transfer(this.balance)` 未被该样本标注，标注只覆盖构造器命名。",
+      "category": "label_scope"
+    },
+    {
+      "caseId": "08-guess_the_random_number",
+      "role": "unchecked_low_level_call",
+      "reason": "`msg.sender.transfer(2 ether)` 未被标注；该样本标注为 bad_randomness。转账属题目既有代码，非标注缺陷。",
+      "category": "label_scope"
+    },
+    {
+      "caseId": "09-old_blockhash",
+      "role": "unchecked_low_level_call",
+      "reason": "同 08：`msg.sender.transfer(2 ether)` 未被标注，标注为 bad_randomness。",
+      "category": "label_scope"
+    },
+    {
+      "caseId": "09-old_blockhash",
+      "role": "time_manipulation",
+      "reason": "该样本的 `now`/deadline 形态被 timestampGatesPayout 命中，但标注只给 bad_randomness（旧区块哈希可预测）。两类的判据在 blockhash 样本上确实重叠，需人工裁定归属。",
+      "category": "label_overlap"
+    },
+    {
+      "caseId": "12-eth_tx_order_dependence_minimal",
+      "role": "unchecked_low_level_call",
+      "reason": "`owner.transfer(reward)` 与 `msg.sender.transfer(reward)` 的返回值未被读取属实，但该样本标注为 front_running；DASP-10 中二者是独立类别，此处属标注未覆盖。",
+      "category": "label_scope"
+    },
+    {
+      "caseId": "13-etherstore",
+      "role": "bad_randomness",
+      "reason": "13 使用 blockhash 类形态但标注为 reentrancy；bad_randomness 判据在此为过近似。",
+      "category": "needs_review"
+    },
+    {
+      "caseId": "13-etherstore",
+      "role": "time_manipulation",
+      "reason": "同 13，timestampGatesPayout 命中但标注为 reentrancy。",
+      "category": "needs_review"
+    },
+    {
+      "caseId": "15-reentrancy_simple",
+      "role": "access_control",
+      "reason": "已由检测器修复消解：`withdrawBalance` 以 `userBalance[msg.sender]` 为调用者自己的账本，属于用户自助入口而非特权入口。保留此条是为了记录基线曾包含该项，以及它为何不再成立。",
+      "category": "resolved",
+      "resolvedBy": "USER_ENTRY_RE 允许 `withdraw<Suffix>`，并要求函数体内存在调用者键控的账本写入"
+    },
+    {
+      "caseId": "16-simple_dao",
+      "role": "bad_randomness",
+      "reason": "16 使用 blockhash/msg.sender 形态但标注为 reentrancy（SimpleDAO 经典提案-投票重入）。",
+      "category": "label_scope"
+    },
+    {
+      "caseId": "17-timed_crowdsale",
+      "role": "bad_randomness",
+      "reason": "`now` 被读且伴随截止条件，标注为 time_manipulation；bad_randomness 与 time_manipulation 在同一读点上重叠，此处归类为需复核。",
+      "category": "label_overlap"
+    },
+    {
+      "caseId": "18-lotto",
+      "role": "access_control",
+      "reason": "`withdrawLeftOver` 无修饰符属实，但样本标注为 unchecked_low_level_calls（两处 send 未检查）。属特权入口判据过宽。",
+      "category": "detector_overreach"
+    },
+    {
+      "caseId": "13-etherstore",
+      "role": "access_control",
+      "reason": "已由检测器修复消解：`withdrawFunds` 以 `balances[msg.sender]` 为调用者自己的账本，属于用户自助入口而非特权入口。保留此条是为了记录基线曾包含该项，以及它为何不再成立。",
+      "category": "resolved",
+      "resolvedBy": "USER_ENTRY_RE 允许 `withdraw<Suffix>`，并要求函数体内存在调用者键控的账本写入"
+    },
+    {
+      "caseId": "18-lotto",
+      "role": "front_running",
+      "reason": "`require(!payedOut); winner.send(winAmount); payedOut = true;` 是一次性领取形态，形态上确实可抢跑；样本未标注此类别。",
+      "category": "label_scope"
+    },
+    {
+      "caseId": "20-reentrancy_cross_function",
+      "role": "bad_randomness",
+      "reason": "20 标注为 reentrancy（跨函数重入）；bad_randomness 判据在此为过近似。",
+      "category": "detector_overreach"
+    },
+    {
+      "caseId": "27-oracle-stale",
+      "role": "access_control",
+      "reason": "`setPrice` 无 require 属实，但 oracle_stale_price 样本需要该入口可被任意调用是设定前提；标注为 oracle_stale_price。",
+      "category": "label_scope"
+    },
+    {
+      "caseId": "33-clean-amm",
+      "role": "amm_pool",
+      "reason": "33 是干净对照，ground truth 为空。amm_pool 是协议族标识而非缺陷类别，不应计入误报分母。",
+      "category": "protocol_family_not_defect"
+    }
+  ]
+}

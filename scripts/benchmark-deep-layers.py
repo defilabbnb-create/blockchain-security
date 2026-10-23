@@ -494,12 +494,34 @@ def _local_deployment(case: dict[str, Any], harness_dir: Path, compiled: dict[st
     # and says nothing about the contract under test.
     emit_call = "emit TargetDeployed" if tuple(
         int(part) for part in version_tuple.split(".")) >= (0, 4, 21) else "TargetDeployed"
-    (harness_dir / "test" / "DeepTarget.t.sol").write_text(f'''// SPDX-License-Identifier: MIT
-pragma solidity {wrapper_pragma};
-
+    # The 0.4.x compilers cannot instantiate a contract type that comes from
+    # another source unit: `new Name()` parses only when the type is declared in
+    # the file being compiled, so an importing wrapper fails with a ParserError
+    # pointing at the `(` of the `new` expression.  Eight corpus samples pinned
+    # between 0.4.10 and 0.4.25 never reached their assertions because of it, and
+    # the layer reported a deployment failure that described the compiler rather
+    # than the contract.  Declaring the target inside the wrapper makes the type
+    # local; the target text is spliced in verbatim, only its location changes.
+    pre_0_5 = tuple(int(part) for part in version_tuple.split(".")) < (0, 5, 0)
+    if pre_0_5:
+        target_text = re.sub(r'^\s*pragma\s+solidity[^;]*;\s*', '',
+                             case["sourceText"].strip(), count=1, flags=re.M)
+        # The wrapper already declares an SPDX identifier; a target that ships
+        # one as well makes solc 0.8 reject the unit outright.
+        target_text = re.sub(r'^\s*//\s*SPDX-License-Identifier:.*$', '',
+                             target_text, count=1, flags=re.M).strip()
+        declaration = f'\n{target_text}\n'
+        opening = f'''
+contract DeepTarget {{'''
+    else:
+        declaration = ""
+        opening = f'''
 import "../src/{source_name}";
 
-contract DeepTarget {{
+contract DeepTarget {{'''
+    (harness_dir / "test" / "DeepTarget.t.sol").write_text(f'''// SPDX-License-Identifier: MIT
+pragma solidity {wrapper_pragma};
+{declaration}{opening}
     event TargetDeployed(address target);
 
     function testDeployTarget() public {{
@@ -533,6 +555,20 @@ contract DeepTarget {{
     if "ParserError" in output and "Compiler run failed" in output:
         return {"state": "failed",
                 "reason": "solc_0_4_cannot_instantiate_imported_contract_type",
+                "compilerVersion": version_tuple, "width": wide,
+                "reasonArgument": require_reason}
+    # forge links the standard library's timestamp for the 0.4.x compilers by
+    # binding `now`; when a target declares its own `now` -- or the linker cannot
+    # resolve the symbol -- forge disables dynamic test linking for that file,
+    # strips the test function, and then reports "No tests found in project".
+    # The contract compiled cleanly, so this is a toolchain limitation rather
+    # than an undeployable contract, and it gets its own reason so the sample is
+    # not read as a broken target.
+    if "No tests found in project" in output:
+        unresolved = re.search(r"unresolved symbol `([^`]+)`", output)
+        return {"state": "failed",
+                "reason": "forge_cannot_link_test_entrypoint_for_target",
+                "unresolvedSymbol": unresolved.group(1) if unresolved else None,
                 "compilerVersion": version_tuple, "width": wide,
                 "reasonArgument": require_reason}
     # forge cannot read the build artifact that soljson 0.4.10 emits: the modern
@@ -677,7 +713,12 @@ def _inline_target_deployment(harness_dir: Path, source_name: str, contract_name
     pattern = re.compile(
         r'function testInvariant\(\) public \{\s*\n'
         r'\s*address target = Vm\(_cheatCodeAddress\(\)\)\.envAddress\(bytes32\("INVARIANT_TARGET"\)\);\s*\n'
-        r'\s*require\(_codeSizeAt\(target\) > 0, "INVARIANT_TARGET has no code"\);')
+        # Both spellings of the guard: the reason string only exists from 0.4.22
+        # on, so the older half of the corpus renders the one-argument form.
+        r'\s*require\(_codeSizeAt\(target\) > 0(?:, "INVARIANT_TARGET has no code")?\);'
+        # The assertion body moved into its own frame, so the entry forwards to
+        # it rather than inlining the body.
+        r'(?:\s*\n\s*_assertProtocol\(target\);)?')
     # The rendered bodies address the target as `target` and assign it straight to
     # an `address` local.  That is a type error from 0.5 on, where a contract
     # does not implicitly convert -- and re-casting inside the body would mean
@@ -693,7 +734,10 @@ def _inline_target_deployment(harness_dir: Path, source_name: str, contract_name
         # `require` only accepted a revert reason from 0.4.22 on; the older half
         # of the corpus rejects the two-argument form outright.
         + ('        require(targetSize > 0, "target deployment produced no code");'
-           if reason else "        require(targetSize > 0);"))
+           if reason else "        require(targetSize > 0);")
+        # The frame split is not optional: the body has to run somewhere the
+        # legacy 16-slot stack can hold it, and the entry below has to call it.
+        + "\n        _assertProtocol(target);")
     for path in sorted((harness_dir / "test").glob("Invariant_*.t.sol")):
         text = path.read_text(encoding="utf-8")
         updated = pattern.sub(replacement.replace("CONTRACT", contract_name), text)
@@ -709,12 +753,43 @@ def _inline_target_deployment(harness_dir: Path, source_name: str, contract_name
                          '\n    bytes32 internal constant invariantId', updated)
         updated = re.sub(r'\n    string public constant description',
                          '\n    string internal constant description', updated)
+        # The 0.4.x compilers cannot instantiate a contract type declared in
+        # another source unit: `new Name()` parses only when the type is visible in
+        # the file being compiled, and a test that `import`s its target fails with
+        # a ParserError pointing at the `(` of the `new` expression.  Eight corpus
+        # samples pinned between 0.4.10 and 0.4.25 were therefore never deployed at
+        # all.  Declaring the contract in the test's own source unit makes the
+        # type local, so the same deployment compiles on every release.  The target
+        # text is spliced in verbatim -- only where it is declared changes.
+        target_source = (harness_dir / "src" / source_name)
+        declaration = ""
+        if target_source.exists():
+            declaration = target_source.read_text(encoding="utf-8").strip()
+            # Only the pragma is dropped: the file already declares one, and two
+            # pragmas in one unit is a parse error on every release.
+            declaration = re.sub(r'^\s*pragma\s+solidity[^;]*;\s*', '', declaration,
+                                 count=1, flags=re.M)
+            # The generated file carries its own SPDX identifier, and a target
+            # that ships one as well makes solc 0.8 reject the unit with
+            # "Multiple SPDX license identifiers found in source file".  The
+            # 0.4.x compilers ignore the header entirely, which is why this only
+            # surfaced once the older samples started deploying.
+            declaration = re.sub(r'^\s*//\s*SPDX-License-Identifier:.*$', '',
+                                 declaration, count=1, flags=re.M).strip()
+        preamble = (declaration + "\n\n") if declaration else (
+            f'import {{ {contract_name} }} from "../src/{source_name}";\n')
         updated = re.sub(
             r'pragma solidity ([^;\n]+);\n',
-            lambda pragma_match: (
-                f'pragma solidity {pragma_match.group(1)};\n\n'
-                f'import {{ {contract_name} }} from "../src/{source_name}";\n'),
+            lambda pragma_match: f'pragma solidity {pragma_match.group(1)};\n\n',
             updated, count=1)
+        marker = "contract Invariant_"
+        index = updated.index(marker)
+        # The declaration goes at file scope, immediately before the test
+        # contract.  Splicing it inside the contract's own braces instead parses
+        # as a member declaration and every sample then failed with
+        # "Function, variable, struct or modifier declaration expected" pointing
+        # at the target's `contract` keyword.
+        updated = updated[:index] + preamble + updated[index:]
         path.write_text(updated, encoding="utf-8")
 
 

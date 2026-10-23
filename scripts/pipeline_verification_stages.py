@@ -69,6 +69,52 @@ def _digest(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _target_contract_name(target: dict[str, Any]) -> str:
+    """解析被测目标合约名。
+
+    来源优先级：显式 contractName → target.source 指向的 .sol → sourceBundle
+    里内联的源码。sourceBundle 是流水线实际传入的输入，因此必须支持从它解析。
+    解析不到时返回空串，调用方据此拒绝确认——无法核对引用的测试不算复现证据。
+    """
+    explicit = str(target.get("contractName") or "").strip()
+    if explicit:
+        return explicit
+
+    def first_contract(text: str) -> str:
+        match = re.search(r"\bcontract\s+([A-Za-z_][A-Za-z0-9_]*)", text)
+        return match.group(1) if match else ""
+
+    source_rel = target.get("source")
+    if source_rel:
+        source_path = ROOT / str(source_rel)
+        if source_path.is_file():
+            name = first_contract(source_path.read_text(encoding="utf-8", errors="replace"))
+            if name:
+                return name
+
+    bundle_rel = target.get("sourceBundle")
+    if bundle_rel:
+        # sourceBundle 可能是绝对路径（临时目录），不强制相对 ROOT
+        bundle_path = Path(str(bundle_rel))
+        bundle: Any = None
+        if not bundle_path.is_absolute():
+            bundle_path = ROOT / bundle_path
+        if bundle_path.is_file():
+            try:
+                bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                bundle = None
+        if bundle is None:
+            bundle = target.get("sourceBundleData")
+        if isinstance(bundle, dict):
+            for entry in (bundle.get("sources") or {}).values():
+                if isinstance(entry, dict) and entry.get("content"):
+                    name = first_contract(str(entry["content"]))
+                    if name:
+                        return name
+    return ""
+
+
 def _write_text_atomic(path: Path, value: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
@@ -276,14 +322,25 @@ def _run_poc(target: dict[str, Any], stage_dir: Path, *, forge_runner=None) -> d
                 test_name = manifest["testName"]
                 passed = re.search(rf"(?m)^\[PASS\]\s+{re.escape(test_name)}(?:\b|(?=\())", output_text) is not None
                 failed = re.search(rf"(?m)^\[FAIL\]\s+{re.escape(test_name)}(?:\b|(?=\())", output_text) is not None
+                test_source = test_bytes.decode("utf-8")
+                # 通过的测试还必须真的引用目标合约，否则 require(1+1==2) 这种
+                # 与被测代码无关的测试也会被判为"复现成功"。契约名从目标源码
+                # 解析（targets.json 不保证带 contractName 字段）。
+                target_contract = _target_contract_name(target)
+                references_target = bool(target_contract) and re.search(
+                    r"\b" + re.escape(target_contract) + r"\b", test_source) is not None
                 artifact_valid = (
                     saved_manifest == manifest and completed.returncode == 0 and passed and not failed and
                     manifest.get("adapterState") == "ready" and
-                    len(re.findall(r"function\s+" + re.escape(test_name) + r"\s*\(", test_bytes.decode("utf-8"))) == 1
+                    len(re.findall(r"function\s+" + re.escape(test_name) + r"\s*\(", test_source)) == 1 and
+                    references_target
                 )
                 attempt = {"mode": "local", "returnCode": completed.returncode,
-                           "state": "passed" if artifact_valid else "test_not_verified" if completed.returncode == 0 else "failed",
+                           "state": "passed" if artifact_valid else
+                                     "test_does_not_reference_target" if (passed and not references_target)
+                                     else "test_not_verified" if completed.returncode == 0 else "failed",
                            "testName": test_name, "matchedTestPassed": artifact_valid,
+                           "referencesTargetContract": references_target,
                            "pocManifestSha256": manifest_sha256,
                            "sourceBundleSha256": manifest["sourceBundleSha256"],
                            "testSourceSha256": test_source_sha256,

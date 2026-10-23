@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "说明": "分析策略与约束。每条都来自公开实践，并在本项目中可被脚本与测试读取；引用覆盖数字时必须同时说明本文件里的约束，否则数字会被读成比实际更强的结论。",
+  "taxonomy": {
+    "standard": "DASP-10",
+    "note": "本项目角色词表即 DASP-10：access_control / arithmetic / bad_randomness / denial_of_service / front_running / incorrect_interface / reentrancy / short_addresses / time_manipulation / unchecked_low_level_calls。",
+    "referenceDataset": "SmartBugs SB Curated (143 contracts / 208 tagged vulnerabilities, DASP-10)",
+    "why": "词表一致才能让本项目的 precision/recall 与公开数字对话，否则只是自造基准的自评。"
+  },
+  "consensus": {
+    "majorityVoteAllowed": false,
+    "rule": "禁止用多数投票或多数一致来消解误报。",
+    "reason": "工具之间结果相关：多个工具共享同一套源码启发式时，共同的误报会被投票升格成'共识'，误报因此被写进结果而不是被消掉。",
+    "reference": "Consolidation of Ground Truth Sets for Weakness Detection in Smart Contracts (arXiv:2304.11624)",
+    "instead": "用可复核的判据消解：每条被扣除的告警必须在 fp-triage-baseline.json 里有 reason。"
+  },
+  "decompiler": {
+    "analysisInput": "bytecode_ir",
+    "humanReadableOnly": ["decompiled_pseudocode"],
+    "rule": "漏洞分析一律跑在 TAC/IR 层；反编译伪码只供人阅读，不得作为判定依据。",
+    "reason": "伪码是启发式重构，控制流被内联/展开后不可靠；Elipmoc 的结论是所有分析都建立在它导出的三地址码上。伪码的用途是让人看懂，不是让工具判定。",
+    "toolingNote": "当前 decompiler 泳道接 heimdall。公开评测中 heimdall-rs 的覆盖面明显落后于新一代静态反编译器；接入新工具前不得以伪码覆盖面作为能力声明。",
+    "reference": "Elipmoc (doi:10.1145/3527321)、The Incredible Shrinking Context... in a Decompiler Near You (doi:10.1145/3728935)"
+  },
+  "laneGates": {
+    "rule": "按泳道划定职责，并对路径爆炸设闸。",
+    "gates": {
+      "static": {
+        "scope": "全样本，每次 PR 都可跑",
+        "gate": "无闸：要求单合约秒级完成",
+        "output": "静态告警线索",
+        "notA": "漏洞确认"
+      },
+      "dynamic": {
+        "scope": "状态化不变量与本地 PoC",
+        "gate": "仅对有专用目标夹具的合约运行；无夹具的样本显式标记为未运行，不猜测",
+        "output": "本地可复现证据"
+      },
+      "symbolic": {
+        "scope": "关键路径或定向属性",
+        "gate": "只在关键路径/定向属性上跑，避免路径爆炸；不作为全量扫描层",
+        "status": "当前项目未启用符号执行泳道"
+      }
+    },
+    "reason": "符号执行全量跑会路径爆炸；业界分工是静态常驻、模糊测试做状态化不变量、符号执行只做定向属性。"
+  },
+  "triage": {
+    "baselineFile": "benchmark/fp-triage-baseline.json",
+    "rule": "确认过的误报要留存判据，而不是永久静音。",
+    "reason": "无 reason 的条目视为未审；基线腐化时静默吞掉真实告警的风险必须被结构性地挡住。",
+    "reference": "Slither --triage-mode / slither.db.json；社区 SLITHER_TRIAGE 的 acknowledged-findings 实践",
+    "reportingRule": "naive（原始计数）与 afterReviewedBaseline（扣除已审误报）必须一起引用；单独引用后者会高估检测能力。"
+  }
+}

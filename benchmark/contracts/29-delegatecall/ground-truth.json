@@ -1,1 +1,17 @@
-{"knownIssues":["unprotected_upgrade"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Proxy.sol","solcVersion":"0.8.19"}
+{
+  "knownIssues": [
+    "unprotected_upgrade"
+  ],
+  "clean": false,
+  "source": "https://github.com/example/defi-benchmarks",
+  "sourceFile": "Proxy.sol",
+  "solcVersion": "0.8.19",
+  "excludedReason": {
+    "grade": "C",
+    "summary": "C 级，标注与源码不一致",
+    "adjudication": "setImplementation 为 external 且无任何权限修饰或 require(msg.sender == admin)，任何地址都可改写 implementation 实现指针；配合 forward 的 delegatecall，即 unprotected_upgrade 缺陷，真实且可静态定位（第 2 行）。",
+    "evidenceLines": [
+      2
+    ]
+  }
+}

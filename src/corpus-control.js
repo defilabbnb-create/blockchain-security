@@ -14,6 +14,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdir, open, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { freemem as osFreemem, cpus as osCpus } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 
 export const CORPUS_API_VERSION = 'v1';
@@ -27,6 +28,20 @@ const MAX_CAPTURE_BYTES = 2 * 1024 * 1024;
 const CHILD_GRACE_MS = 5_000;
 const CHILD_KILL_MS = 5_000;
 const HEARTBEAT_PERSIST_INTERVAL_MS = 2_000;
+// Per-lane sample concurrency. Every sample spawns a compiler plus Slither, both
+// of which are memory hungry, so the default stays conservative and the value is
+// clamped against the machine instead of trusted from configuration.
+const CORPUS_LANE_CONCURRENCY = 2;
+const CORPUS_MAX_LANE_CONCURRENCY = 8;
+// 动态复现泳道的并发默认值。它的子进程只是在内存态 EVM 上跑一段攻击脚本，
+// 单样本约一秒，内存占用远低于编译器加 Slither 的组合，因此可以给更高默认值。
+const CORPUS_DYNAMIC_LANE_CONCURRENCY = 4;
+// 按 laneId 区分的并发默认值。未列出的泳道回落到 CORPUS_LANE_CONCURRENCY。
+const CORPUS_LANE_CONCURRENCY_BY_LANE = Object.freeze({ dynamic: CORPUS_DYNAMIC_LANE_CONCURRENCY });
+// Assumed resident cost of one in-flight analyzer child. The lane only scales up
+// while reported free memory can absorb another one.
+const CORPUS_SAMPLE_MEMORY_BUDGET_BYTES = 2 * 1024 * 1024 * 1024;
+const CORPUS_MIN_FREE_MEMORY_BYTES = 2 * 1024 * 1024 * 1024;
 
 /** 泳道注册表。layer 表示该泳道产出的语料层。 */
 export const CORPUS_LANES = Object.freeze({
@@ -169,6 +184,66 @@ function safeRelative(root, candidate) {
   return rel === '' || (!rel.startsWith('..' + sep) && rel !== '..');
 }
 
+/** Free memory in bytes, or null when the platform cannot report it. */
+function availableMemoryBytes() {
+  try {
+    // freemem() reports kilobytes on POSIX and bytes on Windows.
+    const raw = typeof osFreemem === 'function' ? osFreemem() : null;
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+    return process.platform === 'win32' ? raw : raw * 1024;
+  } catch {
+    return null;
+  }
+}
+
+/** Logical CPU count, or 0 when it cannot be determined. */
+function logicalCpuCount() {
+  try {
+    const list = osCpus();
+    return Array.isArray(list) ? list.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Per-lane default concurrency. A lane with no explicit entry uses the shared
+ * conservative default, because every other lane spawns a compiler plus Slither.
+ */
+export function defaultConcurrencyForLane(laneId) {
+  return CORPUS_LANE_CONCURRENCY_BY_LANE[laneId] || CORPUS_LANE_CONCURRENCY;
+}
+
+/**
+ * Decide how many samples may run at once.
+ *
+ * Parallelism competes for two real limits: logical CPUs and free memory. Each
+ * analyzer child runs a compiler plus Slither, so a purely CPU-based bound can
+ * push the machine into swap. When memory cannot be measured the lane falls back
+ * to serial execution rather than guessing.
+ */
+export function resolveLaneConcurrency(options = {}) {
+  const requested = options.requested;
+  const laneDefault = typeof options.laneId === 'string' ? defaultConcurrencyForLane(options.laneId) : null;
+  const defaultConcurrency = Number.isSafeInteger(options.defaultConcurrency) && options.defaultConcurrency > 0
+    ? options.defaultConcurrency
+    : laneDefault ?? CORPUS_LANE_CONCURRENCY;
+  const maxConcurrency = Number.isSafeInteger(options.maxConcurrency) && options.maxConcurrency > 0
+    ? options.maxConcurrency : CORPUS_MAX_LANE_CONCURRENCY;
+  let limit = Number.isSafeInteger(requested) && requested > 0 ? requested : defaultConcurrency;
+  limit = Math.min(limit, maxConcurrency);
+  const cpuCount = options.cpuCount;
+  if (Number.isSafeInteger(cpuCount) && cpuCount > 0) limit = Math.min(limit, cpuCount);
+  const freeBytes = options.freeBytes;
+  if (Number.isSafeInteger(freeBytes) && freeBytes > 0) {
+    const affordable = Math.floor((freeBytes - CORPUS_MIN_FREE_MEMORY_BYTES) / CORPUS_SAMPLE_MEMORY_BUDGET_BYTES);
+    limit = Math.min(limit, affordable);
+  } else {
+    limit = 1;
+  }
+  return Math.max(1, limit);
+}
+
 export class CorpusControlPlane {
   constructor(options = {}) {
     const projectRoot = resolve(options.projectRoot || process.cwd());
@@ -191,9 +266,81 @@ export class CorpusControlPlane {
       ? options.heartbeatStaleMs : CORPUS_HEARTBEAT_STALE_MS;
     this.tasks = new Map();
     this.loaded = false;
+    // Keyed by laneId -> Map(itemId -> child handle). A lane can now hold several
+    // concurrent samples instead of exactly one.
     this.activeChildren = new Map();
+    // Keyed by laneId -> the first child's pid, used as the lane liveness marker
+    // while any child is in flight. Survives per-sample churn so the frontend can
+    // still report a concurrent lane as running.
+    this.lanePid = new Map();
+    // An explicit override still wins; when absent each lane falls back to its own
+    // default inside resolveLaneConcurrency, so storing 0 here means "unconfigured".
+    this.maxLaneConcurrency = Number.isSafeInteger(options.maxLaneConcurrency) && options.maxLaneConcurrency > 0
+      ? Math.min(options.maxLaneConcurrency, CORPUS_MAX_LANE_CONCURRENCY)
+      : 0;
     this.lastPersistAt = 0;
     this.persistPending = false;
+  }
+
+  /** Resolve how many samples may run in parallel on this machine. */
+  #resolveConcurrency(laneId) {
+    return resolveLaneConcurrency({
+      laneId,
+      requested: this.maxLaneConcurrency,
+      cpuCount: logicalCpuCount(),
+      freeBytes: availableMemoryBytes(),
+    });
+  }
+
+  // ------------------------------------------------------- 供测试观察内部决策
+  // 只读透传，不改变任何运行时行为；并发收敛与机器探测本身难以在用例里
+  // 直接复现，这里给出最小观测面以便断言泳道级默认值确实生效。
+
+  resolveConcurrencyForTest(laneId) {
+    return this.#resolveConcurrency(laneId);
+  }
+
+  cpuCountForTest() {
+    return logicalCpuCount();
+  }
+
+  memoryForTest() {
+    return availableMemoryBytes();
+  }
+
+  /** 只读透出任务视图，供断言 pid/running 语义。 */
+  taskViewForTest(task) {
+    return this.#taskView(task, { nowMs: this.clock() });
+  }
+
+  /**
+   * 拉起一个长驻子进程并走与 #runChild 相同的登记路径。
+   * 只用于验证并发下的 pid 存活标记，不经过任何语料脚本。
+   */
+  async spawnProbeChildForTest(task, lifetimeMs) {
+    const child = spawn(process.execPath, ['-e', `setTimeout(() => {}, ${lifetimeMs})`], {
+      cwd: this.projectRoot, env: this.#childEnv({}), detached: true, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const handle = { child, pid: child.pid, pgid: child.pid, taskId: task.laneId, itemId: child.pid };
+    let laneChildren = this.activeChildren.get(task.laneId);
+    if (!laneChildren) { laneChildren = new Map(); this.activeChildren.set(task.laneId, laneChildren); }
+    laneChildren.set(handle.pid, handle);
+    if (laneChildren.size === 1) this.lanePid.set(task.laneId, child.pid ?? null);
+    task.pid = this.lanePid.get(task.laneId) ?? child.pid ?? null;
+    child.stdout?.resume();
+    child.stderr?.resume();
+    // 与 #runChild 保持一致的收尾语义：泳道清空时作废存活标记。
+    child.once('close', () => {
+      const remaining = this.activeChildren.get(task.laneId);
+      if (!remaining) return;
+      remaining.delete(handle.pid);
+      if (remaining.size === 0) {
+        this.activeChildren.delete(task.laneId);
+        this.lanePid.delete(task.laneId);
+        task.pid = null;
+      }
+    });
+    return handle;
   }
 
   // ---------------------------------------------------------------- 状态持久化
@@ -353,7 +500,12 @@ export class CorpusControlPlane {
     const heartbeatAt = task.lastHeartbeatAt || null;
     const heartbeatMs = heartbeatAt ? Date.parse(heartbeatAt) : NaN;
     const ageMs = Number.isFinite(heartbeatMs) ? Math.max(0, nowMs - heartbeatMs) : null;
-    const pidAlive = this.#pidAlive(task.pid);
+    // A lane is live when its recorded marker pid still exists, or when this process
+    // is holding children for that lane. The second clause keeps a concurrent lane
+    // visible even in the brief window where the marker pid has been reaped but a
+    // sibling sample is still running.
+    const laneHasChildren = (this.activeChildren.get(task.laneId)?.size || 0) > 0;
+    const pidAlive = laneHasChildren || this.#pidAlive(task.pid);
     const heartbeatStale = ageMs === null ? true : ageMs > this.heartbeatStaleMs;
     const lane = CORPUS_LANES[task.laneId] || null;
     const baseState = task.state || 'idle';
@@ -784,8 +936,12 @@ export class CorpusControlPlane {
     task.pauseRequested = false;
     this.#record(task, 'stop_requested', '收到停止请求；将以进程组方式终止子进程。');
     await this.#persist({ force: true });
-    const child = this.activeChildren.get(id);
-    if (child) await this.#terminateChild(child);
+    const laneChildren = this.activeChildren.get(id);
+    if (laneChildren) {
+      for (const handle of [...laneChildren.values()]) await this.#terminateChild(handle);
+      this.activeChildren.delete(id);
+    }
+    this.lanePid.delete(id);
     task.state = 'stopped';
     task.endedAt = isoNow(this.clock);
     task.pid = null;
@@ -869,31 +1025,12 @@ export class CorpusControlPlane {
     task.itemSummary = { passed: 0, failed: 0, skipped: 0, total: items.length };
     await this.#persist({ force: true });
 
-    for (const item of items) {
-      // 样本边界：只有在这里才检查暂停与停止，绝不打断正在运行的编译器/forge/node 子进程。
-      while (task.pauseRequested && !task.stopRequested) {
-        task.state = 'paused';
-        task.currentStage = '已暂停（样本边界）';
-        task.lastHeartbeatAt = isoNow(this.clock);
-        this.#record(task, 'paused', `在样本 ${item.itemId} 之前挂起。`);
-        await this.#persist({ force: true });
-        await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-      }
-      if (task.stopRequested) break;
-      task.state = 'running';
-      task.currentItemId = item.itemId;
-      task.currentStage = `处理中：${item.label}`;
-      task.lastHeartbeatAt = isoNow(this.clock);
-      await this.#persist({ force: true });
-
-      const started = this.clock();
-      let outcome = { state: 'failed', reason: 'unknown_error' };
-      try {
-        outcome = await this.#runItem(task, item);
-      } catch (error) {
-        outcome = { state: 'failed', reason: `runner_error:${String(error?.message || error).slice(0, 200)}` };
-      }
-      if (task.stopRequested) break;
+    // A worker pool keeps the sample-boundary contract: pause and stop are only
+    // observed before a new sample is dispatched, and in-flight children are
+    // never interrupted mid-run by this loop.
+    let nextIndex = 0;
+    const recordOutcome = async (item, outcome, started) => {
+      if (task.stopRequested) return;
       const durationMs = this.clock() - started;
       task.itemResults = task.itemResults && typeof task.itemResults === 'object' ? task.itemResults : {};
       task.itemResults[item.itemId] = { state: outcome.state, reason: outcome.reason ?? null, at: isoNow(this.clock), durationMs };
@@ -904,7 +1041,42 @@ export class CorpusControlPlane {
       task.lastHeartbeatAt = isoNow(this.clock);
       this.#record(task, 'item_finished', `${item.itemId} → ${outcome.state}${outcome.reason ? ` (${outcome.reason})` : ''}`);
       await this.#persist({ force: true });
-    }
+    };
+
+    const worker = async () => {
+      for (;;) {
+        // 样本边界：只有在这里才检查暂停与停止，绝不打断正在运行的编译器/forge/node 子进程。
+        while (task.pauseRequested && !task.stopRequested) {
+          task.state = 'paused';
+          task.currentStage = '已暂停（样本边界）';
+          task.lastHeartbeatAt = isoNow(this.clock);
+          this.#record(task, 'paused', '在样本边界挂起。');
+          await this.#persist({ force: true });
+          await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+        }
+        if (task.stopRequested) return;
+        const index = nextIndex;
+        if (index >= items.length) return;
+        nextIndex += 1;
+        const item = items[index];
+        task.state = 'running';
+        task.currentItemId = item.itemId;
+        task.currentStage = `处理中：${item.label}`;
+        task.lastHeartbeatAt = isoNow(this.clock);
+        const started = this.clock();
+        let outcome = { state: 'failed', reason: 'unknown_error' };
+        try {
+          outcome = await this.#runItem(task, item);
+        } catch (error) {
+          outcome = { state: 'failed', reason: `runner_error:${String(error?.message || error).slice(0, 200)}` };
+        }
+        await recordOutcome(item, outcome, started);
+      }
+    };
+
+    const width = Math.max(1, Math.min(this.#resolveConcurrency(task.laneId), items.length || 1));
+    if (width > 1) this.#record(task, 'concurrency', `样本并发度 ${width}（按 CPU 与可用内存收敛）。`);
+    await Promise.all(Array.from({ length: width }, () => worker()));
 
     if (task.stopRequested) {
       task.state = 'stopped';
@@ -950,11 +1122,19 @@ export class CorpusControlPlane {
     return env;
   }
 
-  async #runChild(task, { command, args, env, timeoutMs = 600_000, cwd = this.projectRoot }) {
+  async #runChild(task, { command, args, env, timeoutMs = 600_000, cwd = this.projectRoot, itemId = null }) {
     const child = spawn(command, args, { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    const handle = { child, pid: child.pid, pgid: child.pid, taskId: task.laneId };
-    this.activeChildren.set(task.laneId, handle);
-    task.pid = child.pid ?? null;
+    const handle = { child, pid: child.pid, pgid: child.pid, taskId: task.laneId, itemId };
+    let laneChildren = this.activeChildren.get(task.laneId);
+    if (!laneChildren) { laneChildren = new Map(); this.activeChildren.set(task.laneId, laneChildren); }
+    laneChildren.set(itemId === null ? handle.pid : itemId, handle);
+    // task.pid 是泳道的存活标记，不是某个具体样本的句柄。并发时若在
+    // laneChildren.size===1 时才写 pid，size>=2 的整个执行期 pid 恒为 null，
+    // #taskView 的 pidAlive 随之恒为 false，前端将永远显示不出「运行中」。
+    // 这里固定记录本泳道首个子进程的 pid：它稳定、可在恢复时校验存活，
+    // 且不会因为后续样本的加入或退出而漂移到某个随机的样本上。
+    if (laneChildren.size === 1) this.lanePid.set(task.laneId, child.pid ?? null);
+    task.pid = this.lanePid.get(task.laneId) ?? child.pid ?? null;
     let stdout = '';
     let stderr = '';
     let timedOut = false;
@@ -970,7 +1150,16 @@ export class CorpusControlPlane {
       child.once('close', (code, signal) => resolveResult({ code, signal, error: null }));
     });
     clearTimeout(timer);
-    this.activeChildren.delete(task.laneId);
+    const remaining = this.activeChildren.get(task.laneId);
+    if (remaining) {
+      remaining.delete(itemId === null ? handle.pid : itemId);
+      if (remaining.size === 0) {
+        this.activeChildren.delete(task.laneId);
+        // 泳道内已无在途子进程：存活标记失效，清空以便恢复时判为已中断。
+        this.lanePid.delete(task.laneId);
+        task.pid = null;
+      }
+    }
     return { ...result, stdout, stderr, timedOut };
   }
 
@@ -1028,6 +1217,7 @@ export class CorpusControlPlane {
         args: [script, bundlePath],
         env: this.#childEnv(),
         timeoutMs: 300_000,
+        itemId: item.itemId,
       });
     } finally {
       await rm(bundleDir, { recursive: true, force: true }).catch(() => {});
@@ -1079,6 +1269,7 @@ export class CorpusControlPlane {
         BENCHMARK_SOLC_SHA256: compiler.sha256,
       }),
       timeoutMs: 300_000,
+      itemId: item.itemId,
     });
     if (result.timedOut) return { state: 'failed', reason: 'poc_timeout' };
     const rows = result.stdout.split('\n').filter((line) => line.trim().startsWith('{'));
@@ -1107,7 +1298,24 @@ export class CorpusControlPlane {
     await mkdir(dirname(evidencePath), { recursive: true });
     await atomicWriteJson(evidencePath, evidence);
 
-    if (bindingError) return { state: 'failed', reason: bindingError };
+    if (bindingError) {
+      // 绑定失败同样要落盘：它是「跑过但不可信」的结论，不记分片会让整批
+      // 出现无法解释的空洞——控制台只显示零落盘，看不出是失败还是漏跑。
+      const identity = await this.#manifestSampleForCase(truth, sourceSha256) || benchmarkShardIdentity(item.case, sourceSha256);
+      if (identity) {
+        const patch = layerPatch('dynamic', {
+          dynamic: 'failed',
+          dynamicReason: String(bindingError).slice(0, 240),
+          dynamicEvidence: relative(this.projectRoot, evidencePath),
+          dynamicEvidenceSha256: await fileSha256(evidencePath).catch(() => null),
+          confirmedVulnerability: false,
+        });
+        if (Object.keys(patch).length) {
+          await this.#writeShard(task, { ...item, sample: identity }, 'dynamic', patch, { runner: runnerName, solc: compilerVersion });
+        }
+      }
+      return { state: 'failed', reason: bindingError };
+    }
     const pocState = typeof payload.pocState === 'string' ? payload.pocState : (typeof payload.state === 'string' ? payload.state : 'failed');
     const confirmed = payload.confirmedVulnerability === true;
     let dynamicState = 'failed';
@@ -1118,7 +1326,8 @@ export class CorpusControlPlane {
         : (payload.reason || `poc_failed:${pocState}`);
 
     const sample = await this.#manifestSampleForCase(truth, sourceSha256);
-    if (sample) {
+    const shardTarget = sample || benchmarkShardIdentity(item.case, sourceSha256);
+    if (shardTarget) {
       const shardPatch = layerPatch('dynamic', {
         dynamic: dynamicState,
         dynamicReason: String(reason).slice(0, 240),
@@ -1126,7 +1335,11 @@ export class CorpusControlPlane {
         dynamicEvidenceSha256: await fileSha256(evidencePath).catch(() => null),
         confirmedVulnerability: confirmed,
       });
-      if (Object.keys(shardPatch).length) await this.#writeShard(task, item, 'dynamic', shardPatch, { runner: runnerName, solc: compilerVersion });
+      // #writeShard 读的是 item.sample；benchmark 泳道的 item 从不带这个字段，
+      // 必须显式传入，否则无论是否命中语料样本都会静默返回 null。
+      if (Object.keys(shardPatch).length) {
+        await this.#writeShard(task, { ...item, sample: shardTarget }, 'dynamic', shardPatch, { runner: runnerName, solc: compilerVersion });
+      }
     }
     return { state: dynamicState === 'failed' ? 'failed' : 'passed', reason: String(reason).slice(0, 240) };
   }
@@ -1161,6 +1374,7 @@ export class CorpusControlPlane {
       args: [script, artifactPath, '--output', reportPath, '--decompiler', 'heimdall', '--decompiler-output-dir', heimdallDir, '--decompiler-timeout', '120'],
       env: this.#childEnv(),
       timeoutMs: 300_000,
+      itemId: item.itemId,
     });
     if (result.timedOut) return { state: 'failed', reason: 'decompiler_timeout' };
     const report = await readJsonFile(reportPath);
@@ -1228,6 +1442,7 @@ export class CorpusControlPlane {
       args: [script, '--contracts', caseRoot, '--results', resultsRoot, '--layers', 'slither', '--timeout', '900'],
       env: this.#childEnv(),
       timeoutMs: 900_000,
+      itemId: item.itemId,
     });
     await rm(linkPath, { force: true }).catch(() => {});
     if (result.timedOut) return { state: 'failed', reason: 'eval_timeout' };
@@ -1266,7 +1481,15 @@ export class CorpusControlPlane {
     const identity = { repo: sample.repo, commit: sample.commit, path: sample.path };
     const id = sampleId(identity);
     const laneSegment = `W-${task.laneId}`.replace(/[^A-Za-z0-9_.-]+/g, '_');
-    const shardDir = join(this.shardRoot, laneSegment);
+    // Synthetic benchmark fixtures have no entry in the corpus manifest.
+    // corpus_merge.py resolves every active shard through by_id and raises
+    // "分片源码绑定不匹配" for anything it cannot bind, which aborts the whole
+    // merge rather than skipping one file. Park those shards under the lane's
+    // history/ segment, which active_shard_files() excludes, so an offline batch
+    // can never take the corpus merge down with it.
+    const shardDir = sample.syntheticFixture
+      ? join(this.shardRoot, laneSegment, BENCHMARK_SHARD_HISTORY_SEGMENT)
+      : join(this.shardRoot, laneSegment);
     await mkdir(shardDir, { recursive: true });
     const row = {
       schemaVersion: 1,
@@ -1541,4 +1764,37 @@ export function dynamicBindingError(payload, caseId, sourceSha256, compilerVersi
   const normalize = (value) => String(value || '').toLowerCase().replace(/^0x/, '');
   if (typeof reportedSha !== 'string' || normalize(reportedSha) !== normalize(compilerSha256)) return 'runner_compiler_hash_mismatch';
   return null;
+}
+
+/**
+ * Shard identity for benchmark cases that have no corpus sample to bind to.
+ *
+ * Phase-two benchmark contracts and the clean controls point at placeholder
+ * origins (`github.com/example/defi-benchmarks`, `example.org/...`), so they
+ * never appear in the corpus manifest and #manifestSampleForCase returns null.
+ * Without an identity their dynamic result would be computed and then dropped on
+ * the floor. These identities are namespaced under a dedicated repo so they can
+ * never collide with a real corpus sampleId, and the caller routes them to an
+ * archive segment the corpus merger skips (see BENCHMARK_SHARD_SEGMENT).
+ */
+export const BENCHMARK_SHARD_REPO = 'local-benchmark-fixtures';
+
+// corpus_merge.py skips any shard whose relative path contains a `history`
+// segment, so this is the archive landing spot for shards with no corpus binding.
+export const BENCHMARK_SHARD_HISTORY_SEGMENT = 'history';
+
+export function benchmarkShardIdentity(benchmarkCase, sourceSha256) {
+  const caseId = benchmarkCase?.caseId;
+  if (typeof caseId !== 'string' || !caseId) return null;
+  if (typeof sourceSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sourceSha256)) return null;
+  return {
+    repo: BENCHMARK_SHARD_REPO,
+    // The content hash stands in for an upstream commit: these fixtures have no
+    // real revision, and keying on it keeps the id stable per source revision.
+    commit: sourceSha256,
+    path: `benchmark/contracts/${caseId}/${benchmarkCase?.truth?.sourceFile || 'source.sol'}`,
+    sha256: sourceSha256,
+    benchmarkCaseId: caseId,
+    syntheticFixture: true,
+  };
 }

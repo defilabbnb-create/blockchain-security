@@ -322,7 +322,13 @@ class PreReleaseDialectTests(unittest.TestCase):
                       'invariants': [{'invariantId': 'a' * 64,
                                       'template': 'unbounded_work_is_bounded',
                                       'description': 'work is bounded',
-                                      'params': {'toleranceBps': 0}}]}
+                                      # The template reads the collection's size,
+                                      # so the getter has to be supplied here the
+                                      # way the generator supplies it.  These tests
+                                      # are about the pre-0.5 dialect the harness
+                                      # emits, not about resolving that getter.
+                                      'params': {'toleranceBps': 0,
+                                                 'collectionSize': 'collectionSize()'}}]}
         source = 'pragma solidity >=0.4.11;\ncontract Target { }\n'
         bundle = {'sources': {'Target.sol': {'content': source}},
                   'metadata': {'settings': {'compilationTarget': {'Target.sol': 'Target'}}},
@@ -360,17 +366,46 @@ class PreReleaseDialectTests(unittest.TestCase):
         # The selector hash lives in the harness rather than inline, because the
         # one-argument `keccak256` does not parse before 0.5.
         for version in ('0.4.10', '0.8.19'):
-            self.assertIn('function _encodeCall(', self._harness(version), version)
+            self.assertIn('function _encodeSelectorWithAddress(', self._harness(version), version)
+
+    def test_signature_is_hashed_past_its_length_prefix(self):
+        # A `string memory` parameter points at its own length word.  Hashing
+        # `signatureLength` bytes from that pointer folds the prefix into the
+        # digest, and the resulting selector dispatches to nothing -- every read
+        # reverted and the run reported "getter unavailable" for contracts whose
+        # getters are perfectly readable.
+        for version in ('0.4.10', '0.8.19'):
+            text = self._harness(version)
+            self.assertIn('keccak256(add(signature, 32), signatureLength)', text, version)
+            self.assertNotIn('keccak256(signature, signatureLength)', text, version)
+
+    def test_argument_is_written_immediately_after_the_selector(self):
+        # A 36-byte buffer holds the data area and nothing else.  Writing the
+        # selector into one word and the argument into the next stores past the
+        # end of the data, and the dispatch fails on a getter that exists.
+        # Verified against a live `mapping(address => uint256) public balances`
+        # getter rather than inferred from the ABI spec.
+        for version in ('0.4.10', '0.8.19'):
+            text = self._harness(version)
+            self.assertIn('mstore(add(out, 36), and(argument,', text, version)
+            self.assertNotIn('mstore(add(encoded, 64), and(argument,', text, version)
+
+    def test_selector_is_left_aligned_in_the_data_area(self):
+        # The four selector bytes are the low bytes of the first data word.
+        for version in ('0.4.10', '0.8.19'):
+            self.assertIn('and(keccak256(add(signature, 32), signatureLength),\n'
+                          '                0xffffffff0000', self._harness(version), version)
 
     def test_reads_never_destructure_a_call_result_inline(self):
         from invariant_assertions import _common
-        rendered = _common.static_read('t', 'balances(address)', 'guard')
+        rendered = _common.read_expr('t', 'balances(address)', 'guard')
         self.assertNotIn('(bool guardOkRaw, bytes memory guardDataRaw) =', rendered)
 
     def test_entry_call_does_not_destructure_inline(self):
         from invariant_assertions import _common
-        rendered = _common.entry_call('t', 'withdraw()', 'entry')
+        rendered = _common.call_succeeded('t', 'withdraw()', 'entryOk')
         self.assertNotIn('(bool entryOk, bytes memory entryData) =', rendered)
+        self.assertIn('_callSucceeded(', rendered)
 
 
 class CompiledGetterVisibilityTests(unittest.TestCase):
@@ -481,7 +516,7 @@ class CompiledGetterVisibilityTests(unittest.TestCase):
         # The argument must be ABI-encoded as a value.  Passing the call expression
         # inside the signature string makes the target find no matching function,
         # which surfaced as "balances(address(this)) getter unavailable".
-        self.assertIn('_encodeCall("balances(address)", address(this))', body)
+        self.assertIn('_encodeSelectorWithAddress("balances(address)", address(this))', body)
 
 
 class VulnerabilityTemplateParameterTests(unittest.TestCase):
@@ -529,10 +564,30 @@ class VulnerabilityTemplateParameterTests(unittest.TestCase):
                     self.assertTrue(isinstance(value, str) and value.startswith('$'),
                                     f'{key}.{template["template"]}.{name} = {value!r}')
 
-    def test_parameterised_entrypoint_is_rejected(self):
-        # `liquidate(address,uint256)` cannot be called with an encoded empty
-        # argument list; rendering it would revert and be read as a violation.
-        self.assertIsNone(self.vuln._method_literal({'entrypoint': 'liquidate(address,uint256)'},
+    def test_parameterised_entrypoint_is_accepted_when_the_probe_can_carry_it(self):
+        # An access-control assertion asks whether a call was *admitted*, so an
+        # entry point that takes arguments is probed with a placeholder rather
+        # than refused.  Both parameter types below are carried by an encoder
+        # verified byte-for-byte against the compiler's own encoding.
+        self.assertEqual('liquidate(address,uint256)',
+                         self.vuln._method_literal({'entrypoint': 'liquidate(address,uint256)'},
+                                                    'entrypoint'))
+
+    def test_unsupported_parameter_type_is_refused_at_the_encoder(self):
+        # Three words is more than any helper carries, and `uint8` needs a mask
+        # no helper performs.  The renderer must drop the whole assertion rather
+        # than emit a call that dispatches to nothing and reads as a violation.
+        context = {'target_addr_expr': 'target', 'compiler_version': '0.8.19'}
+        self.assertIsNone(self.vuln.render_privileged_entry_requires_authentication(
+            {'entrypoint': 'f(address,address,address)'}, context))
+        self.assertIsNone(self.vuln.render_privileged_entry_requires_authentication(
+            {'entrypoint': 'f(uint8)'}, context))
+
+    def test_signature_with_a_quote_is_still_refused(self):
+        # The signature is embedded into a Solidity string literal verbatim, so
+        # text that could break out of that literal stays rejected whatever the
+        # parameter list looks like.
+        self.assertIsNone(self.vuln._method_literal({'entrypoint': 'f(address)");evil('},
                                                     'entrypoint'))
 
     def test_empty_argument_signature_is_accepted(self):
@@ -581,7 +636,7 @@ class MappingGetterRenderingTests(unittest.TestCase):
         self.assertEqual('fee()', self.common.call_expression('fee'))
 
     def test_mapping_signature_passes_the_caller_address(self):
-        self.assertEqual('balances(address(this))',
+        self.assertEqual('balances(address)',
                          self.common.call_expression('balances(address)'))
 
     def test_multi_argument_getter_is_refused(self):
@@ -594,23 +649,26 @@ class MappingGetterRenderingTests(unittest.TestCase):
             self.assertIsNone(self.common.call_expression(value), value)
 
     def test_mapping_read_renders_a_well_formed_call(self):
-        body = self.common.static_read('reentrancyTarget', 'balances(address)', 'guard')
+        body = self.common.read_expr('reentrancyTarget', 'balances(address)', 'guard')
         # The argument has to travel as a value, not inside the signature string.
-        self.assertIn('_encodeCall("balances(address)", address)', body)
+        self.assertIn('_encodeSelectorWithAddress("balances(address)", address(this))', body)
         self.assertNotIn('staticcall', body)
 
     def test_read_does_not_hash_the_selector_in_generated_source(self):
         # `keccak256(bytes)` and a destructured call result are both 0.5+; the
         # corpus pins 0.4.10, where neither compiles.  The selector is hashed by
         # the harness helper and the result is assigned to declared variables.
-        body = self.common.static_read('reentrancyTarget', 'balances(address)', 'guard')
+        body = self.common.read_expr('reentrancyTarget', 'balances(address)', 'guard')
         self.assertNotIn('keccak256', body)
         self.assertNotIn('(bool guardOkRaw, bytes memory guardDataRaw) =', body)
-        self.assertIn('(guardOkRaw, guardDataRaw) =', body)
+        self.assertIn('_readWord(', body)
 
-    def test_scalar_read_is_unchanged(self):
-        body = self.common.static_read('t', 'fee()', 'fee')
-        self.assertIn('abi.encodeWithSignature("fee()")', body)
+    def test_scalar_read_routes_through_the_harness_helper(self):
+        # `abi.encodeWithSignature` exists from 0.4.22 only, and the corpus pins
+        # 0.4.10, so even a zero-argument getter has to go through the helper.
+        body = self.common.read_expr('t', 'fee()', 'fee')
+        self.assertIn('_encodeSelector("fee()")', body)
+        self.assertNotIn('abi.encodeWithSignature', body)
 
 
 class StaticReadCompatibilityTests(unittest.TestCase):
@@ -630,16 +688,19 @@ class StaticReadCompatibilityTests(unittest.TestCase):
     def test_temporaries_are_unique_per_read(self):
         # Two reads of the same field in one function collided on the shared
         # `_ok`/`_data` names and were rejected as duplicate identifiers.
-        first = self.common.static_read('t', 'f()', 'a')
-        second = self.common.static_read('t', 'f()', 'a2')
+        first = self.common.read_expr('t', 'f()', 'a')
+        second = self.common.read_expr('t', 'f()', 'a2')
         self.assertNotEqual(first, second)
         self.assertNotIn('_ok', first)
 
     def test_explicit_names_let_a_caller_read_the_same_field_twice(self):
-        rendered = self.common.static_read('t', 'f()', 'guard2',
-                                           ok_name='guardOk2', data_name='guardData2')
-        self.assertIn('bool guardOk2', rendered)
-        self.assertIn('bytes memory guardData2', rendered)
+        # Every temporary derives from the label, so the before/after pair a
+        # template reads a single getter through never collides.
+        first = self.common.read_expr('t', 'f()', 'guardBefore')
+        second = self.common.read_expr('t', 'f()', 'guardAfter')
+        self.assertIn('bool guardBeforeOk', first)
+        self.assertIn('bool guardAfterOk', second)
+        self.assertNotIn('guardAfter', first)
 
 
 class InlineDeploymentRewriteTests(unittest.TestCase):
@@ -683,7 +744,42 @@ class InlineDeploymentRewriteTests(unittest.TestCase):
         updated = self._rewrite(self._rendered())
         self.assertIn('Vault deployedTarget = new Vault();', updated)
         self.assertNotIn('INVARIANT_TARGET', updated)
+        # With no target source on disk there is nothing to inline, so the modern
+        # `import` form is kept -- the 0.4.x branch only replaces it when the
+        # declaration is actually available to splice in.
         self.assertIn('import { Vault } from "../src/Vault.sol";', updated)
+
+    def test_target_source_is_declared_at_file_scope(self):
+        # The 0.4.x compilers cannot `new` a type that arrives through an
+        # `import`, so the declaration is spliced in ahead of the test contract.
+        # It has to sit at file scope: inside the contract's braces it parses as
+        # a member declaration and the unit is rejected with "Function,
+        # variable, struct or modifier declaration expected".
+        harness_src = Path(tempfile.mkdtemp()) / 'Vault.sol'
+        harness_src.parent.mkdir(parents=True, exist_ok=True)
+        harness_src.write_text(
+            '// SPDX-License-Identifier: GPL-3.0\npragma solidity >=0.4.19;\n'
+            'contract Vault { uint256 public fee; }\n', encoding='utf-8')
+        with tempfile.TemporaryDirectory() as directory:
+            harness = Path(directory)
+            (harness / 'test').mkdir()
+            (harness / 'src').mkdir()
+            (harness / 'src' / 'Vault.sol').write_text(
+                harness_src.read_text(encoding='utf-8'), encoding='utf-8')
+            (harness / 'test' / 'Invariant_0123456789abcdef.t.sol').write_text(
+                self._rendered(), encoding='utf-8')
+            DEEP._inline_target_deployment(harness, 'Vault.sol', 'Vault',
+                                           modern=False, wide='uint256', reason=False)
+            updated = (harness / 'test' / 'Invariant_0123456789abcdef.t.sol').read_text(
+                encoding='utf-8')
+        self.assertIn('contract Vault { uint256 public fee; }', updated)
+        self.assertLess(updated.index('contract Vault {'),
+                        updated.index('contract Invariant_0123456789abcdef'))
+        # The target's own SPDX header would collide with the generated one and
+        # solc 0.8 rejects the unit with "Multiple SPDX license identifiers".
+        self.assertEqual(updated.count('SPDX-License-Identifier'), 1)
+        # A second pragma in one unit is a parse error on every release.
+        self.assertEqual(len(re.findall(r'pragma\s+solidity', updated)), 1)
 
     def test_deployed_contract_is_exposed_to_the_body_as_an_address(self):
         # The rendered bodies assign `target` straight to an `address` local,
@@ -743,6 +839,87 @@ class AssertionClassificationTests(unittest.TestCase):
         self.assertEqual(evidence.get('outcome'), 'passed')
         self.assertNotIn('violated', states)
         self.assertGreaterEqual(evidence.get('executedAssertionCount') or 0, 1)
+
+
+class RenderedPreconditionTests(unittest.TestCase):
+    """A read that cannot be checked must not render as an unconditional pass.
+
+    Two of the cross-dependency renderers quoted their precondition as a string
+    literal instead of calling the dialect-aware helper.  The line reached the
+    generated harness as a bare string and asserted nothing, so an oracle or
+    dependency that reverted on every call still reported its assertion as
+    passed -- an unreadable precondition reported as a satisfied property.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        from invariant_assertions import cross
+        self.cross = cross
+
+    def _context(self):
+        return {'target_addr_expr': 'target', 'dependency_addr_expr': 'oracle',
+                'compiler_version': '0.8.19'}
+
+    def test_no_renderer_quotes_its_precondition(self):
+        rendered = self.cross.render_oracle_assumption_holds(
+            {'oracleField': 'answer', 'maxOracleValue': 10, 'toleranceBps': 0}, self._context())
+        self.assertNotIn('require_statement(', rendered)
+        self.assertNotIn("'", rendered)
+        self.assertIn('require(oracleValueOk, "oracle getter unavailable")', rendered)
+
+    def test_dependency_bounds_checks_its_read(self):
+        rendered = self.cross.render_dependency_return_bounds(
+            {'dependencyField': 'supply', 'minReturn': 1, 'maxReturn': 9}, self._context())
+        self.assertIn('require(dependencyValueOk, "dependency getter unavailable")', rendered)
+
+    def test_one_argument_require_is_used_before_0_4_22(self):
+        rendered = self.cross.render_oracle_assumption_holds(
+            {'oracleField': 'answer', 'maxOracleValue': 10, 'toleranceBps': 0},
+            {'target_addr_expr': 'target', 'dependency_addr_expr': 'oracle',
+             'compiler_version': '0.4.10'})
+        # Two-argument `require` does not parse before 0.4.22, and the corpus
+        # pins 0.4.10; the reason is dropped rather than the check.
+        self.assertIn('require(oracleValueOk);', rendered)
+        self.assertNotIn('"oracle getter unavailable"', rendered)
+
+
+class VacuousAssertionTests(unittest.TestCase):
+    """An assertion whose trigger cannot be reached reports nothing at all.
+
+    The reentrancy template compared the guard state against a "recorded value"
+    read from the assertion's own ledger entry, which nothing ever credits, so
+    `valueBefore > 0` was false on every well-formed contract and the check could
+    only ever pass.  It looked like it detected something only because a
+    malformed selector made the read fail instead.
+    """
+
+    def setUp(self):
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        from invariant_assertions import vuln
+        self.vuln = vuln
+
+    def _render(self):
+        return self.vuln.render_state_update_precedes_external_call(
+            {'guardField': 'balances(address)', 'valueField': 'balances(address)'},
+            {'target_addr_expr': 'target', 'compiler_version': '0.8.19'})
+
+    def test_the_assertion_reads_the_same_ledger_entry_twice(self):
+        rendered = self._render()
+        self.assertIn('valueBefore', rendered)
+        self.assertIn('valueAfter', rendered)
+
+    def test_no_comparison_depends_on_a_value_nothing_credits(self):
+        rendered = self._render()
+        # `valueBefore > 0` is unreachable: the harness never funds the entry it
+        # reads, so every well-formed contract satisfies the negation.
+        self.assertNotIn('valueBefore > 0', rendered)
+        self.assertIn('valueAfter <= valueBefore', rendered)
+
+    def test_the_checked_property_is_reachable_and_meaningful(self):
+        rendered = self._render()
+        self.assertIn('require(', rendered)
+        # A vacuous check reads as `true`; the assertion has to actually assert.
+        self.assertNotIn('require(true', rendered)
 
 
 if __name__ == '__main__':

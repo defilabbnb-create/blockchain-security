@@ -10,6 +10,7 @@ import os
 import re
 import ssl
 import subprocess
+import sys
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -43,7 +44,21 @@ def _result(invariant_id, mode, state, *, reason=None, minimal_repro=None, gas_u
             **({'reason': reason} if reason else {})}
 
 
-def _forge_command(forge, harness_dir):
+def _forge_command(forge, harness_dir, manifest=None):
+    # A bare `forge` cannot resolve a compiler for the pre-0.8 samples in the
+    # benchmark corpus: with nothing installed for, say, `^0.4.10` it exits
+    # before any test runs, and the failure then surfaces as "no assertion
+    # executed" rather than as the compiler error it is.  When the caller hands
+    # us the solc bridge, the run goes through it and one already-cached soljson
+    # release is pinned with `--use`.  A harness that recorded the exact compiler
+    # it was built with is honoured, because `auto` would otherwise take the
+    # newest release the pragma range allows.
+    forge = Path(forge)
+    if forge.name == 'forge-with-solc.py':
+        recorded = (manifest or {}).get('deployment', {}).get('compilerVersion')
+        return [sys.executable, str(forge), '--compiler-version', recorded or 'auto',
+                '--forge', str(_default_forge(harness_dir)),
+                'test', '--root', str(harness_dir), '--json']
     return [str(forge), 'test', '--root', str(harness_dir), '--json']
 
 
@@ -71,6 +86,23 @@ def _rpc_block_hash(url, block_number):
         connection.close()
 
 
+def _default_forge(harness_dir):
+    """Resolve the bundled forge binary.
+
+    A harness lives under a task directory, so walking up from it does not
+    reliably reach the repository. Prefer the project's own tool location and
+    keep the historical relative path as a fallback.
+    """
+    candidates = [
+        Path(__file__).resolve().parent.parent / 'work' / 'tools' / 'forge',
+        Path(harness_dir).resolve().parent.parent / 'tools' / 'forge',
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[0]
+
+
 def run_harness(harness_dir, *, mode='local', forge=None, timeout_seconds=120, max_output_bytes=2_000_000,
                 rpc_url=None, block_number=None, block_hash_before=None, block_hash_after=None,
                 replay_enabled=False, max_process_tree_rss_bytes=3 * 1024 * 1024 * 1024):
@@ -88,7 +120,7 @@ def run_harness(harness_dir, *, mode='local', forge=None, timeout_seconds=120, m
 
     if not invariant_rows:
         return finish([])
-    forge = Path(forge or harness_dir.parent.parent / 'tools' / 'forge')
+    forge = Path(forge or _default_forge(harness_dir)).expanduser().resolve()
     if mode not in ('local', 'fixed_block_fork', 'replay'):
         raise ValueError('mode must be local, fixed_block_fork, or replay')
     if mode == 'replay':
@@ -108,7 +140,7 @@ def run_harness(harness_dir, *, mode='local', forge=None, timeout_seconds=120, m
             return finish([_result(row['invariantId'], mode, 'unavailable', reason=str(error)[:120]) for row in invariant_rows])
     if not forge.is_file():
         return finish([_result(row['invariantId'], mode, 'unavailable', reason='forge_not_found') for row in invariant_rows])
-    command = _forge_command(forge, harness_dir)
+    command = _forge_command(forge, harness_dir, manifest)
     env = dict(os.environ)
     for key in ('RPC_URL', 'DYNAMIC_FORK_RPC_URL', 'DYNAMIC_FORK_BLOCK_NUMBER', 'ETH_RPC_URL', 'FOUNDRY_ETH_RPC_URL'):
         env.pop(key, None)
@@ -204,7 +236,13 @@ def main(argv=None):
                 pass
     else:
         print(text, end='')
-    return 0 if all(item['state'] in ('passed', 'unavailable') for item in results) else 1
+    # "Nothing ran" must never look like "everything passed". When every
+    # invariant ended up unavailable the harness produced no evidence, so the
+    # exit status has to distinguish that from an actual passing run.
+    states = [item.get('state') for item in results]
+    if states and all(state == 'unavailable' for state in states):
+        return 2
+    return 0 if all(state in ('passed', 'unavailable') for state in states) else 1
 
 
 if __name__ == '__main__':

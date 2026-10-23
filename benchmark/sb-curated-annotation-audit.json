@@ -1,0 +1,669 @@
+{
+  "schemaVersion": 1,
+  "taxonomy": "DASP-10 (SmartBugs SB Curated inline annotations)",
+  "scope": "只报告标注与 ground-truth 的差异，不改写任何标注或 ground-truth",
+  "caseCount": 33,
+  "annotatedCaseCount": 20,
+  "cases": [
+    {
+      "caseId": "01-arbitrary_location_write_simple",
+      "sourceFile": "arbitrary_location_write_simple.sol",
+      "sourceSha256": "bbbdb5367463fd3d1e11b2c569695d8b4734e3f88fcf937a34469a23121b01ab",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "access_control"
+      ],
+      "annotatedClasses": [
+        "access_control"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "access_control"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "02-incorrect_constructor_name1",
+      "sourceFile": "incorrect_constructor_name1.sol",
+      "sourceSha256": "d918731cebddf34ad385dd799691237e0ec1aab09f34ce7eb6bbe83ec86cd8c8",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "access_control"
+      ],
+      "annotatedClasses": [
+        "access_control"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "access_control"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "03-simple_suicide",
+      "sourceFile": "incorrect_constructor_name2.sol",
+      "sourceSha256": "d210fc21c6fdf273cfe2af52408b09ec82df89ebdea554b0c6356ad8b5d8796d",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "access_control"
+      ],
+      "annotatedClasses": [
+        "access_control"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "access_control"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "04-unprotected0",
+      "sourceFile": "unprotected0.sol",
+      "sourceSha256": "8cfc8702a1a0afe407c2ea83e0c48e97909f66af1955ee5e1321f1dc2818a045",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "access_control"
+      ],
+      "annotatedClasses": [
+        "access_control"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "access_control"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "05-BECToken",
+      "sourceFile": "BECToken.sol",
+      "sourceSha256": "5765dccd66c76ce39da689c314364dc380e0b6a984ad351c5f81eb8e35e749b9",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "annotatedClasses": [
+        "arithmetic"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "arithmetic"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "06-integer_overflow_minimal",
+      "sourceFile": "integer_overflow_minimal.sol",
+      "sourceSha256": "ca539303822841840452b2aa1bf8607dc7b46d32de7261e11861da1bc9c6e915",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "annotatedClasses": [
+        "arithmetic"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "arithmetic"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "07-overflow_simple_add",
+      "sourceFile": "overflow_simple_add.sol",
+      "sourceSha256": "641f6d9e0a4ff8f91c6340a38af72f4ab48749635f5ebb9815123c8ae2e0a46e",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "annotatedClasses": [
+        "arithmetic"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "arithmetic"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "08-guess_the_random_number",
+      "sourceFile": "guess_the_random_number.sol",
+      "sourceSha256": "d27ca8263b122093d6798f08c58264dd8aa552b7dd2e567aac648928be6e17f5",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "bad_randomness"
+      ],
+      "annotatedClasses": [
+        "bad_randomness"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "bad_randomness"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "09-old_blockhash",
+      "sourceFile": "old_blockhash.sol",
+      "sourceSha256": "fcacbdf48076326222bd952ab15d0ef3a1cb2bd0acf983b8ff6cdb90633c30e7",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "bad_randomness"
+      ],
+      "annotatedClasses": [
+        "bad_randomness"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "bad_randomness"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "10-dos_address",
+      "sourceFile": "dos_address.sol",
+      "sourceSha256": "4f6960a84c3da5f791faf0111033b1d6a425e2575fb03b31acd248210497794e",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "denial_of_service"
+      ],
+      "annotatedClasses": [
+        "denial_of_service"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "denial_of_service"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "11-dos_simple",
+      "sourceFile": "dos_simple.sol",
+      "sourceSha256": "53dcfd96beb66caaefc66373d6cef836a0b1f0320d3e4421426cb26590fc2c0c",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "denial_of_service"
+      ],
+      "annotatedClasses": [
+        "denial_of_service"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "denial_of_service"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "12-eth_tx_order_dependence_minimal",
+      "sourceFile": "eth_tx_order_dependence_minimal.sol",
+      "sourceSha256": "ff02571525b00a0261fa98cc57fc00822124d72ce0039b4e46423523154bf5ed",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "front_running"
+      ],
+      "annotatedClasses": [
+        "front_running"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "front_running"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "13-etherstore",
+      "sourceFile": "etherstore.sol",
+      "sourceSha256": "bffe7255c351724c3ab15f6c4c4909a3d756650791360e86cf2f71c48046aa79",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "annotatedClasses": [
+        "reentrancy"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "reentrancy"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "14-reentrance",
+      "sourceFile": "reentrance.sol",
+      "sourceSha256": "78ebf8f92bb978386a96fb1b4bec2ad2aaa77916a6ed7e49c2ae74c92f466ea4",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "annotatedClasses": [
+        "reentrancy"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "reentrancy"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "15-reentrancy_simple",
+      "sourceFile": "reentrancy_simple.sol",
+      "sourceSha256": "98b4c8b45c2e6711b1c58fb6991375f698a66f148799ca7aff6e27db8a9803e1",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "annotatedClasses": [
+        "reentrancy"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "reentrancy"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "16-simple_dao",
+      "sourceFile": "0x23a91059fdc9579a9fbd0edc5f2ea0bfdb70deb4.sol",
+      "sourceSha256": "bcd0fdfad9f6594fdbc940967321856490ed4bffbe8b6ab9c75c6b85072528a5",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "annotatedClasses": [
+        "reentrancy"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "reentrancy"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "17-timed_crowdsale",
+      "sourceFile": "timed_crowdsale.sol",
+      "sourceSha256": "52fa5d86b7ee71874f54c1973562f0ff76b58a0a2ba2371e5193f783bd30222e",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "time_manipulation"
+      ],
+      "annotatedClasses": [
+        "time_manipulation"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "time_manipulation"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "18-lotto",
+      "sourceFile": "lotto.sol",
+      "sourceSha256": "09c8886de37a52a987d1a40588bd8fe352b8bb8bbfb9960caf8a6664a893b223",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "unchecked_low_level_calls"
+      ],
+      "annotatedClasses": [
+        "unchecked_low_level_call"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "unchecked_low_level_call"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "19-mishandled",
+      "sourceFile": "unchecked_return_value.sol",
+      "sourceSha256": "ac992f26a8a567c74fe30e0f48d0c421d3f483ff431f6672a6dae5dd6c9e168d",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "unchecked_low_level_calls"
+      ],
+      "annotatedClasses": [
+        "unchecked_low_level_call"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "unchecked_low_level_call"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "20-reentrancy_cross_function",
+      "sourceFile": "0x01f8c4e3fa3edeb29e514cba738d87ce8c091d3f.sol",
+      "sourceSha256": "0196d033850b295690465d0f7d2baae8b3570df29c9d03d507496b45155a84e5",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "annotatedClasses": [
+        "reentrancy"
+      ],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "reentrancy"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "21-erc4626-donation",
+      "sourceFile": "Vault.sol",
+      "sourceSha256": "c65fb8a7560db1a1ec6b23ad6b5d34fa447e72febbac3c8731df4b459b5e05b1",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "erc4626_donation"
+      ],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "erc4626_donation"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": [
+        "erc4626_donation"
+      ]
+    },
+    {
+      "caseId": "22-erc4626-rounding",
+      "sourceFile": "Vault.sol",
+      "sourceSha256": "2a65f9c2da2fef439304aa61a4e1e798bf3ac41a35d881fd5e972a69df7a416f",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "erc4626_rounding"
+      ],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "erc4626_rounding"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": [
+        "erc4626_rounding"
+      ]
+    },
+    {
+      "caseId": "23-lending-health-factor",
+      "sourceFile": "Pool.sol",
+      "sourceSha256": "da7b88c9747175d2eae448b19df074d019bfa7658f1f5895f65c446ef8d2cd46",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "lending_health_factor"
+      ],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "lending_health_factor"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": [
+        "lending_health_factor"
+      ]
+    },
+    {
+      "caseId": "24-lending-bad-debt",
+      "sourceFile": "Pool.sol",
+      "sourceSha256": "ae9dec6e7c03e9100f9262760f15f293a288c46bfc914026cdf4b2328094897e",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "lending_bad_debt"
+      ],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "lending_bad_debt"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": [
+        "lending_bad_debt"
+      ]
+    },
+    {
+      "caseId": "25-amm-k-decrease",
+      "sourceFile": "Pool.sol",
+      "sourceSha256": "c2aa2d2c6cf4f8b7ede60a5ac69633ab649f0d0d0a414ea5c7dfc30607037981",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "amm_k_decrease"
+      ],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "amm_k_decrease"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": [
+        "amm_k_decrease"
+      ]
+    },
+    {
+      "caseId": "26-amm-fee",
+      "sourceFile": "Pool.sol",
+      "sourceSha256": "83d8de17cc5b3b5b7bce29a4637087926a6e79571330c2cf1b777f1f45d50e5f",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "amm_fee_accounting"
+      ],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "amm_fee_accounting"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": [
+        "amm_fee_accounting"
+      ]
+    },
+    {
+      "caseId": "27-oracle-stale",
+      "sourceFile": "Oracle.sol",
+      "sourceSha256": "0d34cc2d1984e820eeaf026926a7e9b545a332f7c74324a345fef97a855eb5df",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "oracle_stale_price"
+      ],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "oracle_stale_price"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": [
+        "oracle_stale_price"
+      ]
+    },
+    {
+      "caseId": "28-cross-call",
+      "sourceFile": "Router.sol",
+      "sourceSha256": "796b73d83823023a234fe51756faabda0776665554fb4d7fbd1142ab1e2ba89b",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "unchecked_cross_contract_assumption"
+      ],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "unchecked_cross_contract_assumption"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": [
+        "unchecked_cross_contract_assumption"
+      ]
+    },
+    {
+      "caseId": "29-delegatecall",
+      "sourceFile": "Proxy.sol",
+      "sourceSha256": "c664f6ab2814325b9ec7cded9376e1bfda500fb5e7fe7d4733ed2cad43c20895",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "unprotected_upgrade"
+      ],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "unprotected_upgrade"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": [
+        "unprotected_upgrade"
+      ]
+    },
+    {
+      "caseId": "30-reentrancy-withdraw",
+      "sourceFile": "Vault.sol",
+      "sourceSha256": "1abffe17b53de8d20aa8690bfa62cdf8b806aebdd877a8ec6fbbd7a7e70033d1",
+      "annotationSourceVerified": null,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [
+        "reentrancy"
+      ],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": [
+        "reentrancy"
+      ]
+    },
+    {
+      "caseId": "31-clean-vault",
+      "sourceFile": "CleanVault.sol",
+      "sourceSha256": "be5c0c53754d19ce0f6bce8cce81e4f63a4b9da4f7f268e5a1bd642086d1450f",
+      "annotationSourceVerified": null,
+      "knownIssues": [],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "32-clean-lending",
+      "sourceFile": "CleanLending.sol",
+      "sourceSha256": "946ef29bde9740ff2f4e0b6d5308af392186d34bafc65ffac89697cb7a9962f8",
+      "annotationSourceVerified": null,
+      "knownIssues": [],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    },
+    {
+      "caseId": "33-clean-amm",
+      "sourceFile": "CleanAMM.sol",
+      "sourceSha256": "165fb0409dc1c4c2eb819023d2565bf51ffa4cd9af29442ca57fb1d2343f38f6",
+      "annotationSourceVerified": null,
+      "knownIssues": [],
+      "annotatedClasses": [],
+      "unknownAnnotationSpellings": [],
+      "knownIssuesCanonical": [],
+      "annotationNotInKnownIssues": [],
+      "knownIssuesWithoutAnnotation": []
+    }
+  ],
+  "annotationNotInKnownIssues": [],
+  "knownIssuesWithoutAnnotation": [
+    {
+      "caseId": "21-erc4626-donation",
+      "classes": [
+        "erc4626_donation"
+      ]
+    },
+    {
+      "caseId": "22-erc4626-rounding",
+      "classes": [
+        "erc4626_rounding"
+      ]
+    },
+    {
+      "caseId": "23-lending-health-factor",
+      "classes": [
+        "lending_health_factor"
+      ]
+    },
+    {
+      "caseId": "24-lending-bad-debt",
+      "classes": [
+        "lending_bad_debt"
+      ]
+    },
+    {
+      "caseId": "25-amm-k-decrease",
+      "classes": [
+        "amm_k_decrease"
+      ]
+    },
+    {
+      "caseId": "26-amm-fee",
+      "classes": [
+        "amm_fee_accounting"
+      ]
+    },
+    {
+      "caseId": "27-oracle-stale",
+      "classes": [
+        "oracle_stale_price"
+      ]
+    },
+    {
+      "caseId": "28-cross-call",
+      "classes": [
+        "unchecked_cross_contract_assumption"
+      ]
+    },
+    {
+      "caseId": "29-delegatecall",
+      "classes": [
+        "unprotected_upgrade"
+      ]
+    },
+    {
+      "caseId": "30-reentrancy-withdraw",
+      "classes": [
+        "reentrancy"
+      ]
+    }
+  ],
+  "unknownAnnotationSpellings": {},
+  "classMap": {
+    "ACCESS_CONTROL": "access_control",
+    "ARITHMETIC": "arithmetic",
+    "BAD_RANDOMNESS": "bad_randomness",
+    "DENIAL_OF_SERVICE": "denial_of_service",
+    "FRONT_RUNNING": "front_running",
+    "RACE_CONDITION": "race_condition",
+    "REENTRANCY": "reentrancy",
+    "SHORT_ADDRESSES": "short_addresses",
+    "TIME_MANIPULATION": "time_manipulation",
+    "UNCHECKED_LL_CALLS": "unchecked_low_level_call",
+    "INCORRECT_INTERFACE": "incorrect_interface",
+    "HONEYPOTS": "honeypots",
+    "VARIABLE_SHADOWING": "variable_shadowing"
+  },
+  "interpretation": {
+    "annotationNotInKnownIssues": "源码带此标注但 knownIssues 未收录；可能是刻意排除，也可能是漏录，需人工裁定。",
+    "knownIssuesWithoutAnnotation": "knownIssues 收录了源码没有标注的性质；本项目自建样本属正常，SB Curated 样本需核对。",
+    "unknownAnnotationSpellings": "标注使用了映射表未覆盖的拼写；不会静默并入任何类别。"
+  }
+}

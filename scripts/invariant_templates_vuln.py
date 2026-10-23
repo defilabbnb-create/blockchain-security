@@ -98,14 +98,19 @@ TEMPLATES = {
             'name': '不可信输入的工作量有界',
             'description': '受攻击者控制的集合规模不应使单次交易工作量无界增长，'
                            '否则后续调用者会被阻断。',
-            'params': {'toleranceBps': 0},
+            # The getter is resolved from the ABI rather than assumed to be
+            # named `collectionSize`: a creditor list exposes `numberCreditors()`
+            # and an array `length()`, so a fixed name dispatched to a function
+            # the target never implemented and made the read unreadable.
+            'params': {'toleranceBps': 0, 'collectionSize': '$collectionSize'},
         },
         {
             'template': 'single_item_failure_does_not_block_others',
             'name': '单项失败不阻塞其他条目',
             'description': '集合中一个条目的失败不应中断整批处理并使后续条目'
                            '永久无法处理。',
-            'params': {'entrypoint': '$entrypoint', 'toleranceBps': 0},
+            'params': {'entrypoint': '$entrypoint', 'toleranceBps': 0,
+                       'collectionSize': '$collectionSize'},
         },
     ),
 }

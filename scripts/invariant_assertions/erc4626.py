@@ -1,6 +1,7 @@
 """Executable Solidity assertion snippets for ERC-4626 style vaults."""
 
-from ._common import guard, read_expr, ratio_assertion
+from ._common import (guard, read_expr, ratio_assertion, read_value,
+                      encoded_call, require_statement)
 
 
 def render_share_price_monotonic(params, context):
@@ -9,12 +10,12 @@ def render_share_price_monotonic(params, context):
         return None
     address, tolerance_bps, (assets, shares) = checked
     return "\n".join((
-        read_expr(address, assets, "assetsBefore"),
-        read_expr(address, shares, "sharesBefore"),
+        read_expr(address, assets, "assetsBefore", context),
+        read_expr(address, shares, "sharesBefore", context),
         "// The adapter performs the protocol action between the two snapshots.",
-        read_expr(address, assets, "assetsAfter"),
-        read_expr(address, shares, "sharesAfter"),
-        f"if (assetsBefore > 0 && sharesBefore > 0 && sharesAfter > 0) {{ {ratio_assertion('assetsAfter * sharesBefore', 'assetsBefore * sharesAfter', tolerance_bps, 'share price unexpectedly decreased beyond tolerance')} }}",
+        read_expr(address, assets, "assetsAfter", context),
+        read_expr(address, shares, "sharesAfter", context),
+        f"if (assetsBefore > 0 && sharesBefore > 0 && sharesAfter > 0) {{ {ratio_assertion('assetsAfter * sharesBefore', 'assetsBefore * sharesAfter', tolerance_bps, 'share price unexpectedly decreased beyond tolerance', context)} }}",
     ))
 
 
@@ -24,13 +25,14 @@ def render_withdraw_preserves_remaining_value(params, context):
         return None
     address, tolerance_bps, (assets, shares) = checked
     return "\n".join((
-        read_expr(address, assets, "assetsBefore"),
-        read_expr(address, shares, "sharesBefore"),
+        read_expr(address, assets, "assetsBefore", context),
+        read_expr(address, shares, "sharesBefore", context),
         "// The adapter performs the withdrawal between the two snapshots.",
-        read_expr(address, assets, "assetsAfter"),
-        read_expr(address, shares, "sharesAfter"),
-        f"require(sharesAfter <= sharesBefore, \"withdrawal increased total shares\");",
-        f"if (sharesBefore > 0 && sharesAfter > 0) {{ {ratio_assertion('assetsAfter * sharesBefore', 'assetsBefore * sharesAfter', tolerance_bps, 'withdrawal did not preserve remaining share value')} }}",
+        read_expr(address, assets, "assetsAfter", context),
+        read_expr(address, shares, "sharesAfter", context),
+        require_statement(context, "sharesAfter <= sharesBefore",
+                          "withdrawal increased total shares"),
+        f"if (sharesBefore > 0 && sharesAfter > 0) {{ {ratio_assertion('assetsAfter * sharesBefore', 'assetsBefore * sharesAfter', tolerance_bps, 'withdrawal did not preserve remaining share value', context)} }}",
     ))
 
 
@@ -40,13 +42,15 @@ def render_donation_does_not_change_ledger(params, context):
         return None
     address, _, (assets, shares) = checked
     return "\n".join((
-        read_expr(address, assets, "assetsBefore"),
-        read_expr(address, shares, "supplyBefore"),
+        read_expr(address, assets, "assetsBefore", context),
+        read_expr(address, shares, "supplyBefore", context),
         "// The adapter sends a direct donation between the two snapshots.",
-        read_expr(address, assets, "assetsAfter"),
-        read_expr(address, shares, "supplyAfter"),
-        "require(supplyAfter == supplyBefore, \"direct donation changed share supply ledger\");",
-        "require(assetsAfter >= assetsBefore, \"direct donation decreased recorded assets\");",
+        read_expr(address, assets, "assetsAfter", context),
+        read_expr(address, shares, "supplyAfter", context),
+        require_statement(context, "supplyAfter == supplyBefore",
+                          "direct donation changed share supply ledger"),
+        require_statement(context, "assetsAfter >= assetsBefore",
+                          "direct donation decreased recorded assets"),
     ))
 
 
@@ -56,12 +60,12 @@ def render_first_deposit_no_inflation(params, context):
         return None
     address, tolerance_bps, (assets, shares) = checked
     return "\n".join((
-        read_expr(address, assets, "assetsBefore"),
-        read_expr(address, shares, "sharesBefore"),
+        read_expr(address, assets, "assetsBefore", context),
+        read_expr(address, shares, "sharesBefore", context),
         "// The adapter executes the first deposit and records the resulting shares.",
-        read_expr(address, assets, "assetsAfter"),
-        read_expr(address, shares, "sharesAfter"),
-        f"if (sharesBefore == 0 && assetsAfter > 0) {{ {ratio_assertion('assetsAfter * sharesAfter', 'assetsBefore + 1', tolerance_bps, 'first deposit created an inflated share price')} }}",
+        read_expr(address, assets, "assetsAfter", context),
+        read_expr(address, shares, "sharesAfter", context),
+        f"if (sharesBefore == 0 && assetsAfter > 0) {{ {ratio_assertion('assetsAfter * sharesAfter', 'assetsBefore + 1', tolerance_bps, 'first deposit created an inflated share price', context)} }}",
     ))
 
 
@@ -77,13 +81,30 @@ def render_rounding_direction_correct(params, context):
     if isinstance(probe_assets, bool) or not isinstance(probe_assets, int) or probe_assets <= 0:
         return None
     return "\n".join((
-        read_expr(address, assets, "roundingAssets"),
-        read_expr(address, shares, "roundingShares"),
-        f"(bool roundingOk, bytes memory roundingData) = address({address}).staticcall(abi.encodeWithSignature(\"{conversion_field}(uint256)\", {probe_assets}));",
-        "require(roundingOk && roundingData.length >= 32, \"rounding conversion getter unavailable\");",
-        "uint256 observedShares = abi.decode(roundingData, (uint256));",
+        read_expr(address, assets, "roundingAssets", context),
+        read_expr(address, shares, "roundingShares", context),
+        "address roundingTarget = " + str(address) + ";",
+        # `abi.decode` is undeclared before 0.4.22 and absent from `abi` before
+        # 0.5, and a low-level `.call` result cannot be destructured at all
+        # before 0.5, so the probe goes through the harness helpers: the
+        # conversion is encoded from its canonical signature with the probe
+        # amount as a value, and the first returned word is read with `mload`.
+        # Only the observed value is declared out here; the flag and the
+        # decoded word are scoped to the block, because the two snapshots read
+        # above already sit on the legacy 16-slot stack.
+        "uint256 observedShares;",
+        "{",
+        "    bool ok;",
+        "    uint256 word;",
+        f"    (ok, word) = _readWord(roundingTarget, "
+        f'{encoded_call(f"{conversion_field}(uint256)", probe_assets)});',
+        "    " + require_statement(context, "ok",
+                                "rounding conversion getter unavailable"),
+        "    observedShares = word;",
+        "}",
         f"uint256 expectedShares = roundingAssets == 0 ? 0 : {probe_assets} * roundingShares / roundingAssets;",
-        "require(observedShares <= expectedShares, \"rounding direction favored the caller\");",
+        require_statement(context, "observedShares <= expectedShares",
+                          "rounding direction favored the caller"),
     ))
 
 

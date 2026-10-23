@@ -1,0 +1,326 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-22T06:14:45.437094+00:00",
+  "sampleCount": 33,
+  "summary": {
+    "verified": 20,
+    "mismatch": 0,
+    "unavailable": 0,
+    "synthetic_local_fixture": 13,
+    "invalid": 0
+  },
+  "method": "HTTPS raw content fetched from immutable GitHub commit URL and compared byte-for-byte by SHA-256",
+  "samples": [
+    {
+      "caseId": "01-arbitrary_location_write_simple",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/arbitrary_location_write_simple.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/arbitrary_location_write_simple.sol",
+      "sourceSha256": "bbbdb5367463fd3d1e11b2c569695d8b4734e3f88fcf937a34469a23121b01ab",
+      "remoteContentSha256": "bbbdb5367463fd3d1e11b2c569695d8b4734e3f88fcf937a34469a23121b01ab",
+      "remoteContentVerified": true,
+      "byteLength": 1077,
+      "reason": null
+    },
+    {
+      "caseId": "02-incorrect_constructor_name1",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/incorrect_constructor_name1.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/incorrect_constructor_name1.sol",
+      "sourceSha256": "d918731cebddf34ad385dd799691237e0ec1aab09f34ce7eb6bbe83ec86cd8c8",
+      "remoteContentSha256": "d918731cebddf34ad385dd799691237e0ec1aab09f34ce7eb6bbe83ec86cd8c8",
+      "remoteContentVerified": true,
+      "byteLength": 712,
+      "reason": null
+    },
+    {
+      "caseId": "03-simple_suicide",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/incorrect_constructor_name2.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/incorrect_constructor_name2.sol",
+      "sourceSha256": "d210fc21c6fdf273cfe2af52408b09ec82df89ebdea554b0c6356ad8b5d8796d",
+      "remoteContentSha256": "d210fc21c6fdf273cfe2af52408b09ec82df89ebdea554b0c6356ad8b5d8796d",
+      "remoteContentVerified": true,
+      "byteLength": 570,
+      "reason": null
+    },
+    {
+      "caseId": "04-unprotected0",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/unprotected0.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/access_control/unprotected0.sol",
+      "sourceSha256": "8cfc8702a1a0afe407c2ea83e0c48e97909f66af1955ee5e1321f1dc2818a045",
+      "remoteContentSha256": "8cfc8702a1a0afe407c2ea83e0c48e97909f66af1955ee5e1321f1dc2818a045",
+      "remoteContentVerified": true,
+      "byteLength": 742,
+      "reason": null
+    },
+    {
+      "caseId": "05-BECToken",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/BECToken.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/BECToken.sol",
+      "sourceSha256": "5765dccd66c76ce39da689c314364dc380e0b6a984ad351c5f81eb8e35e749b9",
+      "remoteContentSha256": "5765dccd66c76ce39da689c314364dc380e0b6a984ad351c5f81eb8e35e749b9",
+      "remoteContentVerified": true,
+      "byteLength": 9214,
+      "reason": null
+    },
+    {
+      "caseId": "06-integer_overflow_minimal",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/integer_overflow_minimal.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/integer_overflow_minimal.sol",
+      "sourceSha256": "ca539303822841840452b2aa1bf8607dc7b46d32de7261e11861da1bc9c6e915",
+      "remoteContentSha256": "ca539303822841840452b2aa1bf8607dc7b46d32de7261e11861da1bc9c6e915",
+      "remoteContentVerified": true,
+      "byteLength": 501,
+      "reason": null
+    },
+    {
+      "caseId": "07-overflow_simple_add",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/overflow_simple_add.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/arithmetic/overflow_simple_add.sol",
+      "sourceSha256": "641f6d9e0a4ff8f91c6340a38af72f4ab48749635f5ebb9815123c8ae2e0a46e",
+      "remoteContentSha256": "641f6d9e0a4ff8f91c6340a38af72f4ab48749635f5ebb9815123c8ae2e0a46e",
+      "remoteContentVerified": true,
+      "byteLength": 346,
+      "reason": null
+    },
+    {
+      "caseId": "08-guess_the_random_number",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/bad_randomness/guess_the_random_number.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/bad_randomness/guess_the_random_number.sol",
+      "sourceSha256": "d27ca8263b122093d6798f08c58264dd8aa552b7dd2e567aac648928be6e17f5",
+      "remoteContentSha256": "d27ca8263b122093d6798f08c58264dd8aa552b7dd2e567aac648928be6e17f5",
+      "remoteContentVerified": true,
+      "byteLength": 732,
+      "reason": null
+    },
+    {
+      "caseId": "09-old_blockhash",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/bad_randomness/old_blockhash.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/bad_randomness/old_blockhash.sol",
+      "sourceSha256": "fcacbdf48076326222bd952ab15d0ef3a1cb2bd0acf983b8ff6cdb90633c30e7",
+      "remoteContentSha256": "fcacbdf48076326222bd952ab15d0ef3a1cb2bd0acf983b8ff6cdb90633c30e7",
+      "remoteContentVerified": true,
+      "byteLength": 1337,
+      "reason": null
+    },
+    {
+      "caseId": "10-dos_address",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/denial_of_service/dos_address.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/denial_of_service/dos_address.sol",
+      "sourceSha256": "4f6960a84c3da5f791faf0111033b1d6a425e2575fb03b31acd248210497794e",
+      "remoteContentSha256": "4f6960a84c3da5f791faf0111033b1d6a425e2575fb03b31acd248210497794e",
+      "remoteContentVerified": true,
+      "byteLength": 849,
+      "reason": null
+    },
+    {
+      "caseId": "11-dos_simple",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/denial_of_service/dos_simple.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/denial_of_service/dos_simple.sol",
+      "sourceSha256": "53dcfd96beb66caaefc66373d6cef836a0b1f0320d3e4421426cb26590fc2c0c",
+      "remoteContentSha256": "53dcfd96beb66caaefc66373d6cef836a0b1f0320d3e4421426cb26590fc2c0c",
+      "remoteContentVerified": true,
+      "byteLength": 621,
+      "reason": null
+    },
+    {
+      "caseId": "12-eth_tx_order_dependence_minimal",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/front_running/eth_tx_order_dependence_minimal.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/front_running/eth_tx_order_dependence_minimal.sol",
+      "sourceSha256": "ff02571525b00a0261fa98cc57fc00822124d72ce0039b4e46423523154bf5ed",
+      "remoteContentSha256": "ff02571525b00a0261fa98cc57fc00822124d72ce0039b4e46423523154bf5ed",
+      "remoteContentVerified": true,
+      "byteLength": 798,
+      "reason": null
+    },
+    {
+      "caseId": "13-etherstore",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/etherstore.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/etherstore.sol",
+      "sourceSha256": "bffe7255c351724c3ab15f6c4c4909a3d756650791360e86cf2f71c48046aa79",
+      "remoteContentSha256": "bffe7255c351724c3ab15f6c4c4909a3d756650791360e86cf2f71c48046aa79",
+      "remoteContentVerified": true,
+      "byteLength": 950,
+      "reason": null
+    },
+    {
+      "caseId": "14-reentrance",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/reentrance.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/reentrance.sol",
+      "sourceSha256": "78ebf8f92bb978386a96fb1b4bec2ad2aaa77916a6ed7e49c2ae74c92f466ea4",
+      "remoteContentSha256": "78ebf8f92bb978386a96fb1b4bec2ad2aaa77916a6ed7e49c2ae74c92f466ea4",
+      "remoteContentVerified": true,
+      "byteLength": 722,
+      "reason": null
+    },
+    {
+      "caseId": "15-reentrancy_simple",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/reentrancy_simple.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/reentrancy_simple.sol",
+      "sourceSha256": "98b4c8b45c2e6711b1c58fb6991375f698a66f148799ca7aff6e27db8a9803e1",
+      "remoteContentSha256": "98b4c8b45c2e6711b1c58fb6991375f698a66f148799ca7aff6e27db8a9803e1",
+      "remoteContentVerified": true,
+      "byteLength": 800,
+      "reason": null
+    },
+    {
+      "caseId": "16-simple_dao",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/0x23a91059fdc9579a9fbd0edc5f2ea0bfdb70deb4.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/0x23a91059fdc9579a9fbd0edc5f2ea0bfdb70deb4.sol",
+      "sourceSha256": "bcd0fdfad9f6594fdbc940967321856490ed4bffbe8b6ab9c75c6b85072528a5",
+      "remoteContentSha256": "bcd0fdfad9f6594fdbc940967321856490ed4bffbe8b6ab9c75c6b85072528a5",
+      "remoteContentVerified": true,
+      "byteLength": 1386,
+      "reason": null
+    },
+    {
+      "caseId": "17-timed_crowdsale",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/time_manipulation/timed_crowdsale.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/time_manipulation/timed_crowdsale.sol",
+      "sourceSha256": "52fa5d86b7ee71874f54c1973562f0ff76b58a0a2ba2371e5193f783bd30222e",
+      "remoteContentSha256": "52fa5d86b7ee71874f54c1973562f0ff76b58a0a2ba2371e5193f783bd30222e",
+      "remoteContentVerified": true,
+      "byteLength": 428,
+      "reason": null
+    },
+    {
+      "caseId": "18-lotto",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/unchecked_low_level_calls/lotto.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/unchecked_low_level_calls/lotto.sol",
+      "sourceSha256": "09c8886de37a52a987d1a40588bd8fe352b8bb8bbfb9960caf8a6664a893b223",
+      "remoteContentSha256": "09c8886de37a52a987d1a40588bd8fe352b8bb8bbfb9960caf8a6664a893b223",
+      "remoteContentVerified": true,
+      "byteLength": 648,
+      "reason": null
+    },
+    {
+      "caseId": "19-mishandled",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/unchecked_low_level_calls/unchecked_return_value.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/unchecked_low_level_calls/unchecked_return_value.sol",
+      "sourceSha256": "ac992f26a8a567c74fe30e0f48d0c421d3f483ff431f6672a6dae5dd6c9e168d",
+      "remoteContentSha256": "ac992f26a8a567c74fe30e0f48d0c421d3f483ff431f6672a6dae5dd6c9e168d",
+      "remoteContentVerified": true,
+      "byteLength": 402,
+      "reason": null
+    },
+    {
+      "caseId": "20-reentrancy_cross_function",
+      "state": "verified",
+      "source": "https://github.com/smartbugs/smartbugs-curated/blob/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/0x01f8c4e3fa3edeb29e514cba738d87ce8c091d3f.sol",
+      "rawUrl": "https://raw.githubusercontent.com/smartbugs/smartbugs-curated/230e649123477eff332742a59a1c7cc6dc286cab/dataset/reentrancy/0x01f8c4e3fa3edeb29e514cba738d87ce8c091d3f.sol",
+      "sourceSha256": "0196d033850b295690465d0f7d2baae8b3570df29c9d03d507496b45155a84e5",
+      "remoteContentSha256": "0196d033850b295690465d0f7d2baae8b3570df29c9d03d507496b45155a84e5",
+      "remoteContentVerified": true,
+      "byteLength": 1700,
+      "reason": null
+    },
+    {
+      "caseId": "21-erc4626-donation",
+      "state": "synthetic_local_fixture",
+      "source": "https://github.com/example/defi-benchmarks",
+      "sourceSha256": "15763705849f7573f1db2af93f2becc378856c86209498afc7719072903de039",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "22-erc4626-rounding",
+      "state": "synthetic_local_fixture",
+      "source": "https://github.com/example/defi-benchmarks",
+      "sourceSha256": "af7289ef52fc4e548a282165a97b980ac8eff8d2c6bf1d46942cc18a72c6041c",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "23-lending-health-factor",
+      "state": "synthetic_local_fixture",
+      "source": "https://github.com/example/defi-benchmarks",
+      "sourceSha256": "da7b88c9747175d2eae448b19df074d019bfa7658f1f5895f65c446ef8d2cd46",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "24-lending-bad-debt",
+      "state": "synthetic_local_fixture",
+      "source": "https://github.com/example/defi-benchmarks",
+      "sourceSha256": "79f61d9fb8cb48c6def153fdffef57e05b1b3599da55534e0bb44647d6d26535",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "25-amm-k-decrease",
+      "state": "synthetic_local_fixture",
+      "source": "https://github.com/example/defi-benchmarks",
+      "sourceSha256": "c2aa2d2c6cf4f8b7ede60a5ac69633ab649f0d0d0a414ea5c7dfc30607037981",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "26-amm-fee",
+      "state": "synthetic_local_fixture",
+      "source": "https://github.com/example/defi-benchmarks",
+      "sourceSha256": "83d8de17cc5b3b5b7bce29a4637087926a6e79571330c2cf1b777f1f45d50e5f",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "27-oracle-stale",
+      "state": "synthetic_local_fixture",
+      "source": "https://github.com/example/defi-benchmarks",
+      "sourceSha256": "0d34cc2d1984e820eeaf026926a7e9b545a332f7c74324a345fef97a855eb5df",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "28-cross-call",
+      "state": "synthetic_local_fixture",
+      "source": "https://github.com/example/defi-benchmarks",
+      "sourceSha256": "796b73d83823023a234fe51756faabda0776665554fb4d7fbd1142ab1e2ba89b",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "29-delegatecall",
+      "state": "synthetic_local_fixture",
+      "source": "https://github.com/example/defi-benchmarks",
+      "sourceSha256": "c664f6ab2814325b9ec7cded9376e1bfda500fb5e7fe7d4733ed2cad43c20895",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "30-reentrancy-withdraw",
+      "state": "synthetic_local_fixture",
+      "source": "https://github.com/example/defi-benchmarks",
+      "sourceSha256": "aea6d7db4940efeb1ce2b9733e118402b43057160fd2ae786b821749273dd2f2",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "31-clean-vault",
+      "state": "synthetic_local_fixture",
+      "source": "https://example.org/clean-vault",
+      "sourceSha256": "be5c0c53754d19ce0f6bce8cce81e4f63a4b9da4f7f268e5a1bd642086d1450f",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "32-clean-lending",
+      "state": "synthetic_local_fixture",
+      "source": "https://example.org/clean-lending",
+      "sourceSha256": "946ef29bde9740ff2f4e0b6d5308af392186d34bafc65ffac89697cb7a9962f8",
+      "remoteContentVerified": false
+    },
+    {
+      "caseId": "33-clean-amm",
+      "state": "synthetic_local_fixture",
+      "source": "https://example.org/clean-amm",
+      "sourceSha256": "10b42b0eb963870ae62628a68c47193be6e28c543ba20eca1ef6731016a26cf7",
+      "remoteContentVerified": false
+    }
+  ]
+}

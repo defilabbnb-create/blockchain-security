@@ -1,1 +1,17 @@
-{"knownIssues":["amm_k_decrease"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Pool.sol","solcVersion":"0.8.19"}
+{
+  "knownIssues": [
+    "amm_k_decrease"
+  ],
+  "clean": false,
+  "source": "https://github.com/example/defi-benchmarks",
+  "sourceFile": "Pool.sol",
+  "solcVersion": "0.8.19",
+  "excludedReason": {
+    "grade": "D",
+    "summary": "D 级，标注与源码不一致",
+    "adjudication": "标注 amm_k_decrease，但第 2 行 swap 为 `reserve0 += input; reserve1 -= output + 1;`——全合约不存在 k 不变量、不存在常数乘积公式、不存在输入校验，output 由调用方任意给定甚至可下溢 reserve1。这不是 AMM 实现，「k 值下降」这一缺陷没有可定位的代码。",
+    "evidenceLines": [
+      2
+    ]
+  }
+}

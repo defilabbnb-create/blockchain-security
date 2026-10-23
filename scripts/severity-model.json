@@ -1,0 +1,726 @@
+{
+  "schemaVersion": 1,
+  "library": "data/vulnerability-library.json",
+  "description": "未确认观察项的推导严重度模型。权重只能来自已核对的漏洞字典条目；字典里没有的类别一律标为 unknown 并降级到 low，绝不猜测。",
+  "method": [
+    "0) 词表是 fail-closed 的：severityVocabulary.categoryVocabulary 声明了别名与「未声明」标记，非法档位会让 resolver.ready=false，而不是被静默丢弃。canonical 档位分别由 severityRank 与 categoryTitlePatterns 派生，不在本文件重复维护。",
+    "1) recordOnlyKinds 命中 => info，basis=record_only：字节码分析记录、依赖追踪记录、安全控制观察与覆盖缺口本身都不是缺陷。",
+    "2) 来源自带合法 severity => 直接采用，basis=explicit。",
+    "3) 用 categoryTitlePatterns 只在标题上判定 benchmarkCategory；命中 0 个 => unrated。",
+    "4) 命中 ≥2 个类别时 basis=multi_category_min：逐个求值后取最保守的一个，不挑对自己有利的类别。",
+    "5) 在该类别内部用 entrySelectors 匹配字典条目；命中唯一条目时 basis=library_grounded，并记录条目 id 与条目 severity。",
+    "6) 没有唯一命中时用该类别 active+vulnerability 条目中最小的 severity 作为类别基线，并受 categoryBaselineCapSeverity 封顶，basis=category_baseline；libraryEntryId 为 null，表示没有条目背书。",
+    "7) 连类别基线都没有时 basis=unrated、categoryWeight=null，severity 一律 low。",
+    "8) severity 先取条目 severity（或类别基线）作为上限，再按引文里看得到的缓解证据与 confidence 保守下调。",
+    "9) 每命中一条下调规则前进恰好一档，规则之间可叠加；critical 封顶单独记为 critical_capped_by_visible_mitigation。",
+    "10) severityDowngrade 记录最后一条命中的规则（保持单值兼容），severityDowngradeChain 记录完整命中顺序；没有命中时两者为 null/undefined。",
+    "11) reachableAssetsUsd 未实测时恒为 null；severityScore 不可计算（severityScoreState=not_computable），不代入 0，也不代入任何估值金额。",
+    "12) 配置缺失或被改坏（包括 severityOrder 不覆盖全部 severityRank 档位）时，resolver.ready=false，所有条目走 unavailable 分支并显式记录 unavailableReason。"
+  ],
+  "severityRank": {
+    "critical": 5,
+    "high": 4,
+    "medium": 3,
+    "low": 2,
+    "info": 1
+  },
+  "severityOrder": [
+    "info",
+    "low",
+    "medium",
+    "high",
+    "critical"
+  ],
+  "severityVocabulary": {
+    "canonicalSource": "src/severity-resolver.js 的 SEVERITY_LABELS；本文件不得另立一套档位名。",
+    "aliases": {
+      "informational": "info",
+      "informative": "info",
+      "note": "info"
+    },
+    "unstatedMarker": "unstated",
+    "documentation": [
+      "aliases 只解决同义词：informational 是 SWC / EthTrust / Slither 的写法，不是第二套档位，归一到 info。",
+      "aliases 的目标必须是 canonical 档位；指向词表外的值会让 resolver.ready=false。",
+      "unstatedMarker 表示『来源没有写』。它绝不能同时是 canonical 档位——那会让「没填」变成一种可以被评级的严重度。",
+      "词表外的严重级不会被静默丢弃：resolver 会计入 droppedLibrarySeverities 并在 describe() 里报出来。"
+    ]
+  },
+  "categoryVocabulary": {
+    "canonicalSource": "本文件的 categoryTitlePatterns 的键即为全部 canonical 类别。",
+    "documentation": [
+      "类别词表只在这里维护一份。data/vulnerability-library.json 的 benchmarkCategory 必须落在这个集合内。",
+      "落不在集合内的类别会让 resolver.ready=false，而不是被当作一个没有 CATEGORY_INFO 的陌生类别静默通过。",
+      "src/vulnerability-library.js 的 CATEGORY_INFO 与 scripts/vulnerability_inventory.py 的类别名是另外两处展示层映射，由各自的维护方收敛；tests/severity-vocabulary.test.js 会把三者的差集打印出来，不让它们静默分叉。"
+    ]
+  },
+  "recordOnlyKinds": [
+    "runtime_bytecode_analysis",
+    "dependency_trace",
+    "security_control",
+    "coverage_gap"
+  ],
+  "recordOnlyReason": "该 kind 只记录字节码、依赖、已存在的安全控制或覆盖范围，不主张存在缺陷。",
+  "categoryTitlePatterns": {
+    "reentrancy": [
+      "重入",
+      "reentrancy",
+      "re-entrancy",
+      "reentrant"
+    ],
+    "access_control": [
+      "权限不足",
+      "权限过宽",
+      "权限集中",
+      "权限过度集中",
+      "越权",
+      "未授权",
+      "缺少权限校验",
+      "无权限校验",
+      "授权不足",
+      "access control",
+      "管理员可",
+      "owner 可",
+      "owner can",
+      "admin can",
+      "admin-only",
+      "owner-only",
+      "onlyowner",
+      "onlyadmin"
+    ],
+    "unprotected_upgrade": [
+      "代理",
+      "proxy",
+      "upgrade",
+      "delegatecall",
+      "实现槽",
+      "回退到实现",
+      "ifadmin",
+      "_admin_slot",
+      "upgradeto"
+    ],
+    "arithmetic": [
+      "精度",
+      "溢出",
+      "下溢",
+      "截断",
+      "算术",
+      "overflow",
+      "underflow",
+      "rounding",
+      "integer overflow"
+    ],
+    "denial_of_service": [
+      "拒绝服务",
+      "denial of service",
+      "gas grief",
+      "gas 耗尽",
+      "无限循环",
+      "永久锁仓",
+      "活性阻断"
+    ],
+    "bad_randomness": [
+      "随机数",
+      "伪随机",
+      "weak prng",
+      "randomness"
+    ],
+    "time_manipulation": [
+      "时间戳",
+      "时间操纵",
+      "block\\.timestamp"
+    ],
+    "front_running": [
+      "抢跑",
+      "front.run",
+      "frontrun",
+      "排序依赖",
+      "交易顺序依赖",
+      "矿工可"
+    ],
+    "oracle_stale_price": [
+      "预言机",
+      "oracle",
+      "过期价格",
+      "陈旧价格",
+      "stale price"
+    ],
+    "lending_health_factor": [
+      "健康因子",
+      "health.?factor",
+      "healthfactor"
+    ],
+    "lending_bad_debt": [
+      "坏账",
+      "bad.?debt",
+      "清算",
+      "liquidat"
+    ],
+    "amm_k_decrease": [
+      "恒定乘积",
+      "k 值",
+      "储备乘积",
+      "k invariant",
+      "k 不变"
+    ],
+    "amm_fee_accounting": [
+      "手续费记账",
+      "费用分配",
+      "fee accounting",
+      "协议费记账"
+    ],
+    "erc4626_donation": [
+      "捐赠",
+      "donation attack",
+      "inflation attack",
+      "通货膨胀攻击",
+      "首存"
+    ],
+    "erc4626_rounding": [
+      "4626 舍入",
+      "erc4626 rounding"
+    ],
+    "unchecked_low_level_calls": [
+      "未检查的返回",
+      "未检查返回",
+      "返回值未检查",
+      "低级调用未检查",
+      "unchecked call"
+    ],
+    "unchecked_cross_contract_assumption": [
+      "跨合约",
+      "未验证的返回",
+      "未验证返回",
+      "返回值假设",
+      "接口假设",
+      "忽略返回值"
+    ]
+  },
+  "entrySelectors": [
+    {
+      "entryId": "swc-115",
+      "titlePatterns": [
+        "tx\\.origin"
+      ],
+      "quotePatterns": [],
+      "reason": "标题直接出现 tx.origin 鉴权。"
+    },
+    {
+      "entryId": "infra-tx-origin-auth",
+      "titlePatterns": [
+        "tx\\.origin"
+      ],
+      "quotePatterns": [],
+      "reason": "标题直接出现 tx.origin 鉴权。"
+    },
+    {
+      "entryId": "infra-access-control-missing",
+      "titlePatterns": [
+        "权限不足",
+        "授权不足",
+        "缺少权限校验",
+        "无权限校验",
+        "未校验调用者",
+        "未校验权限",
+        "权限过宽",
+        "权限集中",
+        "权限过度集中",
+        "missing access control"
+      ],
+      "quotePatterns": [],
+      "reason": "标题明确断言权限校验不足或权限过度集中；引文里出现访问控制修饰符时仍会下调并封顶，不直接断言 critical。"
+    },
+    {
+      "entryId": "swc-105",
+      "titlePatterns": [
+        "未保护的提款",
+        "未保护的提现",
+        "unprotected ether withdrawal",
+        "任意地址提款"
+      ],
+      "quotePatterns": [],
+      "reason": "标题明确是未加保护的提款入口。"
+    },
+    {
+      "entryId": "swc-106",
+      "titlePatterns": [
+        "自毁",
+        "selfdestruct",
+        "suicide"
+      ],
+      "quotePatterns": [],
+      "reason": "标题明确断言自毁风险。"
+    },
+    {
+      "entryId": "swc-118",
+      "titlePatterns": [
+        "构造函数命名",
+        "constructor name"
+      ],
+      "quotePatterns": [],
+      "reason": "构造函数命名/可见性问题。"
+    },
+    {
+      "entryId": "swc-108",
+      "titlePatterns": [
+        "默认可见性",
+        "default visibility"
+      ],
+      "quotePatterns": [],
+      "reason": "状态变量默认可见性。"
+    },
+    {
+      "entryId": "proxy-unprotected-upgrade",
+      "titlePatterns": [
+        "未保护的升级",
+        "无权限升级",
+        "unprotected upgrade"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言升级入口缺少访问控制。"
+    },
+    {
+      "entryId": "proxy-storage-collision",
+      "titlePatterns": [],
+      "quotePatterns": [
+        "\\bsstore\\b",
+        "\\bassembly\\s*\\{[^}]*\\bsstore\\b"
+      ],
+      "reason": "引文里出现任意存储槽写入。"
+    },
+    {
+      "entryId": "proxy-initializer-reentrancy",
+      "titlePatterns": [],
+      "quotePatterns": [
+        "_disableInitializers",
+        "\\binitializer\\s*\\(",
+        "\\binitialized\\s*="
+      ],
+      "reason": "引文里出现可重复调用的初始化器。"
+    },
+    {
+      "entryId": "proxy-implementation-uninitialized",
+      "titlePatterns": [],
+      "quotePatterns": [
+        "_disableInitializers"
+      ],
+      "reason": "实现合约未初始化防护。"
+    },
+    {
+      "entryId": "proxy-delegatecall",
+      "titlePatterns": [
+        "delegatecall"
+      ],
+      "quotePatterns": [],
+      "reason": "标题明确断言 delegatecall 风险。"
+    },
+    {
+      "entryId": "swc-112",
+      "titlePatterns": [],
+      "quotePatterns": [
+        "\\.delegatecall\\s*\\("
+      ],
+      "reason": "引文里出现 delegatecall 到不可信被调方。"
+    },
+    {
+      "entryId": "token-erc777-hooks-reentrancy",
+      "titlePatterns": [
+        "erc777",
+        "erc1820"
+      ],
+      "quotePatterns": [
+        "\\btokensReceived\\b",
+        "\\bonERC777Received\\b"
+      ],
+      "reason": "ERC777/ERC1820 钩子回调重入。"
+    },
+    {
+      "entryId": "token-erc20-callback-reentrancy",
+      "titlePatterns": [],
+      "quotePatterns": [
+        "\\bonTokenTransfer\\b"
+      ],
+      "reason": "ERC20 转账回调重入。"
+    },
+    {
+      "entryId": "swc-107",
+      "titlePatterns": [
+        "重入",
+        "reentrancy",
+        "re-entrancy",
+        "reentrant"
+      ],
+      "quotePatterns": [
+        "\\.call\\{\\s*value",
+        "\\.call\\s*\\(\\s*\\{\\s*value",
+        "\\bsend\\s*\\(\\s*address\\s*this"
+      ],
+      "reason": "标题断言重入，或引文里出现向外部地址转移价值的低级调用。"
+    },
+    {
+      "entryId": "swc-101",
+      "titlePatterns": [
+        "溢出",
+        "下溢",
+        "overflow",
+        "underflow"
+      ],
+      "quotePatterns": [
+        "\\bunchecked\\s*\\{",
+        "\\bunchecked\\s*[+\\-*/]"
+      ],
+      "reason": "标题断言溢出/下溢，或引文里出现 unchecked 块。"
+    },
+    {
+      "entryId": "swc-120",
+      "titlePatterns": [
+        "随机数",
+        "伪随机",
+        "weak prng",
+        "blockhash"
+      ],
+      "quotePatterns": [
+        "\\bblockhash\\s*\\("
+      ],
+      "reason": "标题断言随机数可预测，或引文里把区块哈希当随机源。"
+    },
+    {
+      "entryId": "defi-erc4626-donation",
+      "titlePatterns": [
+        "捐赠攻击",
+        "捐赠",
+        "donation attack",
+        "inflation attack",
+        "首存"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言 ERC-4626 捐赠/通胀攻击。"
+    },
+    {
+      "entryId": "defi-erc4626-rounding",
+      "titlePatterns": [
+        "4626 舍入",
+        "erc4626 rounding"
+      ],
+      "quotePatterns": [],
+      "reason": "ERC-4626 赎回/换算舍入。"
+    },
+    {
+      "entryId": "defi-lending-health-factor",
+      "titlePatterns": [
+        "健康因子",
+        "health.?factor",
+        "healthfactor"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言借贷健康因子错误。"
+    },
+    {
+      "entryId": "defi-lending-bad-debt",
+      "titlePatterns": [
+        "坏账",
+        "bad.?debt",
+        "清算",
+        "liquidat"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言坏账或清算缺陷。"
+    },
+    {
+      "entryId": "defi-oracle-stale-price",
+      "titlePatterns": [
+        "预言机",
+        "oracle",
+        "过期价格",
+        "陈旧价格",
+        "stale price"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言预言机价格问题。"
+    },
+    {
+      "entryId": "defi-amm-k-decrease",
+      "titlePatterns": [
+        "恒定乘积",
+        "k 值",
+        "储备乘积",
+        "k invariant"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言 AMM 恒定乘积被破坏。"
+    },
+    {
+      "entryId": "defi-amm-fee-accounting",
+      "titlePatterns": [
+        "手续费记账",
+        "费用分配",
+        "协议费记账",
+        "fee accounting"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言 AMM 手续费记账错误。"
+    },
+    {
+      "entryId": "swc-113",
+      "titlePatterns": [
+        "未检查的返回",
+        "未检查返回",
+        "返回值未检查",
+        "低级调用未检查",
+        "unchecked call"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言低级调用返回值未检查。"
+    },
+    {
+      "entryId": "swc-126",
+      "titlePatterns": [
+        "拒绝服务",
+        "denial of service",
+        "gas grief",
+        "gas 耗尽"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言失败调用或 gas 转发导致的拒绝服务。"
+    },
+    {
+      "entryId": "swc-128",
+      "titlePatterns": [
+        "无限循环",
+        "永久锁仓"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言循环耗尽 gas 或永久锁仓。"
+    },
+    {
+      "entryId": "infra-dos-with-block-gas-limit",
+      "titlePatterns": [
+        "活性阻断"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言区块 gas 上限导致的活性阻断。"
+    },
+    {
+      "entryId": "swc-116",
+      "titlePatterns": [
+        "时间戳",
+        "时间操纵"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言依赖区块时间戳。"
+    },
+    {
+      "entryId": "swc-114",
+      "titlePatterns": [
+        "抢跑",
+        "front.run",
+        "排序依赖",
+        "交易顺序依赖",
+        "矿工可"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言交易顺序依赖或抢跑。"
+    },
+    {
+      "entryId": "swc-124",
+      "titlePatterns": [],
+      "quotePatterns": [
+        "\\bsstore\\b"
+      ],
+      "reason": "引文里出现任意存储槽写入。"
+    },
+    {
+      "entryId": "benchmark-cross-contract-assumption",
+      "titlePatterns": [
+        "跨合约",
+        "未验证的返回",
+        "未验证返回",
+        "返回值假设",
+        "接口假设",
+        "忽略返回值"
+      ],
+      "quotePatterns": [],
+      "reason": "标题断言跨合约返回/状态假设。"
+    },
+    {
+      "entryId": "token-erc20-approve-race",
+      "titlePatterns": [],
+      "quotePatterns": [
+        "\\bapprove\\s*\\([^=]"
+      ],
+      "reason": "引文里出现 ERC20 approve 授权设置。"
+    },
+    {
+      "entryId": "token-fee-on-transfer",
+      "titlePatterns": [],
+      "quotePatterns": [],
+      "reason": "转账扣费代币的余额假设缺少稳定的标题特征，暂不自动选中。"
+    },
+    {
+      "entryId": "token-rebasing",
+      "titlePatterns": [],
+      "quotePatterns": [
+        "\\brebase\\w*\\s*\\("
+      ],
+      "reason": "引文里出现 rebase 记账。"
+    },
+    {
+      "entryId": "infra-short-address",
+      "titlePatterns": [
+        "短地址",
+        "short address"
+      ],
+      "quotePatterns": [],
+      "reason": "短地址参数混淆。"
+    }
+  ],
+  "triggerDifficulty": {
+    "base": 1.0,
+    "minimum": 0.2,
+    "maximum": 1.0,
+    "documentation": [
+      "triggerDifficulty 衡量在真实链上触发该观察项的门槛：1.0 表示引文里看不到任何缓解措施；小于 1.0 表示引文里直接看得到缓解措施。",
+      "只对『引文里看得到』的缓解证据下调；引文里看不到某项防护不等于没有防护，因此不存在上调（不存在乘数 > 1 的 mitigation 信号）。",
+      "乘法叠加后 clamp 到 [minimum, maximum]。信号顺序固定，因此同一份证据永远得到同一个结果。",
+      "severity 下调只看 visibleMitigationFactor（只看 mitigation 类信号）；triggerDifficulty 额外包含 enabling 类信号，用于影响 × 可触发性的排序。"
+    ],
+    "signals": [
+      {
+        "id": "reentrancy_guard_observed",
+        "kind": "mitigation",
+        "multiplier": 0.4,
+        "patterns": [
+          "\\bnonReentrant\\b",
+          "\\bReentrancyGuard\\b",
+          "\\breentrancyGuard\\b",
+          "\\block\\s+(?:modifier|internal)",
+          "\\bnonReentrantCallback\\b"
+        ],
+        "reason": "证据片段里直接出现重入锁，触发需要先绕过该防护。"
+      },
+      {
+        "id": "access_control_guard_observed",
+        "kind": "mitigation",
+        "multiplier": 0.6,
+        "patterns": [
+          "\\bonlyOwner\\b",
+          "\\bonlyAdmin\\b",
+          "\\bonlyRole\\b",
+          "\\bifAdmin\\b",
+          "\\bonly[A-Z]\\w{2,}\\s*(?:modifier|\\{|\\))",
+          "\\bnonReentrant\\b",
+          "\\brequiresAuth\\b",
+          "\\bonlyGovernance\\b",
+          "\\bonlyLock\\b"
+        ],
+        "reason": "证据片段里直接出现访问控制修饰符，任意地址无法直接触发。"
+      },
+      {
+        "id": "privileged_actor_required",
+        "kind": "mitigation",
+        "multiplier": 0.75,
+        "patterns": [
+          "管理员",
+          "\\bowner\\b",
+          "\\badmin\\b",
+          "治理",
+          "特权",
+          "多签",
+          "multisig",
+          "\\bDEFAULT_ADMIN_ROLE\\b",
+          "\\bonlyGovernance\\b"
+        ],
+        "reason": "触发主体是特权角色，属于信任假设而不是无权限攻击。"
+      },
+      {
+        "id": "precondition_recorded",
+        "kind": "mitigation",
+        "multiplier": 0.97,
+        "source": "conditions",
+        "minLength": 4,
+        "trivialValues": [
+          "无",
+          "无。",
+          "none",
+          "n/a",
+          "-"
+        ],
+        "reason": "作者自己记录了尚未验证的前置条件，说明触发依赖额外假设。"
+      },
+      {
+        "id": "external_call_observed",
+        "kind": "enabling",
+        "multiplier": 0.95,
+        "patterns": [
+          "\\.call\\s*\\(",
+          "\\.delegatecall\\s*\\(",
+          "\\.staticcall\\s*\\(",
+          "\\.transfer\\s*\\(",
+          "\\.safeTransfer\\s*\\(",
+          "\\.safeTransferFrom\\s*\\(",
+          "\\.send\\s*\\("
+        ],
+        "reason": "证据里有外部调用或代币转账，攻击面比纯内部计算更宽。"
+      },
+      {
+        "id": "attacker_controlled_input",
+        "kind": "enabling",
+        "multiplier": 0.95,
+        "patterns": [
+          "\\bmsg\\.sender\\b",
+          "\\bmsg\\.data\\b",
+          "\\bmsg\\.sig\\b",
+          "\\bcalldata\\b"
+        ],
+        "reason": "证据里有调用者可控输入，攻击者不必依赖第三方配合。"
+      },
+      {
+        "id": "state_write_observed",
+        "kind": "evidence",
+        "multiplier": 1.0,
+        "patterns": [
+          "\\[[^\\]]+\\]\\s*(?:\\+\\+|--|\\+=|-=)",
+          "\\bdelete\\s+\\w",
+          "\\.push\\s*\\(",
+          "\\bsstore\\b"
+        ],
+        "reason": "证据里有状态写入。它记录影响面可能成立，但不改变触发门槛。"
+      }
+    ]
+  },
+  "adjustment": {
+    "documentation": [
+      "字典条目的 severity 是上限，不是结论：条目描述的是这一类问题可能达到的影响，本次观察项还缺可达性与复现证据。",
+      "critical 封顶：只要引文里看得到任何 mitigation 信号，最高只能是 high——有防护就直接断言 critical 属于过度评级。",
+      "visibleMitigationFactor <= downgradeMitigationBelow 时下调一档（可见缓解手段降低了『一定能触发』的确定性）。阈值而不是 < 1，是因为『作者写了前置条件』几乎每条都有，单独出现时不应下调。",
+      "visibleMitigationFactor <= strongMitigationAt 时再下调一档（防护与前置条件叠加，触发门槛明显更高）。",
+      "confidence=low 时下调一档：证据本身弱。严重度与置信度是两个维度，这里下调的是『估算影响的上限』，下调原因记录在 severityDowngrade。",
+      "下调规则逐条独立生效、可以叠加：strongMitigationAt 是『再下调一档』，因此同时命中 visible_mitigation 与 low_confidence 时会连降两档。",
+      "critical 封顶会记为 critical_capped_by_visible_mitigation。没有它时，从 critical 封到 high 这一步只会改变 severity 而没有任何归因，消费方无法区分『被封顶』和『被降级』。",
+      "category_baseline、multi_category_min 与 unrated 都只封顶、不上调：没有条目背书时只能给保守值。",
+      "unrated 一律 low，且 categoryWeight=null、severityScore=null。"
+    ],
+    "basisEnum": [
+      "explicit",
+      "record_only",
+      "library_grounded",
+      "category_baseline",
+      "multi_category_min",
+      "unrated"
+    ],
+    "criticalCapWithMitigation": true,
+    "categoryBaselineCapSeverity": "medium",
+    "strongMitigationAt": 0.5,
+    "unratedSeverity": "low",
+    "downgradeMitigationBelow": 0.95
+  },
+  "score": {
+    "formula": "categoryWeight × triggerDifficulty × reachableAssetsUsd",
+    "evidenceFormula": "categoryWeight × triggerDifficulty",
+    "documentation": [
+      "severityScore 与 poc_generator.severity_score 使用同一公式，三项因子相乘。",
+      "reachableAssetsUsd 没有实测值时恒为 null，severityScore 随之不可计算（null + severityScoreState=not_computable）。代入 0 会让所有未观测项看起来都同样地不可怕，代入估值则等于编造资产金额。",
+      "severityEvidenceScore 只用可测的两项因子相乘，用于排序『影响 × 可触发性』，它不是金额，也不是资金规模。"
+    ]
+  }
+}

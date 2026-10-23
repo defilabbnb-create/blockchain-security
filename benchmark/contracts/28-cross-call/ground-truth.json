@@ -1,1 +1,17 @@
-{"knownIssues":["unchecked_cross_contract_assumption"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Router.sol","solcVersion":"0.8.19"}
+{
+  "knownIssues": [
+    "unchecked_cross_contract_assumption"
+  ],
+  "clean": false,
+  "source": "https://github.com/example/defi-benchmarks",
+  "sourceFile": "Router.sol",
+  "solcVersion": "0.8.19",
+  "excludedReason": {
+    "grade": "D",
+    "summary": "D 级，标注与源码不一致",
+    "adjudication": "标注 unchecked_cross_contract_assumption，但第 2 行 callTarget 把返回值绑定到 ok 并 require(ok) 检查。返回值被检查，标注所述「未检查外部依赖返回值」与代码直接矛盾。",
+    "evidenceLines": [
+      2
+    ]
+  }
+}

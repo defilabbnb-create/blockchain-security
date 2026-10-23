@@ -1,0 +1,2207 @@
+{
+  "schemaVersion": 1,
+  "comparison": "ground-truth.knownIssues vs invariants.detectedRoles",
+  "scope": "静态角色识别对照；detectedRoles 是观察到的类别，不是确认漏洞",
+  "analysisPolicy": {
+    "available": true,
+    "source": "/Users/d288/Desktop/区块链安全/benchmark/analysis-policy.json",
+    "taxonomy": {
+      "standard": "DASP-10",
+      "note": "本项目角色词表即 DASP-10：access_control / arithmetic / bad_randomness / denial_of_service / front_running / incorrect_interface / reentrancy / short_addresses / time_manipulation / unchecked_low_level_calls。",
+      "referenceDataset": "SmartBugs SB Curated (143 contracts / 208 tagged vulnerabilities, DASP-10)",
+      "why": "词表一致才能让本项目的 precision/recall 与公开数字对话，否则只是自造基准的自评。"
+    },
+    "majorityVoteAllowed": false,
+    "decompilerAnalysisInput": "bytecode_ir",
+    "triageReportingRule": "naive（原始计数）与 afterReviewedBaseline（扣除已审误报）必须一起引用；单独引用后者会高估检测能力。"
+  },
+  "naive": {
+    "scoredSampleCount": 24,
+    "unscoredSampleCount": 9,
+    "truePositiveCount": 20,
+    "falsePositiveCount": 15,
+    "falseNegativeCount": 1,
+    "precision": 0.5714,
+    "recall": 0.9524,
+    "exactMatchCount": 12,
+    "caseCoveredCount": 20,
+    "casesWithFalsePositive": 12,
+    "perClass": {
+      "access_control": {
+        "expectedIn": [
+          "01-arbitrary_location_write_simple",
+          "02-incorrect_constructor_name1",
+          "03-simple_suicide",
+          "04-unprotected0"
+        ],
+        "hitIn": [
+          "01-arbitrary_location_write_simple",
+          "02-incorrect_constructor_name1",
+          "03-simple_suicide",
+          "04-unprotected0"
+        ],
+        "falsePositiveIn": [
+          "18-lotto",
+          "27-oracle-stale"
+        ],
+        "hitCount": 4,
+        "falsePositiveCount": 2,
+        "expectedCount": 4
+      },
+      "arithmetic": {
+        "expectedIn": [
+          "05-BECToken",
+          "06-integer_overflow_minimal",
+          "07-overflow_simple_add"
+        ],
+        "hitIn": [
+          "05-BECToken",
+          "06-integer_overflow_minimal",
+          "07-overflow_simple_add"
+        ],
+        "falsePositiveIn": [],
+        "hitCount": 3,
+        "falsePositiveCount": 0,
+        "expectedCount": 3
+      },
+      "bad_randomness": {
+        "expectedIn": [
+          "08-guess_the_random_number",
+          "09-old_blockhash"
+        ],
+        "hitIn": [
+          "08-guess_the_random_number",
+          "09-old_blockhash"
+        ],
+        "falsePositiveIn": [
+          "13-etherstore",
+          "16-simple_dao",
+          "17-timed_crowdsale",
+          "20-reentrancy_cross_function"
+        ],
+        "hitCount": 2,
+        "falsePositiveCount": 4,
+        "expectedCount": 2
+      },
+      "denial_of_service": {
+        "expectedIn": [
+          "10-dos_address",
+          "11-dos_simple"
+        ],
+        "hitIn": [
+          "10-dos_address",
+          "11-dos_simple"
+        ],
+        "falsePositiveIn": [],
+        "hitCount": 2,
+        "falsePositiveCount": 0,
+        "expectedCount": 2
+      },
+      "front_running": {
+        "expectedIn": [
+          "12-eth_tx_order_dependence_minimal"
+        ],
+        "hitIn": [
+          "12-eth_tx_order_dependence_minimal"
+        ],
+        "falsePositiveIn": [
+          "18-lotto"
+        ],
+        "hitCount": 1,
+        "falsePositiveCount": 1,
+        "expectedCount": 1
+      },
+      "oracle_stale_price": {
+        "expectedIn": [
+          "27-oracle-stale"
+        ],
+        "hitIn": [
+          "27-oracle-stale"
+        ],
+        "falsePositiveIn": [],
+        "hitCount": 1,
+        "falsePositiveCount": 0,
+        "expectedCount": 1
+      },
+      "reentrancy": {
+        "expectedIn": [
+          "13-etherstore",
+          "14-reentrance",
+          "15-reentrancy_simple",
+          "16-simple_dao",
+          "20-reentrancy_cross_function"
+        ],
+        "hitIn": [
+          "13-etherstore",
+          "14-reentrance",
+          "15-reentrancy_simple",
+          "16-simple_dao",
+          "20-reentrancy_cross_function"
+        ],
+        "falsePositiveIn": [],
+        "hitCount": 5,
+        "falsePositiveCount": 0,
+        "expectedCount": 5
+      },
+      "time_manipulation": {
+        "expectedIn": [
+          "17-timed_crowdsale"
+        ],
+        "hitIn": [],
+        "falsePositiveIn": [
+          "09-old_blockhash",
+          "13-etherstore"
+        ],
+        "hitCount": 0,
+        "falsePositiveCount": 2,
+        "expectedCount": 1
+      },
+      "unchecked_low_level_call": {
+        "expectedIn": [
+          "18-lotto",
+          "19-mishandled"
+        ],
+        "hitIn": [
+          "18-lotto",
+          "19-mishandled"
+        ],
+        "falsePositiveIn": [
+          "02-incorrect_constructor_name1",
+          "03-simple_suicide",
+          "08-guess_the_random_number",
+          "09-old_blockhash",
+          "12-eth_tx_order_dependence_minimal"
+        ],
+        "hitCount": 2,
+        "falsePositiveCount": 5,
+        "expectedCount": 2
+      }
+    },
+    "cases": [
+      {
+        "caseId": "01-arbitrary_location_write_simple",
+        "expected": [
+          "access_control"
+        ],
+        "detected": [
+          "access_control"
+        ],
+        "hit": [
+          "access_control"
+        ],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "02-incorrect_constructor_name1",
+        "expected": [
+          "access_control"
+        ],
+        "detected": [
+          "access_control",
+          "unchecked_low_level_call"
+        ],
+        "hit": [
+          "access_control"
+        ],
+        "falsePositive": [
+          "unchecked_low_level_call"
+        ],
+        "falseNegative": [],
+        "exact": false
+      },
+      {
+        "caseId": "03-simple_suicide",
+        "expected": [
+          "access_control"
+        ],
+        "detected": [
+          "access_control",
+          "unchecked_low_level_call"
+        ],
+        "hit": [
+          "access_control"
+        ],
+        "falsePositive": [
+          "unchecked_low_level_call"
+        ],
+        "falseNegative": [],
+        "exact": false
+      },
+      {
+        "caseId": "04-unprotected0",
+        "expected": [
+          "access_control"
+        ],
+        "detected": [
+          "access_control"
+        ],
+        "hit": [
+          "access_control"
+        ],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "05-BECToken",
+        "expected": [
+          "arithmetic"
+        ],
+        "detected": [
+          "arithmetic"
+        ],
+        "hit": [
+          "arithmetic"
+        ],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "06-integer_overflow_minimal",
+        "expected": [
+          "arithmetic"
+        ],
+        "detected": [
+          "arithmetic"
+        ],
+        "hit": [
+          "arithmetic"
+        ],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "07-overflow_simple_add",
+        "expected": [
+          "arithmetic"
+        ],
+        "detected": [
+          "arithmetic"
+        ],
+        "hit": [
+          "arithmetic"
+        ],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "08-guess_the_random_number",
+        "expected": [
+          "bad_randomness"
+        ],
+        "detected": [
+          "bad_randomness",
+          "unchecked_low_level_call"
+        ],
+        "hit": [
+          "bad_randomness"
+        ],
+        "falsePositive": [
+          "unchecked_low_level_call"
+        ],
+        "falseNegative": [],
+        "exact": false
+      },
+      {
+        "caseId": "09-old_blockhash",
+        "expected": [
+          "bad_randomness"
+        ],
+        "detected": [
+          "bad_randomness",
+          "time_manipulation",
+          "unchecked_low_level_call"
+        ],
+        "hit": [
+          "bad_randomness"
+        ],
+        "falsePositive": [
+          "time_manipulation",
+          "unchecked_low_level_call"
+        ],
+        "falseNegative": [],
+        "exact": false
+      },
+      {
+        "caseId": "10-dos_address",
+        "expected": [
+          "denial_of_service"
+        ],
+        "detected": [
+          "denial_of_service"
+        ],
+        "hit": [
+          "denial_of_service"
+        ],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "11-dos_simple",
+        "expected": [
+          "denial_of_service"
+        ],
+        "detected": [
+          "denial_of_service"
+        ],
+        "hit": [
+          "denial_of_service"
+        ],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "12-eth_tx_order_dependence_minimal",
+        "expected": [
+          "front_running"
+        ],
+        "detected": [
+          "front_running",
+          "unchecked_low_level_call"
+        ],
+        "hit": [
+          "front_running"
+        ],
+        "falsePositive": [
+          "unchecked_low_level_call"
+        ],
+        "falseNegative": [],
+        "exact": false
+      },
+      {
+        "caseId": "13-etherstore",
+        "expected": [
+          "reentrancy"
+        ],
+        "detected": [
+          "bad_randomness",
+          "reentrancy",
+          "time_manipulation"
+        ],
+        "hit": [
+          "reentrancy"
+        ],
+        "falsePositive": [
+          "bad_randomness",
+          "time_manipulation"
+        ],
+        "falseNegative": [],
+        "exact": false
+      },
+      {
+        "caseId": "14-reentrance",
+        "expected": [
+          "reentrancy"
+        ],
+        "detected": [
+          "reentrancy"
+        ],
+        "hit": [
+          "reentrancy"
+        ],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "15-reentrancy_simple",
+        "expected": [
+          "reentrancy"
+        ],
+        "detected": [
+          "reentrancy"
+        ],
+        "hit": [
+          "reentrancy"
+        ],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "16-simple_dao",
+        "expected": [
+          "reentrancy"
+        ],
+        "detected": [
+          "bad_randomness",
+          "reentrancy"
+        ],
+        "hit": [
+          "reentrancy"
+        ],
+        "falsePositive": [
+          "bad_randomness"
+        ],
+        "falseNegative": [],
+        "exact": false
+      },
+      {
+        "caseId": "17-timed_crowdsale",
+        "expected": [
+          "time_manipulation"
+        ],
+        "detected": [
+          "bad_randomness"
+        ],
+        "hit": [],
+        "falsePositive": [
+          "bad_randomness"
+        ],
+        "falseNegative": [
+          "time_manipulation"
+        ],
+        "exact": false
+      },
+      {
+        "caseId": "18-lotto",
+        "expected": [
+          "unchecked_low_level_call"
+        ],
+        "detected": [
+          "access_control",
+          "front_running",
+          "unchecked_low_level_call"
+        ],
+        "hit": [
+          "unchecked_low_level_call"
+        ],
+        "falsePositive": [
+          "access_control",
+          "front_running"
+        ],
+        "falseNegative": [],
+        "exact": false
+      },
+      {
+        "caseId": "19-mishandled",
+        "expected": [
+          "unchecked_low_level_call"
+        ],
+        "detected": [
+          "unchecked_low_level_call"
+        ],
+        "hit": [
+          "unchecked_low_level_call"
+        ],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "20-reentrancy_cross_function",
+        "expected": [
+          "reentrancy"
+        ],
+        "detected": [
+          "bad_randomness",
+          "reentrancy"
+        ],
+        "hit": [
+          "reentrancy"
+        ],
+        "falsePositive": [
+          "bad_randomness"
+        ],
+        "falseNegative": [],
+        "exact": false
+      },
+      {
+        "caseId": "27-oracle-stale",
+        "expected": [
+          "oracle_stale_price"
+        ],
+        "detected": [
+          "access_control",
+          "oracle_stale_price"
+        ],
+        "hit": [
+          "oracle_stale_price"
+        ],
+        "falsePositive": [
+          "access_control"
+        ],
+        "falseNegative": [],
+        "exact": false
+      },
+      {
+        "caseId": "31-clean-vault",
+        "expected": [],
+        "detected": [],
+        "hit": [],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "32-clean-lending",
+        "expected": [],
+        "detected": [],
+        "hit": [],
+        "falsePositive": [],
+        "falseNegative": [],
+        "exact": true
+      },
+      {
+        "caseId": "33-clean-amm",
+        "expected": [],
+        "detected": [
+          "amm_pool"
+        ],
+        "hit": [],
+        "falsePositive": [
+          "amm_pool"
+        ],
+        "falseNegative": [],
+        "exact": false
+      }
+    ]
+  },
+  "triageBaseline": {
+    "available": true,
+    "source": "/Users/d288/Desktop/区块链安全/benchmark/fp-triage-baseline.json",
+    "reviewedCount": 17,
+    "unreviewedDropped": 0,
+    "note": "误报基线：对每个样本，逐条记录被确认的误报及其理由。未列入的检出仍然是待审告警，不得因本文件存在而被静默丢弃。对标 Slither --triage-mode 与社区 SLITHER_TRIAGE 实践：确认过的误报要留存判据，而不是永久静音。"
+  },
+  "afterReviewedBaseline": {
+    "available": true,
+    "reviewedSuppressedCount": 15,
+    "reviewedSuppressedByCategory": {
+      "access_control": 2,
+      "amm_pool": 1,
+      "bad_randomness": 4,
+      "front_running": 1,
+      "time_manipulation": 2,
+      "unchecked_low_level_call": 5
+    },
+    "unreviewedFalsePositiveCount": 0,
+    "truePositiveCount": 20,
+    "falseNegativeCount": 1,
+    "precision": 1.0,
+    "recall": 0.9524,
+    "note": "扣除的是基线中人工确认的误报；原始计数见 naive，两者必须一起引用。",
+    "suppressed": [
+      {
+        "caseId": "02-incorrect_constructor_name1",
+        "role": "unchecked_low_level_call"
+      },
+      {
+        "caseId": "03-simple_suicide",
+        "role": "unchecked_low_level_call"
+      },
+      {
+        "caseId": "08-guess_the_random_number",
+        "role": "unchecked_low_level_call"
+      },
+      {
+        "caseId": "09-old_blockhash",
+        "role": "time_manipulation"
+      },
+      {
+        "caseId": "09-old_blockhash",
+        "role": "unchecked_low_level_call"
+      },
+      {
+        "caseId": "12-eth_tx_order_dependence_minimal",
+        "role": "unchecked_low_level_call"
+      },
+      {
+        "caseId": "13-etherstore",
+        "role": "bad_randomness"
+      },
+      {
+        "caseId": "13-etherstore",
+        "role": "time_manipulation"
+      },
+      {
+        "caseId": "16-simple_dao",
+        "role": "bad_randomness"
+      },
+      {
+        "caseId": "17-timed_crowdsale",
+        "role": "bad_randomness"
+      },
+      {
+        "caseId": "18-lotto",
+        "role": "access_control"
+      },
+      {
+        "caseId": "18-lotto",
+        "role": "front_running"
+      },
+      {
+        "caseId": "20-reentrancy_cross_function",
+        "role": "bad_randomness"
+      },
+      {
+        "caseId": "27-oracle-stale",
+        "role": "access_control"
+      },
+      {
+        "caseId": "33-clean-amm",
+        "role": "amm_pool"
+      }
+    ]
+  },
+  "gradeSplit": {
+    "A_only": {
+      "scoredSampleCount": 20,
+      "unscoredSampleCount": 0,
+      "truePositiveCount": 19,
+      "falsePositiveCount": 13,
+      "falseNegativeCount": 1,
+      "precision": 0.5938,
+      "recall": 0.95,
+      "exactMatchCount": 10,
+      "caseCoveredCount": 19,
+      "casesWithFalsePositive": 10,
+      "perClass": {
+        "access_control": {
+          "expectedIn": [
+            "01-arbitrary_location_write_simple",
+            "02-incorrect_constructor_name1",
+            "03-simple_suicide",
+            "04-unprotected0"
+          ],
+          "hitIn": [
+            "01-arbitrary_location_write_simple",
+            "02-incorrect_constructor_name1",
+            "03-simple_suicide",
+            "04-unprotected0"
+          ],
+          "falsePositiveIn": [
+            "18-lotto"
+          ],
+          "hitCount": 4,
+          "falsePositiveCount": 1,
+          "expectedCount": 4
+        },
+        "arithmetic": {
+          "expectedIn": [
+            "05-BECToken",
+            "06-integer_overflow_minimal",
+            "07-overflow_simple_add"
+          ],
+          "hitIn": [
+            "05-BECToken",
+            "06-integer_overflow_minimal",
+            "07-overflow_simple_add"
+          ],
+          "falsePositiveIn": [],
+          "hitCount": 3,
+          "falsePositiveCount": 0,
+          "expectedCount": 3
+        },
+        "bad_randomness": {
+          "expectedIn": [
+            "08-guess_the_random_number",
+            "09-old_blockhash"
+          ],
+          "hitIn": [
+            "08-guess_the_random_number",
+            "09-old_blockhash"
+          ],
+          "falsePositiveIn": [
+            "13-etherstore",
+            "16-simple_dao",
+            "17-timed_crowdsale",
+            "20-reentrancy_cross_function"
+          ],
+          "hitCount": 2,
+          "falsePositiveCount": 4,
+          "expectedCount": 2
+        },
+        "denial_of_service": {
+          "expectedIn": [
+            "10-dos_address",
+            "11-dos_simple"
+          ],
+          "hitIn": [
+            "10-dos_address",
+            "11-dos_simple"
+          ],
+          "falsePositiveIn": [],
+          "hitCount": 2,
+          "falsePositiveCount": 0,
+          "expectedCount": 2
+        },
+        "front_running": {
+          "expectedIn": [
+            "12-eth_tx_order_dependence_minimal"
+          ],
+          "hitIn": [
+            "12-eth_tx_order_dependence_minimal"
+          ],
+          "falsePositiveIn": [
+            "18-lotto"
+          ],
+          "hitCount": 1,
+          "falsePositiveCount": 1,
+          "expectedCount": 1
+        },
+        "reentrancy": {
+          "expectedIn": [
+            "13-etherstore",
+            "14-reentrance",
+            "15-reentrancy_simple",
+            "16-simple_dao",
+            "20-reentrancy_cross_function"
+          ],
+          "hitIn": [
+            "13-etherstore",
+            "14-reentrance",
+            "15-reentrancy_simple",
+            "16-simple_dao",
+            "20-reentrancy_cross_function"
+          ],
+          "falsePositiveIn": [],
+          "hitCount": 5,
+          "falsePositiveCount": 0,
+          "expectedCount": 5
+        },
+        "time_manipulation": {
+          "expectedIn": [
+            "17-timed_crowdsale"
+          ],
+          "hitIn": [],
+          "falsePositiveIn": [
+            "09-old_blockhash",
+            "13-etherstore"
+          ],
+          "hitCount": 0,
+          "falsePositiveCount": 2,
+          "expectedCount": 1
+        },
+        "unchecked_low_level_call": {
+          "expectedIn": [
+            "18-lotto",
+            "19-mishandled"
+          ],
+          "hitIn": [
+            "18-lotto",
+            "19-mishandled"
+          ],
+          "falsePositiveIn": [
+            "02-incorrect_constructor_name1",
+            "03-simple_suicide",
+            "08-guess_the_random_number",
+            "09-old_blockhash",
+            "12-eth_tx_order_dependence_minimal"
+          ],
+          "hitCount": 2,
+          "falsePositiveCount": 5,
+          "expectedCount": 2
+        }
+      },
+      "cases": [
+        {
+          "caseId": "01-arbitrary_location_write_simple",
+          "expected": [
+            "access_control"
+          ],
+          "detected": [
+            "access_control"
+          ],
+          "hit": [
+            "access_control"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "02-incorrect_constructor_name1",
+          "expected": [
+            "access_control"
+          ],
+          "detected": [
+            "access_control",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "access_control"
+          ],
+          "falsePositive": [
+            "unchecked_low_level_call"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "03-simple_suicide",
+          "expected": [
+            "access_control"
+          ],
+          "detected": [
+            "access_control",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "access_control"
+          ],
+          "falsePositive": [
+            "unchecked_low_level_call"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "04-unprotected0",
+          "expected": [
+            "access_control"
+          ],
+          "detected": [
+            "access_control"
+          ],
+          "hit": [
+            "access_control"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "05-BECToken",
+          "expected": [
+            "arithmetic"
+          ],
+          "detected": [
+            "arithmetic"
+          ],
+          "hit": [
+            "arithmetic"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "06-integer_overflow_minimal",
+          "expected": [
+            "arithmetic"
+          ],
+          "detected": [
+            "arithmetic"
+          ],
+          "hit": [
+            "arithmetic"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "07-overflow_simple_add",
+          "expected": [
+            "arithmetic"
+          ],
+          "detected": [
+            "arithmetic"
+          ],
+          "hit": [
+            "arithmetic"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "08-guess_the_random_number",
+          "expected": [
+            "bad_randomness"
+          ],
+          "detected": [
+            "bad_randomness",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "bad_randomness"
+          ],
+          "falsePositive": [
+            "unchecked_low_level_call"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "09-old_blockhash",
+          "expected": [
+            "bad_randomness"
+          ],
+          "detected": [
+            "bad_randomness",
+            "time_manipulation",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "bad_randomness"
+          ],
+          "falsePositive": [
+            "time_manipulation",
+            "unchecked_low_level_call"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "10-dos_address",
+          "expected": [
+            "denial_of_service"
+          ],
+          "detected": [
+            "denial_of_service"
+          ],
+          "hit": [
+            "denial_of_service"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "11-dos_simple",
+          "expected": [
+            "denial_of_service"
+          ],
+          "detected": [
+            "denial_of_service"
+          ],
+          "hit": [
+            "denial_of_service"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "12-eth_tx_order_dependence_minimal",
+          "expected": [
+            "front_running"
+          ],
+          "detected": [
+            "front_running",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "front_running"
+          ],
+          "falsePositive": [
+            "unchecked_low_level_call"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "13-etherstore",
+          "expected": [
+            "reentrancy"
+          ],
+          "detected": [
+            "bad_randomness",
+            "reentrancy",
+            "time_manipulation"
+          ],
+          "hit": [
+            "reentrancy"
+          ],
+          "falsePositive": [
+            "bad_randomness",
+            "time_manipulation"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "14-reentrance",
+          "expected": [
+            "reentrancy"
+          ],
+          "detected": [
+            "reentrancy"
+          ],
+          "hit": [
+            "reentrancy"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "15-reentrancy_simple",
+          "expected": [
+            "reentrancy"
+          ],
+          "detected": [
+            "reentrancy"
+          ],
+          "hit": [
+            "reentrancy"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "16-simple_dao",
+          "expected": [
+            "reentrancy"
+          ],
+          "detected": [
+            "bad_randomness",
+            "reentrancy"
+          ],
+          "hit": [
+            "reentrancy"
+          ],
+          "falsePositive": [
+            "bad_randomness"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "17-timed_crowdsale",
+          "expected": [
+            "time_manipulation"
+          ],
+          "detected": [
+            "bad_randomness"
+          ],
+          "hit": [],
+          "falsePositive": [
+            "bad_randomness"
+          ],
+          "falseNegative": [
+            "time_manipulation"
+          ],
+          "exact": false
+        },
+        {
+          "caseId": "18-lotto",
+          "expected": [
+            "unchecked_low_level_call"
+          ],
+          "detected": [
+            "access_control",
+            "front_running",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "unchecked_low_level_call"
+          ],
+          "falsePositive": [
+            "access_control",
+            "front_running"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "19-mishandled",
+          "expected": [
+            "unchecked_low_level_call"
+          ],
+          "detected": [
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "unchecked_low_level_call"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "20-reentrancy_cross_function",
+          "expected": [
+            "reentrancy"
+          ],
+          "detected": [
+            "bad_randomness",
+            "reentrancy"
+          ],
+          "hit": [
+            "reentrancy"
+          ],
+          "falsePositive": [
+            "bad_randomness"
+          ],
+          "falseNegative": [],
+          "exact": false
+        }
+      ],
+      "denominatorLabel": "A 级：真实项目 + 标注可信",
+      "excludedCaseCount": 13,
+      "excluded": [
+        "21-erc4626-donation",
+        "22-erc4626-rounding",
+        "23-lending-health-factor",
+        "24-lending-bad-debt",
+        "25-amm-k-decrease",
+        "26-amm-fee",
+        "27-oracle-stale",
+        "28-cross-call",
+        "29-delegatecall",
+        "30-reentrancy-withdraw",
+        "31-clean-vault",
+        "32-clean-lending",
+        "33-clean-amm"
+      ],
+      "excludedBecauseLabelContradictsSource": [
+        "21-erc4626-donation",
+        "22-erc4626-rounding",
+        "23-lending-health-factor",
+        "25-amm-k-decrease",
+        "26-amm-fee",
+        "28-cross-call"
+      ]
+    },
+    "B_plus_C": {
+      "scoredSampleCount": 4,
+      "unscoredSampleCount": 3,
+      "truePositiveCount": 1,
+      "falsePositiveCount": 2,
+      "falseNegativeCount": 0,
+      "precision": 0.3333,
+      "recall": 1.0,
+      "exactMatchCount": 2,
+      "caseCoveredCount": 1,
+      "casesWithFalsePositive": 2,
+      "perClass": {
+        "oracle_stale_price": {
+          "expectedIn": [
+            "27-oracle-stale"
+          ],
+          "hitIn": [
+            "27-oracle-stale"
+          ],
+          "falsePositiveIn": [],
+          "hitCount": 1,
+          "falsePositiveCount": 0,
+          "expectedCount": 1
+        }
+      },
+      "cases": [
+        {
+          "caseId": "27-oracle-stale",
+          "expected": [
+            "oracle_stale_price"
+          ],
+          "detected": [
+            "access_control",
+            "oracle_stale_price"
+          ],
+          "hit": [
+            "oracle_stale_price"
+          ],
+          "falsePositive": [
+            "access_control"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "31-clean-vault",
+          "expected": [],
+          "detected": [],
+          "hit": [],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "32-clean-lending",
+          "expected": [],
+          "detected": [],
+          "hit": [],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "33-clean-amm",
+          "expected": [],
+          "detected": [
+            "amm_pool"
+          ],
+          "hit": [],
+          "falsePositive": [
+            "amm_pool"
+          ],
+          "falseNegative": [],
+          "exact": false
+        }
+      ],
+      "denominatorLabel": "B+C 级：标注存疑 + 自洽桩（排除 D）",
+      "excludedCaseCount": 26,
+      "excluded": [
+        "01-arbitrary_location_write_simple",
+        "02-incorrect_constructor_name1",
+        "03-simple_suicide",
+        "04-unprotected0",
+        "05-BECToken",
+        "06-integer_overflow_minimal",
+        "07-overflow_simple_add",
+        "08-guess_the_random_number",
+        "09-old_blockhash",
+        "10-dos_address",
+        "11-dos_simple",
+        "12-eth_tx_order_dependence_minimal",
+        "13-etherstore",
+        "14-reentrance",
+        "15-reentrancy_simple",
+        "16-simple_dao",
+        "17-timed_crowdsale",
+        "18-lotto",
+        "19-mishandled",
+        "20-reentrancy_cross_function",
+        "21-erc4626-donation",
+        "22-erc4626-rounding",
+        "23-lending-health-factor",
+        "25-amm-k-decrease",
+        "26-amm-fee",
+        "28-cross-call"
+      ],
+      "excludedBecauseLabelContradictsSource": [
+        "21-erc4626-donation",
+        "22-erc4626-rounding",
+        "23-lending-health-factor",
+        "25-amm-k-decrease",
+        "26-amm-fee",
+        "28-cross-call"
+      ]
+    },
+    "trueFalseNegativeCases": [
+      "17-timed_crowdsale"
+    ],
+    "labelErrorCases": [
+      "21-erc4626-donation",
+      "22-erc4626-rounding",
+      "23-lending-health-factor",
+      "25-amm-k-decrease",
+      "26-amm-fee",
+      "28-cross-call"
+    ]
+  },
+  "pocEvidenceSplit": {
+    "available": true,
+    "withReproduction": {
+      "scoredSampleCount": 15,
+      "unscoredSampleCount": 3,
+      "truePositiveCount": 15,
+      "falsePositiveCount": 9,
+      "falseNegativeCount": 0,
+      "precision": 0.625,
+      "recall": 1.0,
+      "exactMatchCount": 8,
+      "caseCoveredCount": 15,
+      "casesWithFalsePositive": 7,
+      "perClass": {
+        "access_control": {
+          "expectedIn": [
+            "01-arbitrary_location_write_simple",
+            "02-incorrect_constructor_name1",
+            "03-simple_suicide",
+            "04-unprotected0"
+          ],
+          "hitIn": [
+            "01-arbitrary_location_write_simple",
+            "02-incorrect_constructor_name1",
+            "03-simple_suicide",
+            "04-unprotected0"
+          ],
+          "falsePositiveIn": [],
+          "hitCount": 4,
+          "falsePositiveCount": 0,
+          "expectedCount": 4
+        },
+        "arithmetic": {
+          "expectedIn": [
+            "05-BECToken",
+            "06-integer_overflow_minimal",
+            "07-overflow_simple_add"
+          ],
+          "hitIn": [
+            "05-BECToken",
+            "06-integer_overflow_minimal",
+            "07-overflow_simple_add"
+          ],
+          "falsePositiveIn": [],
+          "hitCount": 3,
+          "falsePositiveCount": 0,
+          "expectedCount": 3
+        },
+        "bad_randomness": {
+          "expectedIn": [
+            "08-guess_the_random_number",
+            "09-old_blockhash"
+          ],
+          "hitIn": [
+            "08-guess_the_random_number",
+            "09-old_blockhash"
+          ],
+          "falsePositiveIn": [
+            "13-etherstore",
+            "16-simple_dao",
+            "20-reentrancy_cross_function"
+          ],
+          "hitCount": 2,
+          "falsePositiveCount": 3,
+          "expectedCount": 2
+        },
+        "reentrancy": {
+          "expectedIn": [
+            "13-etherstore",
+            "14-reentrance",
+            "15-reentrancy_simple",
+            "16-simple_dao",
+            "20-reentrancy_cross_function"
+          ],
+          "hitIn": [
+            "13-etherstore",
+            "14-reentrance",
+            "15-reentrancy_simple",
+            "16-simple_dao",
+            "20-reentrancy_cross_function"
+          ],
+          "falsePositiveIn": [],
+          "hitCount": 5,
+          "falsePositiveCount": 0,
+          "expectedCount": 5
+        },
+        "unchecked_low_level_call": {
+          "expectedIn": [
+            "19-mishandled"
+          ],
+          "hitIn": [
+            "19-mishandled"
+          ],
+          "falsePositiveIn": [
+            "02-incorrect_constructor_name1",
+            "03-simple_suicide",
+            "08-guess_the_random_number",
+            "09-old_blockhash"
+          ],
+          "hitCount": 1,
+          "falsePositiveCount": 4,
+          "expectedCount": 1
+        }
+      },
+      "cases": [
+        {
+          "caseId": "01-arbitrary_location_write_simple",
+          "expected": [
+            "access_control"
+          ],
+          "detected": [
+            "access_control"
+          ],
+          "hit": [
+            "access_control"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "02-incorrect_constructor_name1",
+          "expected": [
+            "access_control"
+          ],
+          "detected": [
+            "access_control",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "access_control"
+          ],
+          "falsePositive": [
+            "unchecked_low_level_call"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "03-simple_suicide",
+          "expected": [
+            "access_control"
+          ],
+          "detected": [
+            "access_control",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "access_control"
+          ],
+          "falsePositive": [
+            "unchecked_low_level_call"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "04-unprotected0",
+          "expected": [
+            "access_control"
+          ],
+          "detected": [
+            "access_control"
+          ],
+          "hit": [
+            "access_control"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "05-BECToken",
+          "expected": [
+            "arithmetic"
+          ],
+          "detected": [
+            "arithmetic"
+          ],
+          "hit": [
+            "arithmetic"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "06-integer_overflow_minimal",
+          "expected": [
+            "arithmetic"
+          ],
+          "detected": [
+            "arithmetic"
+          ],
+          "hit": [
+            "arithmetic"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "07-overflow_simple_add",
+          "expected": [
+            "arithmetic"
+          ],
+          "detected": [
+            "arithmetic"
+          ],
+          "hit": [
+            "arithmetic"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "08-guess_the_random_number",
+          "expected": [
+            "bad_randomness"
+          ],
+          "detected": [
+            "bad_randomness",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "bad_randomness"
+          ],
+          "falsePositive": [
+            "unchecked_low_level_call"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "09-old_blockhash",
+          "expected": [
+            "bad_randomness"
+          ],
+          "detected": [
+            "bad_randomness",
+            "time_manipulation",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "bad_randomness"
+          ],
+          "falsePositive": [
+            "time_manipulation",
+            "unchecked_low_level_call"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "13-etherstore",
+          "expected": [
+            "reentrancy"
+          ],
+          "detected": [
+            "bad_randomness",
+            "reentrancy",
+            "time_manipulation"
+          ],
+          "hit": [
+            "reentrancy"
+          ],
+          "falsePositive": [
+            "bad_randomness",
+            "time_manipulation"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "14-reentrance",
+          "expected": [
+            "reentrancy"
+          ],
+          "detected": [
+            "reentrancy"
+          ],
+          "hit": [
+            "reentrancy"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "15-reentrancy_simple",
+          "expected": [
+            "reentrancy"
+          ],
+          "detected": [
+            "reentrancy"
+          ],
+          "hit": [
+            "reentrancy"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "16-simple_dao",
+          "expected": [
+            "reentrancy"
+          ],
+          "detected": [
+            "bad_randomness",
+            "reentrancy"
+          ],
+          "hit": [
+            "reentrancy"
+          ],
+          "falsePositive": [
+            "bad_randomness"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "19-mishandled",
+          "expected": [
+            "unchecked_low_level_call"
+          ],
+          "detected": [
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "unchecked_low_level_call"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "20-reentrancy_cross_function",
+          "expected": [
+            "reentrancy"
+          ],
+          "detected": [
+            "bad_randomness",
+            "reentrancy"
+          ],
+          "hit": [
+            "reentrancy"
+          ],
+          "falsePositive": [
+            "bad_randomness"
+          ],
+          "falseNegative": [],
+          "exact": false
+        }
+      ],
+      "denominatorLabel": "有余额/状态前后证据，可称本地复现",
+      "caseIds": [
+        "01-arbitrary_location_write_simple",
+        "02-incorrect_constructor_name1",
+        "03-simple_suicide",
+        "04-unprotected0",
+        "05-BECToken",
+        "06-integer_overflow_minimal",
+        "07-overflow_simple_add",
+        "08-guess_the_random_number",
+        "09-old_blockhash",
+        "13-etherstore",
+        "14-reentrance",
+        "15-reentrancy_simple",
+        "16-simple_dao",
+        "19-mishandled",
+        "20-reentrancy_cross_function",
+        "23-lending-health-factor",
+        "26-amm-fee",
+        "29-delegatecall"
+      ]
+    },
+    "evidenceStale": {
+      "scoredSampleCount": 1,
+      "unscoredSampleCount": 4,
+      "truePositiveCount": 0,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 0,
+      "precision": 0.0,
+      "recall": null,
+      "exactMatchCount": 0,
+      "caseCoveredCount": 0,
+      "casesWithFalsePositive": 1,
+      "perClass": {},
+      "cases": [
+        {
+          "caseId": "33-clean-amm",
+          "expected": [],
+          "detected": [
+            "amm_pool"
+          ],
+          "hit": [],
+          "falsePositive": [
+            "amm_pool"
+          ],
+          "falseNegative": [],
+          "exact": false
+        }
+      ],
+      "denominatorLabel": "证据绑定旧源码，需重跑后才能采信",
+      "caseIds": [
+        "21-erc4626-donation",
+        "22-erc4626-rounding",
+        "24-lending-bad-debt",
+        "30-reentrancy-withdraw",
+        "33-clean-amm"
+      ]
+    },
+    "fabricated": {
+      "scoredSampleCount": 1,
+      "unscoredSampleCount": 1,
+      "truePositiveCount": 1,
+      "falsePositiveCount": 1,
+      "falseNegativeCount": 0,
+      "precision": 0.5,
+      "recall": 1.0,
+      "exactMatchCount": 0,
+      "caseCoveredCount": 1,
+      "casesWithFalsePositive": 1,
+      "perClass": {
+        "oracle_stale_price": {
+          "expectedIn": [
+            "27-oracle-stale"
+          ],
+          "hitIn": [
+            "27-oracle-stale"
+          ],
+          "falsePositiveIn": [],
+          "hitCount": 1,
+          "falsePositiveCount": 0,
+          "expectedCount": 1
+        }
+      },
+      "cases": [
+        {
+          "caseId": "27-oracle-stale",
+          "expected": [
+            "oracle_stale_price"
+          ],
+          "detected": [
+            "access_control",
+            "oracle_stale_price"
+          ],
+          "hit": [
+            "oracle_stale_price"
+          ],
+          "falsePositive": [
+            "access_control"
+          ],
+          "falseNegative": [],
+          "exact": false
+        }
+      ],
+      "denominatorLabel": "声称复现但无证据，不可采信",
+      "caseIds": [
+        "25-amm-k-decrease",
+        "27-oracle-stale"
+      ]
+    },
+    "staticOnly": {
+      "scoredSampleCount": 7,
+      "unscoredSampleCount": 1,
+      "truePositiveCount": 4,
+      "falsePositiveCount": 4,
+      "falseNegativeCount": 1,
+      "precision": 0.5,
+      "recall": 0.8,
+      "exactMatchCount": 4,
+      "caseCoveredCount": 4,
+      "casesWithFalsePositive": 3,
+      "perClass": {
+        "denial_of_service": {
+          "expectedIn": [
+            "10-dos_address",
+            "11-dos_simple"
+          ],
+          "hitIn": [
+            "10-dos_address",
+            "11-dos_simple"
+          ],
+          "falsePositiveIn": [],
+          "hitCount": 2,
+          "falsePositiveCount": 0,
+          "expectedCount": 2
+        },
+        "front_running": {
+          "expectedIn": [
+            "12-eth_tx_order_dependence_minimal"
+          ],
+          "hitIn": [
+            "12-eth_tx_order_dependence_minimal"
+          ],
+          "falsePositiveIn": [
+            "18-lotto"
+          ],
+          "hitCount": 1,
+          "falsePositiveCount": 1,
+          "expectedCount": 1
+        },
+        "time_manipulation": {
+          "expectedIn": [
+            "17-timed_crowdsale"
+          ],
+          "hitIn": [],
+          "falsePositiveIn": [],
+          "hitCount": 0,
+          "falsePositiveCount": 0,
+          "expectedCount": 1
+        },
+        "unchecked_low_level_call": {
+          "expectedIn": [
+            "18-lotto"
+          ],
+          "hitIn": [
+            "18-lotto"
+          ],
+          "falsePositiveIn": [
+            "12-eth_tx_order_dependence_minimal"
+          ],
+          "hitCount": 1,
+          "falsePositiveCount": 1,
+          "expectedCount": 1
+        }
+      },
+      "cases": [
+        {
+          "caseId": "10-dos_address",
+          "expected": [
+            "denial_of_service"
+          ],
+          "detected": [
+            "denial_of_service"
+          ],
+          "hit": [
+            "denial_of_service"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "11-dos_simple",
+          "expected": [
+            "denial_of_service"
+          ],
+          "detected": [
+            "denial_of_service"
+          ],
+          "hit": [
+            "denial_of_service"
+          ],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "12-eth_tx_order_dependence_minimal",
+          "expected": [
+            "front_running"
+          ],
+          "detected": [
+            "front_running",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "front_running"
+          ],
+          "falsePositive": [
+            "unchecked_low_level_call"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "17-timed_crowdsale",
+          "expected": [
+            "time_manipulation"
+          ],
+          "detected": [
+            "bad_randomness"
+          ],
+          "hit": [],
+          "falsePositive": [
+            "bad_randomness"
+          ],
+          "falseNegative": [
+            "time_manipulation"
+          ],
+          "exact": false
+        },
+        {
+          "caseId": "18-lotto",
+          "expected": [
+            "unchecked_low_level_call"
+          ],
+          "detected": [
+            "access_control",
+            "front_running",
+            "unchecked_low_level_call"
+          ],
+          "hit": [
+            "unchecked_low_level_call"
+          ],
+          "falsePositive": [
+            "access_control",
+            "front_running"
+          ],
+          "falseNegative": [],
+          "exact": false
+        },
+        {
+          "caseId": "31-clean-vault",
+          "expected": [],
+          "detected": [],
+          "hit": [],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        },
+        {
+          "caseId": "32-clean-lending",
+          "expected": [],
+          "detected": [],
+          "hit": [],
+          "falsePositive": [],
+          "falseNegative": [],
+          "exact": true
+        }
+      ],
+      "denominatorLabel": "仅静态结论，未复现",
+      "caseIds": [
+        "10-dos_address",
+        "11-dos_simple",
+        "12-eth_tx_order_dependence_minimal",
+        "17-timed_crowdsale",
+        "18-lotto",
+        "28-cross-call",
+        "31-clean-vault",
+        "32-clean-lending"
+      ]
+    }
+  },
+  "familyAware": {
+    "groupCount": 22,
+    "recoveredGroupCount": 20,
+    "falsePositiveGroupCount": 12,
+    "missedGroupCount": 1,
+    "groups": [
+      {
+        "familyId": "solo:01-arbitrary_location_write_simple",
+        "cases": [
+          "01-arbitrary_location_write_simple"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": false
+      },
+      {
+        "familyId": "solo:02-incorrect_constructor_name1",
+        "cases": [
+          "02-incorrect_constructor_name1"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:03-simple_suicide",
+        "cases": [
+          "03-simple_suicide"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:04-unprotected0",
+        "cases": [
+          "04-unprotected0"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": false
+      },
+      {
+        "familyId": "solo:05-BECToken",
+        "cases": [
+          "05-BECToken"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": false
+      },
+      {
+        "familyId": "solo:06-integer_overflow_minimal",
+        "cases": [
+          "06-integer_overflow_minimal"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": false
+      },
+      {
+        "familyId": "solo:07-overflow_simple_add",
+        "cases": [
+          "07-overflow_simple_add"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": false
+      },
+      {
+        "familyId": "solo:08-guess_the_random_number",
+        "cases": [
+          "08-guess_the_random_number"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:09-old_blockhash",
+        "cases": [
+          "09-old_blockhash"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:10-dos_address",
+        "cases": [
+          "10-dos_address"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": false
+      },
+      {
+        "familyId": "solo:11-dos_simple",
+        "cases": [
+          "11-dos_simple"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": false
+      },
+      {
+        "familyId": "solo:12-eth_tx_order_dependence_minimal",
+        "cases": [
+          "12-eth_tx_order_dependence_minimal"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:13-etherstore",
+        "cases": [
+          "13-etherstore"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:14-reentrance",
+        "cases": [
+          "14-reentrance"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": false
+      },
+      {
+        "familyId": "solo:15-reentrancy_simple",
+        "cases": [
+          "15-reentrancy_simple"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": false
+      },
+      {
+        "familyId": "solo:16-simple_dao",
+        "cases": [
+          "16-simple_dao"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:17-timed_crowdsale",
+        "cases": [
+          "17-timed_crowdsale"
+        ],
+        "expected": true,
+        "hit": false,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:18-lotto",
+        "cases": [
+          "18-lotto"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:19-mishandled",
+        "cases": [
+          "19-mishandled"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": false
+      },
+      {
+        "familyId": "solo:20-reentrancy_cross_function",
+        "cases": [
+          "20-reentrancy_cross_function"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:27-oracle-stale",
+        "cases": [
+          "27-oracle-stale"
+        ],
+        "expected": true,
+        "hit": true,
+        "falsePositive": true
+      },
+      {
+        "familyId": "solo:33-clean-amm",
+        "cases": [
+          "33-clean-amm"
+        ],
+        "expected": false,
+        "hit": false,
+        "falsePositive": true
+      }
+    ]
+  },
+  "familyMapAvailable": false,
+  "adjudicationAvailable": true,
+  "unscored": [
+    {
+      "caseId": "21-erc4626-donation",
+      "state": "excluded_by_adjudication",
+      "reason": "D 级，标注与源码不一致（D 级）"
+    },
+    {
+      "caseId": "22-erc4626-rounding",
+      "state": "excluded_by_adjudication",
+      "reason": "D 级，标注与源码不一致（D 级）"
+    },
+    {
+      "caseId": "23-lending-health-factor",
+      "state": "excluded_by_adjudication",
+      "reason": "D 级，标注与源码不一致（D 级）"
+    },
+    {
+      "caseId": "24-lending-bad-debt",
+      "state": "excluded_by_adjudication",
+      "reason": "C 级，标注与源码不一致（C 级）"
+    },
+    {
+      "caseId": "25-amm-k-decrease",
+      "state": "excluded_by_adjudication",
+      "reason": "D 级，标注与源码不一致（D 级）"
+    },
+    {
+      "caseId": "26-amm-fee",
+      "state": "excluded_by_adjudication",
+      "reason": "D 级，标注与源码不一致（D 级）"
+    },
+    {
+      "caseId": "28-cross-call",
+      "state": "excluded_by_adjudication",
+      "reason": "D 级，标注与源码不一致（D 级）"
+    },
+    {
+      "caseId": "29-delegatecall",
+      "state": "excluded_by_adjudication",
+      "reason": "C 级，标注与源码不一致（C 级）"
+    },
+    {
+      "caseId": "30-reentrancy-withdraw",
+      "state": "excluded_by_adjudication",
+      "reason": "C 级，标注与源码不一致（C 级）"
+    },
+    {
+      "caseId": "31-clean-vault",
+      "state": "scored_clean_silence",
+      "reason": "invariant_templates_unavailable"
+    },
+    {
+      "caseId": "32-clean-lending",
+      "state": "scored_clean_silence",
+      "reason": "invariant_templates_unavailable"
+    }
+  ]
+}

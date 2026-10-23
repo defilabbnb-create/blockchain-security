@@ -10,6 +10,21 @@ import sys
 import tempfile
 from pathlib import Path
 
+# 前缀与词根，用于从 ABI 推断特权入口点。
+#
+# 固定的候选名表只能覆盖写它时想到的那些协议；合约把所有权 setter 叫
+# `changeOwner`、把升级 setter 叫 `setImplementation` 时一个都匹配不上，于
+# 是明明 ABI 里列着入口点，却被记成需要适配器而无法执行。真正区分特权入口的
+# 是它的命名，而不是某一份枚举名单。
+_PRIVILEGED_PREFIXES = (
+    "set", "change", "update", "transfer", "replace", "assign",
+    "grant", "revoke", "pause", "unpause", "destroy", "kill", "close", "withdraw",
+)
+_PRIVILEGED_WORDS = (
+    "owner", "admin", "implementation", "price", "fee", "rate", "limit",
+    "authority", "operator", "guardian", "minter", "burner",
+)
+
 # A getter name reaches generated Solidity as an identifier, so anything that is
 # not a plain identifier is rejected before it can be substituted into a call.
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*")
@@ -25,6 +40,12 @@ try:
 except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from invariant_templates_vuln import TEMPLATES as VULNERABILITY_TEMPLATES
+
+try:
+    from invariant_assertions._common import encoded_entry_call
+except ModuleNotFoundError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from invariant_assertions._common import encoded_entry_call
 
 # 角色名 -> 漏洞类模板表的键。
 #
@@ -733,14 +754,70 @@ def _first_entrypoint(functions, *candidates):
 def _source_facts(document, source_text):
     """Source-level facts for one verified source, bound to its digest.
 
-    The IR records that a call happened but not whether its result was checked,
-    and for some samples it records no call at all.  Reading the verified source
-    closes both gaps.  The source is passed in by the caller rather than read
-    here so that the digest already bound to this evidence can be compared with
-    the bytes actually analysed.
+    The IR records that a call happened but not whether its return value was
+    checked, and for some samples it records no call at all.  Reading the
+    verified source closes both gaps.  The source is passed in by the caller
+    rather than read here so that the digest already bound to this evidence can
+    be compared with the bytes actually analysed.
     """
     module = _module('source_vuln_evidence.py', 'source_vuln_evidence_deep')
     return module.observe(source_text)
+
+
+# Facts that are *local* to one compilation unit: they describe a shape inside a
+# single file, so observing them per unit and merging is equivalent to observing
+# the concatenated bundle.  Listing them explicitly keeps the merge honest --
+# an unlisted key is taken from the concatenation, which is where a cross-unit
+# artefact could survive.
+_SOURCE_FACTS_CONJUNCTIVE = (
+    # Each of these requires two different patterns to appear in the same text.
+    # `observe()` intersects them, so two files that each carry one half (a
+    # `price` field in DataTypes.sol and a `timestamp` word in IPool.sol) satisfy
+    # the conjunction only after concatenation.  AaveProtocolDataProvider was
+    # reported as a stale-price defect for exactly that reason, and it is a
+    # read-only helper with no oracle of its own.  Merged per unit, neither
+    # file qualifies on its own and the role stays absent.
+    'oracleStalePrice',
+)
+
+
+def _source_units(source_text):
+    """Split a source bundle back into the compilation units it was joined from.
+
+    Callers that hold a multi-file bundle concatenate it with a blank line
+    between files, because `observe()` reasons over one text and has no notion
+    of a file boundary.  Splitting on the same separator recovers those units so
+    that a conjunction can be decided inside one file.  A single-file bundle has
+    no separator and passes through unchanged.
+    """
+    if not isinstance(source_text, str) or not source_text:
+        return []
+    return [unit for unit in source_text.split('\n\n') if unit.strip()]
+
+
+def _source_facts_for_units(source_text):
+    """Observe a bundle without letting one file satisfy another's conjunct.
+
+    Conjunctive facts are evaluated per unit and the result is the union of the
+    units' verdicts, so a class is reported when at least one file actually
+    exhibits it.  Non-conjunctive facts are additive, so a single observation
+    over the whole bundle already has the right meaning and keeps the exact
+    counts and offsets the evidence reports.
+
+    With no source the empty shape is returned so a caller never has to tell
+    "nothing found" apart from "nothing looked at" by key presence.  Nothing
+    here invents evidence: a unit with no observation stays absent.
+    """
+    module = _module('source_vuln_evidence.py', 'source_vuln_evidence_deep')
+    units = _source_units(source_text)
+    if not units:
+        return module.observe('')
+    if len(units) == 1:
+        return module.observe(units[0])
+    merged = module.observe('\n\n'.join(units))
+    for key in _SOURCE_FACTS_CONJUNCTIVE:
+        merged[key] = any(module.observe(unit).get(key) for unit in units)
+    return merged
 
 
 def _vulnerability_substitutions(document, role, source_text=None, abi_getters=None):
@@ -759,7 +836,7 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
     source = {}
     if source_text:
         try:
-            source = _source_facts(document, source_text)
+            source = _source_facts_for_units(source_text)
         except Exception:
             source = {}
     observed_field = ''
@@ -893,20 +970,60 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
             if resolved:
                 return resolved
         return None
+    def _privileged_candidates():
+        """ABI functions that read as a privileged entry, best guess first.
+
+        The prefixes are the ones that actually mark a state-changing entry a
+        protocol reserves for an authorised caller.  Generated getters are
+        excluded because they are named after the field they expose and answer
+        to the compiler, so probing one would assert nothing about admission.
+        """
+        ranked = []
+        for name, parameters in abi_parameters.items():
+            lowered = name.lower()
+            if not (lowered.startswith(_PRIVILEGED_PREFIXES)
+                    or any(word in lowered for word in _PRIVILEGED_WORDS)):
+                continue
+            # A public state variable compiles to a getter under the field's
+            # own name; `setOwner` and `owner` are distinguished by the prefix.
+            if name in confirmed and parameters == '':
+                continue
+            ranked.append(name)
+        return ranked
 
     def confirmed_entrypoint(candidates):
-        """First candidate the ABI reports as a callable zero-argument function.
+        """First candidate the ABI reports as a callable function.
 
-        The access-control assertion calls the entrypoint with an encoded empty
-        argument list, so a parameterised entry cannot be used: naming one would
-        produce a reverting assertion and read as a failure of the wrong
-        property.  An empty parameter list in the ABI means the call is
-        well-formed.  The returned value keeps the `name()` form the renderer
-        embeds verbatim into the encoded call.
+        An entry point that takes arguments was excluded here on the grounds
+        that the assertion could only encode an empty argument list, so naming
+        one would produce a call that dispatches to nothing and read as a
+        violated property.  That reasoning was correct while the encoder really
+        could only carry a bare selector; the placeholder encoder now fills in
+        an index of zero, this contract's own address, or an empty payload for
+        the types these entry points actually take.  Admission is all the
+        access-control assertion asks about, so a placeholder is the right
+        probe -- and refusing the entry point meant `changeOwner(address)` and
+        `setPrice(uint256)` were recorded as needing an adapter even though the
+        ABI listed them plainly.
+
+        The full signature is returned rather than the bare name so the encoder
+        receives the parameter list it has to fill.  A type the placeholder
+        encoder cannot carry is refused at that point instead.
         """
         for candidate in candidates:
-            if abi_parameters.get(candidate, None) == '':
+            parameters = abi_parameters.get(candidate, None)
+            if parameters is None:
+                continue
+            if parameters == '':
                 return f'{candidate}()'
+            canonical = [part.strip() for part in parameters.split(",") if part.strip()]
+            if not canonical:
+                return None
+            # Ask the encoder itself rather than keeping a second list of the types
+            # a probe can carry: two copies drift, and the drift shows up as an entry
+            # point the generator claims and the renderer then refuses.
+            if encoded_entry_call(f'{candidate}({",".join(canonical)})'):
+                return f'{candidate}({",".join(canonical)})'
         return None
 
     if role == 'reentrancy':
@@ -919,6 +1036,15 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
             or confirmed_entrypoint(['withdraw', 'withdrawFees', 'transferOwnership',
                                      'setOwner', 'mint', 'burn', 'selfdestruct',
                                      'pause', 'unpause', 'setFee', 'setPrice'])
+        if entry is None:
+            # A fixed candidate list only ever named the privileged setters of
+            # the protocols it was written against.  A contract that calls its
+            # ownership setter `changeOwner` or its upgrade setter
+            # `setImplementation` matched nothing and was recorded as needing an
+            # adapter, although the ABI listed the entry plainly.  The setter
+            # prefix is what distinguishes a privileged entry from an ordinary
+            # one, so it is read from the ABI instead of enumerated here.
+            entry = confirmed_entrypoint(_privileged_candidates())
         return {'guardedField': guarded, 'entrypoint': entry}
     if role == 'unchecked_low_level_call':
         return {'ledgerField': ledger_getter()}
@@ -929,7 +1055,15 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
     if role == 'denial_of_service':
         entry = _first_entrypoint(functions, 'distribute', 'payout', 'refund',
                                   'withdraw', 'claim', 'process')
-        return {'entrypoint': entry}
+        # Both denial-of-service templates read the collection's size before
+        # asserting on it, so the getter has to be one the target actually
+        # implements.  It is resolved from the ABI rather than assumed, because
+        # the name follows what the collection holds.
+        size = (confirmed_getter(['collectionSize', 'numberCreditors', 'count',
+                                  'length', 'size', 'totalSupply',
+                                  'numberOfRequests', 'requestCount'])
+                or _mapping_getter('collectionSize'))
+        return {'entrypoint': entry, 'collectionSize': size}
     if role in ('front_running', 'time_manipulation',
                 'unprotected_upgrade', 'unchecked_cross_contract_assumption'):
         return {'valueField': value_getter()}
@@ -1035,7 +1169,7 @@ def detect_roles(document, source_text=None):
     # Source-level facts replace the IR-only guesses wherever they speak: the IR
     # has no record of whether a call's result was checked, so any class defined
     # by that distinction is decided from the verified source when one is given.
-    context['source'] = _source_facts(document, source_text) if source_text else {}
+    context['source'] = _source_facts_for_units(source_text) if source_text else {}
     for role, anchors in PROTOCOL_ANCHORS.items():
         # The scored detail is kept for the existing feature contract; the
         # anchor result is recorded separately so the evidence shows both.
@@ -1125,7 +1259,10 @@ each as its full signature (``fee()`` or ``balances(address)``).  It is needed
              'params': {'feeField': 'fee', 'reserve0Field': 'reserve0', 'reserve1Field': 'reserve1', 'toleranceBps': 0}},
             {'template': 'oracle_assumption_holds', 'name': '预言机假设成立',
              'description': '交易价格和外部预言机读数应满足调用方声明的边界。',
-             'params': {'oracleField': 'oracle', 'maxDeviationBps': 0}},
+             # The renderer reads `maxOracleValue`; emitting `maxDeviationBps`
+             # left it with nothing to bound the oracle against, so it declined
+             # to render and the sample reported an assertion needing an adapter.
+             'params': {'oracleField': 'oracle', 'maxOracleValue': 0, 'toleranceBps': 0}},
         ),
         'staking_reward': (
             {'template': 'reward_accrual_conserves_value', 'name': '奖励累计守恒',
@@ -1137,6 +1274,7 @@ each as its full signature (``fee()`` or ``balances(address)``).  It is needed
         ),
     }
     invariants = []
+    unresolved = []
     for role in roles:
         if role == 'erc4626':
             feature_names = ('totalassets', 'totalsupply', 'deposit', 'withdraw', 'redeem', 'mint')
@@ -1177,6 +1315,24 @@ each as its full signature (``fee()`` or ``balances(address)``).  It is needed
         for template in templates:
             params = {key: (substitutions.get(value[1:]) if isinstance(value, str) and value.startswith('$') else value)
                       for key, value in template['params'].items()}
+            # A placeholder the generator could not resolve means this assertion
+            # cannot run against this contract: the field it has to read is not
+            # exposed, so there is nothing for it to observe.  Declaring it anyway
+            # produced a row the harness could not render, and the sample was
+            # recorded as having executed no assertion at all rather than as
+            # having no applicable one.  A minimal teaching contract often exposes
+            # no readable state -- `dos_simple` has only `ifillArray()` and no
+            # size getter -- and for those, zero assertions is the correct
+            # answer.  Inventing a field to read would be a fabricated
+            # observation.
+            unresolved_placeholders = sorted(
+                key for key, value in template['params'].items()
+                if isinstance(value, str) and value.startswith('$') and params.get(key) is None)
+            if unresolved_placeholders:
+                unresolved.append(
+                    f"{template['template']}: 未能从编译产物解析 {'、'.join(unresolved_placeholders)}，"
+                    f"该断言在本合约上无可观测状态。")
+                continue
             identity = {'role': role, 'template': template['template'], 'sourceSha256': source_sha256,
                         'params': params, 'sourceRefs': refs}
             invariants.append({
@@ -1191,9 +1347,23 @@ each as its full signature (``fee()`` or ``balances(address)``).  It is needed
                 'generatedTestPath': None,
                 'status': 'unverified',
             })
-    unresolved = []
     if not roles:
         unresolved.append('未识别到受支持的协议角色特征组合。')
+    if not source_text:
+        # 六个漏洞锚点依赖源码事实，而源码事实只在调用方传入 source_text 时才会
+        # 被采集。调用方其实已经在磁盘上持有同一份已验证源码（它写出了本文件所
+        # 依据的 IR），却因为漏传这一个参数，让整批真实合约的角色识别静默归零：
+        # 结果与"这份合约确实没有任何漏洞类"完全无法区分。把缺参记录进证据，
+        # 使"没看源码"不再读作"没有缺陷"。
+        unresolved.append(
+            '未传入 source_text：六个依赖源码事实的漏洞锚点'
+            '（reentrancy/source.callBeforeLedgerWrite、'
+            'access_control/source.privilegedEntryUnguarded、'
+            'arithmetic/source.uncheckedBlockOrCast、'
+            'short_addresses/source.addressRepackedWithoutPadding、'
+            'incorrect_interface/source.callResultConsumedBeyondItsWidth、'
+            'oracle_stale_price/source.priceReadWithoutFreshnessBound）'
+            '本次未被求值，零角色不构成无缺陷的证据。')
     if roles and decimals is None:
         unresolved.append('IR 未记录 token decimals；精度相关参数保持 null。')
     return {
@@ -1203,6 +1373,7 @@ each as its full signature (``fee()`` or ``balances(address)``).  It is needed
         'declaredSourceBundleSha256': ir_source_sha256,
         'sourceIrDocumentId': document.get('documentId'),
         'sourceIrSha256': digest,
+        'sourceFactsObserved': bool(source_text),
         'detectedRoles': roles,
         'roleFeatures': role_features,
         'unresolved': unresolved,

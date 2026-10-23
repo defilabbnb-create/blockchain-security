@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Compile collected source locally and run Slither; never deploy or transact."""
-import copy,inspect,json,os,re,sys,hashlib,urllib.request,fcntl,subprocess,time,collections,posixpath,ntpath,heapq,concurrent.futures,threading,signal,shutil
+import copy,inspect,json,os,re,sys,hashlib,urllib.request,fcntl,subprocess,time,collections,posixpath,ntpath,heapq,concurrent.futures,threading,signal,shutil,tempfile
 import warnings
 try:
     from urllib3.exceptions import NotOpenSSLWarning
@@ -20,6 +20,38 @@ _COMPILER_HASH_LOCK=threading.Lock()
 _ANALYSIS_ENV_LOCK=threading.Lock()
 MAX_DYNAMIC_HARNESS_RSS_BYTES=3*1024*1024*1024
 PROCESS_RSS_POLL_INTERVAL_SECONDS=0.25
+# Slither and crytic-compile run in-process with no native timeout, so a wedged
+# compile or detector pass would hang every caller that imports this module as a
+# library. Callers that already own a subprocess timeout can leave this unset.
+DEFAULT_STATIC_STAGE_TIMEOUT_SECONDS=900
+
+def _static_stage_timeout_seconds():
+    """Wall-clock budget for the in-process compile + detector stage."""
+    raw=os.environ.get('REVIEW_STATIC_STAGE_TIMEOUT_SECONDS','').strip()
+    if raw:
+        try:
+            value=float(raw)
+            if 0<value<=86400:return value
+        except ValueError:pass
+    return DEFAULT_STATIC_STAGE_TIMEOUT_SECONDS
+
+def write_json_atomic(path,value,*,indent=2):
+    """Write JSON through a temp file + rename so readers never see a partial document.
+
+    Downstream stages consume call-graph.json and unified-ir.json directly. A
+    plain write_text() truncated by a killed process would leave invalid JSON
+    that the loader cannot distinguish from a missing file.
+    """
+    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
+    text=json.dumps(value,ensure_ascii=False,indent=indent)
+    descriptor,temporary=tempfile.mkstemp(prefix=f'.{path.name}.',dir=path.parent)
+    try:
+        with os.fdopen(descriptor,'w',encoding='utf-8') as handle:
+            handle.write(text);handle.flush();os.fsync(handle.fileno())
+        os.replace(temporary,path)
+    finally:
+        try:os.unlink(temporary)
+        except FileNotFoundError:pass
 
 class ProcessMemoryMonitorUnavailable(RuntimeError):
     pass
@@ -122,6 +154,28 @@ def run_bounded(command,timeout,*,max_process_tree_rss_bytes=None,**kwargs):
         proc.communicate()
         raise
     return subprocess.CompletedProcess(command,proc.returncode,out,err)
+
+class StaticStageTimeout(RuntimeError):
+    pass
+
+def _with_stage_timeout(function,timeout_seconds):
+    """Run an in-process Slither stage under a wall-clock bound.
+
+    crytic-compile and the detectors have no native timeout, so a pathological
+    contract could otherwise block a library caller forever. The bound is
+    enforced by abandoning the worker thread: Python cannot pre-empt it, but the
+    caller regains control and the failure is reported instead of hanging.
+    """
+    if not timeout_seconds or timeout_seconds<=0:return function()
+    box={}
+    def runner():
+        try:box['value']=function()
+        except BaseException as error:box['error']=error
+    worker=threading.Thread(target=runner,name='static-stage',daemon=True)
+    worker.start();worker.join(timeout_seconds)
+    if worker.is_alive():raise StaticStageTimeout(f'static stage exceeded {timeout_seconds:g}s')
+    if 'error' in box:raise box['error']
+    return box.get('value')
 
 def _sha256_file(path):
     return '0x'+hashlib.sha256(path.read_bytes()).hexdigest()
@@ -993,7 +1047,7 @@ def _run_dynamic_harness(bundle_path,folder,source_input,target,soljson,dependen
     report=bundle_path.parent/'local-tests.json'
     try:local['report']=str(report.relative_to(ROOT))
     except ValueError:local['report']=str(report)
-    report.write_text(json.dumps(local,ensure_ascii=False,indent=2))
+    write_json_atomic(report,local)
     return local
 
 def _run_target_dynamic(bundle_path,folder,source_input,targets,version,dependency_path,module,source_aliases=None,env=None):
@@ -1014,7 +1068,7 @@ def _run_target_dynamic(bundle_path,folder,source_input,targets,version,dependen
         soljson,_=compiler(version)
         local=_run_dynamic_harness(bundle_path,folder,source_input,target_path,soljson,dependency=dependency_file,timeout=75,source_aliases=source_aliases,env=env)
         local['verifiedDependencySource']=str(Path(dependency_path))
-        (bundle_path.parent/'local-tests.json').write_text(json.dumps(local,ensure_ascii=False,indent=2))
+        write_json_atomic(bundle_path.parent/'local-tests.json',local)
         return local
     if version=='0.8.17' and target_name=='AMTDepositPool':
         return {'state':'not_performed','reason':'verified configured reward implementation was not obtained; adversarial mock is not substituted'}
@@ -1257,7 +1311,7 @@ def _analyze_uncached(bundle_path,dependency_path=None):
             if link.is_symlink():link.unlink()
             link.symlink_to(executable)
             os.environ['PATH']=str(bin_dir)+os.pathsep+os.environ['PATH']
-            compilation=CryticCompile(SolcStandardJson(static_source_input),solc=str(link),solc_working_dir=str(folder))
+            compilation=_with_stage_timeout(lambda:CryticCompile(SolcStandardJson(static_source_input),solc=str(link),solc_working_dir=str(folder)),_static_stage_timeout_seconds())
             install_struct_resolution(compilation)
             slither=Slither(compilation)
             if not slither.contracts:raise ValueError('empty Slither compilation')
@@ -1280,11 +1334,11 @@ def _analyze_uncached(bundle_path,dependency_path=None):
                 call_graph=build_call_graph(slither.contracts,targets.values(),targets.keys(),source_aliases,source_digests)
                 call_graph_path=bundle_path.parent/'call-graph.json'
                 call_graph['analysisInputFingerprint']=analysis_input_fingerprint
-                call_graph_path.write_text(json.dumps(call_graph,ensure_ascii=False,indent=2))
+                write_json_atomic(call_graph_path,call_graph)
                 try:
                     unified_ir=from_call_graph(call_graph)
                     unified_ir_path=bundle_path.parent/'unified-ir.json'
-                    unified_ir_path.write_text(json.dumps(unified_ir,ensure_ascii=False,indent=2))
+                    write_json_atomic(unified_ir_path,unified_ir)
                 except Exception as ir_error:
                     unified_ir_error=f'{type(ir_error).__name__}: {str(ir_error)[:700]}'
             except Exception as e:
@@ -1295,7 +1349,7 @@ def _analyze_uncached(bundle_path,dependency_path=None):
                 detectors=[x for x in (getattr(all_detectors,k) for k in dir(all_detectors)) if inspect.isclass(x) and issubclass(x,AbstractDetector) and x is not AbstractDetector]
                 for detector in detectors:slither.register_detector(detector)
                 if not detectors:raise ValueError('no Slither detectors registered')
-                findings=[x for group in slither.run_detectors() for x in group]
+                findings=_with_stage_timeout(lambda:[x for group in slither.run_detectors() for x in group],_static_stage_timeout_seconds())
             except Exception as e:
                 detector_error=f'{type(e).__name__}: {str(e)[:1200]}'
         static_error=static_error or detector_error or call_graph_error
@@ -1355,8 +1409,7 @@ def _analyze_uncached(bundle_path,dependency_path=None):
             local['sourceCoverage']=coverage
             local['traces']=dynamic_report.get('traces',[])
             local['harnessHash']=dynamic_report.get('harnessHash') or dynamic_report.get('harnessSupportHash')
-            atomic_report=json.dumps(dynamic_report,ensure_ascii=False,indent=2)
-            local_report.write_text(atomic_report)
+            write_json_atomic(local_report,dynamic_report)
         except Exception as e:local['staticCorrelation']={'state':'unavailable','reason':f'{type(e).__name__}: {str(e)[:300]}'}
     if 'staticCorrelation' not in local:local['staticCorrelation']=correlate_dynamic_effects(call_graph,local)
     result['localTests']={k:v for k,v in local.items() if k not in ('sequences','traces','sourceCoverage','staticCorrelation')}
@@ -1366,7 +1419,7 @@ def _analyze_uncached(bundle_path,dependency_path=None):
         result['localTests']['sourceCoverage']=summarize_source_coverage(local['sourceCoverage'])
     result['localTests']['staticCorrelation']={k:v for k,v in local['staticCorrelation'].items() if k!='matches'}
     if local.get('state')!='not_performed':
-        (bundle_path.parent/'local-tests.json').write_text(json.dumps(local,ensure_ascii=False,indent=2))
+        write_json_atomic(bundle_path.parent/'local-tests.json',local)
         try:result['localTests']['report']=str((bundle_path.parent/'local-tests.json').relative_to(ROOT))
         except ValueError:result['localTests']['report']=str(bundle_path.parent/'local-tests.json')
     dynamic_assembly_ms=round((time.monotonic()-dynamic_finalize_started)*1000)
@@ -1472,6 +1525,12 @@ def analyze(bundle_path,dependency_path=None):
     return result
 
 if __name__=='__main__':
+    # A failed analysis must not exit 0: callers gate passed/partial on the exit
+    # status, and a zero status would present a failed run as a usable result.
+    failed=False
     try: result=analyze(Path(sys.argv[1]).resolve(),Path(sys.argv[2]).resolve() if len(sys.argv)>2 else None)
-    except Exception as e:result={'state':'failed','error':str(e)[:1800],'confirmed':False,'localReproduction':False}
+    except Exception as e:
+        result={'state':'failed','error':str(e)[:1800],'confirmed':False,'localReproduction':False};failed=True
     print(json.dumps(result,ensure_ascii=False))
+    if failed or (isinstance(result,dict) and result.get('state') not in ('completed','partial')):
+        raise SystemExit(1)

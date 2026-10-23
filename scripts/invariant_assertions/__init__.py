@@ -9,6 +9,7 @@ RENDERER_MODULES = (
     "lending",
     "amm",
     "cross",
+    "vuln",
 )
 
 

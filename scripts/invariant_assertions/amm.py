@@ -1,6 +1,6 @@
 """Executable Solidity assertion snippets for constant-product AMMs."""
 
-from ._common import guard, read_expr
+from ._common import guard, read_expr, ratio_assertion, require_statement
 
 
 def render_k_never_decreases(params, context):
@@ -9,12 +9,13 @@ def render_k_never_decreases(params, context):
         return None
     address, tolerance_bps, (reserve0, reserve1) = checked
     return "\n".join((
-        read_expr(address, reserve0, "reserve0Before"),
-        read_expr(address, reserve1, "reserve1Before"),
+        read_expr(address, reserve0, "reserve0Before", context),
+        read_expr(address, reserve1, "reserve1Before", context),
         "// The adapter executes a swap between snapshots.",
-        read_expr(address, reserve0, "reserve0After"),
-        read_expr(address, reserve1, "reserve1After"),
-        f"require(reserve0After * reserve1After * 10000 >= reserve0Before * reserve1Before * (10000 - {tolerance_bps}), \"constant product k decreased\");",
+        read_expr(address, reserve0, "reserve0After", context),
+        read_expr(address, reserve1, "reserve1After", context),
+        ratio_assertion("reserve0After * reserve1After", "reserve0Before * reserve1Before",
+                      tolerance_bps, "constant product k decreased", context),
     ))
 
 
@@ -24,14 +25,16 @@ def render_fee_conserved(params, context):
         return None
     address, tolerance_bps, (reserve0, reserve1, fee) = checked
     return "\n".join((
-        read_expr(address, reserve0, "feeReserve0Before"),
-        read_expr(address, reserve1, "feeReserve1Before"),
-        read_expr(address, fee, "feeBefore"),
+        read_expr(address, reserve0, "feeReserve0Before", context),
+        read_expr(address, reserve1, "feeReserve1Before", context),
+        read_expr(address, fee, "feeBefore", context),
         "// The adapter executes a swap between snapshots.",
-        read_expr(address, reserve0, "feeReserve0After"),
-        read_expr(address, reserve1, "feeReserve1After"),
-        read_expr(address, fee, "feeAfter"),
-        f"require(feeAfter * 10000 + {tolerance_bps} >= feeBefore * 10000, \"AMM fee ledger decreased unexpectedly\");",
+        read_expr(address, reserve0, "feeReserve0After", context),
+        read_expr(address, reserve1, "feeReserve1After", context),
+        read_expr(address, fee, "feeAfter", context),
+        require_statement(context,
+                          f"feeAfter * 10000 + {tolerance_bps} >= feeBefore * 10000",
+                          "AMM fee ledger decreased unexpectedly"),
     ))
 
 

@@ -126,14 +126,44 @@ class VerificationStageTests(unittest.TestCase):
             finding, bundle, finding_data, bundle_data = self._poc_inputs(root)
             import hashlib
             test_name = "testPoC_" + hashlib.sha256(finding_data["id"].encode()).hexdigest()[:16]
-            adapter = f"pragma solidity >=0.8.19; contract Proof {{ function {test_name}() public pure {{}} }}"
+            # 通过的 PoC 必须真的引用被测合约 Vault，否则无法证明它在验证 Vault。
+            # 只声明一个空函数不算复现证据——流水线会把它判为 unconfirmed。
+            # 这里内联合约体而不是 import：临时目录里没有可导入的 Vault.sol。
+            adapter = (
+                "pragma solidity >=0.8.19;\n"
+                "contract Vault { function ping() external {} }\n"
+                "contract Proof { function %s() public { Vault v = new Vault(); v.ping(); } }" % test_name
+            )
             result = verification.run_stage(
                 "poc", {"finding": str(finding), "sourceBundle": str(bundle), "pocTestSource": adapter},
                 root / "stage", forge_runner=lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, f"[PASS] {test_name}() (gas: 123)".encode(), b""))
             self.assertEqual(result["pocState"], "confirmed")
             payload = json.loads((root / "stage" / "poc-result.json").read_text())
             self.assertTrue(payload["confirmed_by_poc"])
-            self.assertTrue(payload["attempts"][0]["matchedTestPassed"])
+
+    def test_poc_that_never_references_the_target_is_not_confirmed(self):
+        """通过的空壳 PoC 不构成复现证据。
+
+        `contract Proof { function test() public pure {} }` 会被 forge 判为通过，
+        但它与被测合约毫无关系。若据此把 pocState 置为 confirmed，等于让一个
+        与漏洞无关的字符串充当复现依据。
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            finding, bundle, finding_data, bundle_data = self._poc_inputs(root)
+            import hashlib
+            test_name = "testPoC_" + hashlib.sha256(finding_data["id"].encode()).hexdigest()[:16]
+            adapter = f"pragma solidity >=0.8.19; contract Proof {{ function {test_name}() public pure {{}} }}"
+            result = verification.run_stage(
+                "poc", {"finding": str(finding), "sourceBundle": str(bundle), "pocTestSource": adapter},
+                root / "stage", forge_runner=lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, f"[PASS] {test_name}() (gas: 123)".encode(), b""))
+            self.assertEqual(result["pocState"], "unconfirmed")
+            payload = json.loads((root / "stage" / "poc-result.json").read_text())
+            self.assertFalse(payload["confirmed_by_poc"])
+            # 测试虽然被 forge 判为 PASS，但它没有引用被测合约，因此不算通过
+            self.assertFalse(payload["attempts"][0]["matchedTestPassed"])
+            self.assertEqual(payload["attempts"][0]["state"], "test_does_not_reference_target")
+            self.assertFalse(payload["attempts"][0]["referencesTargetContract"])
             self.assertEqual(payload["attempts"][0]["testName"], test_name)
 
     def test_poc_zero_exit_without_matching_pass_output_stays_unconfirmed(self):

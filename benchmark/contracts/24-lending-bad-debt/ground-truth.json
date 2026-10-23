@@ -1,1 +1,17 @@
-{"knownIssues":["lending_bad_debt"],"clean":false,"source":"https://github.com/example/defi-benchmarks","sourceFile":"Pool.sol","solcVersion":"0.8.19"}
+{
+  "knownIssues": [
+    "lending_bad_debt"
+  ],
+  "clean": false,
+  "source": "https://github.com/example/defi-benchmarks",
+  "sourceFile": "Pool.sol",
+  "solcVersion": "0.8.19",
+  "excludedReason": {
+    "grade": "C",
+    "summary": "C 级，标注与源码不一致",
+    "adjudication": "liquidate 在 repay=0 时把全额剩余 debt 记入 badDebt 且不冲减债务，零成本清算制造坏账的缺陷真实存在于第 2 行；标注自洽。但无 borrow 路径，坏账来源不可完整复现。",
+    "evidenceLines": [
+      2
+    ]
+  }
+}

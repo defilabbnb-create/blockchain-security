@@ -1,0 +1,1087 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": null,
+  "method": "对每份 poc-result.json 校验三件事：是否存在 before/after 状态或余额证据、证据两端取值是否真的变化、sourceSha256 是否绑定当前源码。声称复现成功却无任何证据者判 fabricated。",
+  "verdictSemantics": {
+    "reproduced": "有余额或状态前后证据，且绑定当前源码",
+    "evidence_stale": "有证据，但绑定的源码已被改写，证据不可用于当前版本",
+    "fabricated": "声称复现成功，却没有任何前后证据",
+    "not_reproduced": "声称未复现或未确认（正常结论）",
+    "unreadable": "ground-truth 或 poc-result 损坏/缺失，本样本无法判定；既不算通过，也不计入覆盖率分母"
+  },
+  "counts": {
+    "evidence_stale": 5,
+    "fabricated": 2,
+    "not_reproduced": 8,
+    "reproduced": 18
+  },
+  "byVerdict": {
+    "reproduced": [
+      "01-arbitrary_location_write_simple",
+      "02-incorrect_constructor_name1",
+      "03-simple_suicide",
+      "04-unprotected0",
+      "05-BECToken",
+      "06-integer_overflow_minimal",
+      "07-overflow_simple_add",
+      "08-guess_the_random_number",
+      "09-old_blockhash",
+      "13-etherstore",
+      "14-reentrance",
+      "15-reentrancy_simple",
+      "16-simple_dao",
+      "19-mishandled",
+      "20-reentrancy_cross_function",
+      "23-lending-health-factor",
+      "26-amm-fee",
+      "29-delegatecall"
+    ],
+    "not_reproduced": [
+      "10-dos_address",
+      "11-dos_simple",
+      "12-eth_tx_order_dependence_minimal",
+      "17-timed_crowdsale",
+      "18-lotto",
+      "28-cross-call",
+      "31-clean-vault",
+      "32-clean-lending"
+    ],
+    "evidence_stale": [
+      "21-erc4626-donation",
+      "22-erc4626-rounding",
+      "24-lending-bad-debt",
+      "30-reentrancy-withdraw",
+      "33-clean-amm"
+    ],
+    "fabricated": [
+      "25-amm-k-decrease",
+      "27-oracle-stale"
+    ]
+  },
+  "unreadableCount": 0,
+  "unreadableIds": [],
+  "cleanControls": {
+    "total": 3,
+    "correctlyQuiet": [
+      "31-clean-vault",
+      "32-clean-lending",
+      "33-clean-amm"
+    ],
+    "falsePositive": []
+  },
+  "cases": [
+    {
+      "caseId": "01-arbitrary_location_write_simple",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "attackGasCostWei",
+        "attackerNetProfitWei",
+        "targetBalanceAfterWei",
+        "targetBalanceBeforeWei"
+      ],
+      "stateEvidence": [
+        "transactionStatuses"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "71172023a301bf12c4b5779fef1058e89df2f3902f38ead99d76f7790ba6bb87",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 01-arbitrary_location_write_simple",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "bbbdb5367463fd3d1e11b2c569695d8b4734e3f88fcf937a34469a23121b01ab",
+        "actual": "bbbdb5367463fd3d1e11b2c569695d8b4734e3f88fcf937a34469a23121b01ab",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "02-incorrect_constructor_name1",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "afterTargetBalanceWei",
+        "attackerReceivedWei",
+        "beforeTargetBalanceWei"
+      ],
+      "stateEvidence": [
+        "attackStatus",
+        "unauthorizedWithdrawRejected"
+      ],
+      "changedPairs": [
+        "afterTargetBalanceWei",
+        "beforeTargetBalanceWei"
+      ],
+      "evidenceSha256": "f3a503808d8a80d59c06d21c596fbbfad98880551f6d718d9eee3b92275d7d65",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 02-incorrect_constructor_name1",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "d918731cebddf34ad385dd799691237e0ec1aab09f34ce7eb6bbe83ec86cd8c8",
+        "actual": "d918731cebddf34ad385dd799691237e0ec1aab09f34ce7eb6bbe83ec86cd8c8",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "03-simple_suicide",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "afterTargetBalanceWei",
+        "attackerReceivedWei",
+        "beforeTargetBalanceWei"
+      ],
+      "stateEvidence": [
+        "attackStatus",
+        "unauthorizedWithdrawRejected"
+      ],
+      "changedPairs": [
+        "afterTargetBalanceWei",
+        "beforeTargetBalanceWei"
+      ],
+      "evidenceSha256": "e43c5ed1df38ac625c83d67f2416db38fb9b6c48bb0b84409176530378a517ee",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 03-simple_suicide",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "d210fc21c6fdf273cfe2af52408b09ec82df89ebdea554b0c6356ad8b5d8796d",
+        "actual": "d210fc21c6fdf273cfe2af52408b09ec82df89ebdea554b0c6356ad8b5d8796d",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "04-unprotected0",
+      "clean": false,
+      "knownIssues": [
+        "access_control"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "afterTargetBalanceWei",
+        "attackerReceivedWei",
+        "beforeTargetBalanceWei"
+      ],
+      "stateEvidence": [
+        "attackStatus",
+        "unauthorizedOwnerChangeSucceeded"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "fa194dfae1ffd988495ea49dadb3db5a94072764182bb8aea83c2e94cb842fe4",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 04-unprotected0",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "8cfc8702a1a0afe407c2ea83e0c48e97909f66af1955ee5e1321f1dc2818a045",
+        "actual": "8cfc8702a1a0afe407c2ea83e0c48e97909f66af1955ee5e1321f1dc2818a045",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "05-BECToken",
+      "clean": false,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "aggregateBalancesAfterBatch",
+        "firstBalanceAfterTransfer",
+        "ownerBalanceAfterBatch",
+        "recipientBalanceSum",
+        "secondBalanceAfterTransfer"
+      ],
+      "stateEvidence": [
+        "overflowValue"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "461e2f12cebed00716a18c8dd91f7413d99cf15a1221ff017ba9d5829e6a1bc1",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 05-BECToken",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "5765dccd66c76ce39da689c314364dc380e0b6a984ad351c5f81eb8e35e749b9",
+        "actual": "5765dccd66c76ce39da689c314364dc380e0b6a984ad351c5f81eb8e35e749b9",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "06-integer_overflow_minimal",
+      "clean": false,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "afterValue",
+        "beforeValue",
+        "checkedReverted"
+      ],
+      "changedPairs": [
+        "afterValue",
+        "beforeValue"
+      ],
+      "evidenceSha256": "cde67df99e1eb5e51084cfa311daace8af6f87f3e70a17ab400d95c9403247ba",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 06-integer_overflow_minimal",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "ca539303822841840452b2aa1bf8607dc7b46d32de7261e11861da1bc9c6e915",
+        "actual": "ca539303822841840452b2aa1bf8607dc7b46d32de7261e11861da1bc9c6e915",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "07-overflow_simple_add",
+      "clean": false,
+      "knownIssues": [
+        "arithmetic"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "afterValue",
+        "beforeValue",
+        "checkedReverted"
+      ],
+      "changedPairs": [
+        "afterValue",
+        "beforeValue"
+      ],
+      "evidenceSha256": "b070460b7867827bfd6201b5b52a3082b2375fd04c2c13806aab4417d899cd0c",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 07-overflow_simple_add",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "641f6d9e0a4ff8f91c6340a38af72f4ab48749635f5ebb9815123c8ae2e0a46e",
+        "actual": "641f6d9e0a4ff8f91c6340a38af72f4ab48749635f5ebb9815123c8ae2e0a46e",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "08-guess_the_random_number",
+      "clean": false,
+      "knownIssues": [
+        "bad_randomness"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "attackerBalanceAfterWei",
+        "attackerBalanceBeforeWei",
+        "attackerGrossProfitWei",
+        "attackerNetProfitWei",
+        "expectedNetProfitWei",
+        "guessGasCostWei",
+        "targetBalanceAfterGuessWei",
+        "targetBalanceBeforeGuessWei"
+      ],
+      "stateEvidence": [],
+      "changedPairs": [],
+      "evidenceSha256": "11271af6d0db3cccda47ebcd02eb084ef5b15db5fd852441f4fe529dbb706abc",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 08-guess_the_random_number",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "d27ca8263b122093d6798f08c58264dd8aa552b7dd2e567aac648928be6e17f5",
+        "actual": "d27ca8263b122093d6798f08c58264dd8aa552b7dd2e567aac648928be6e17f5",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "09-old_blockhash",
+      "clean": false,
+      "knownIssues": [
+        "bad_randomness"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "attackGasCostWei",
+        "attackerNetProfitWei",
+        "expectedNetProfitWei",
+        "targetBalanceAfterSettlementWei",
+        "targetBalanceBeforeSettlementWei",
+        "targetSeedBalanceWei"
+      ],
+      "stateEvidence": [
+        "guessedValue"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "4618d78efec21ca2cbf959b1a44ac1d5ebb9c3e7d929486a4bc422c5dda39589",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 09-old_blockhash",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "fcacbdf48076326222bd952ab15d0ef3a1cb2bd0acf983b8ff6cdb90633c30e7",
+        "actual": "fcacbdf48076326222bd952ab15d0ef3a1cb2bd0acf983b8ff6cdb90633c30e7",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "10-dos_address",
+      "clean": false,
+      "knownIssues": [
+        "denial_of_service"
+      ],
+      "claimedState": "unconfirmed",
+      "claimedConfirmed": false,
+      "verdict": "not_reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "observation"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "b9a696d7f93b11995ec1dbd528e9ddce68179e4f198c07cb696b89bbc960e336",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 10-dos_address",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "4f6960a84c3da5f791faf0111033b1d6a425e2575fb03b31acd248210497794e",
+        "actual": "4f6960a84c3da5f791faf0111033b1d6a425e2575fb03b31acd248210497794e",
+        "matched": true
+      },
+      "problems": [],
+      "reason": "array_state_changed_without_external_call_or_asset_impact"
+    },
+    {
+      "caseId": "11-dos_simple",
+      "clean": false,
+      "knownIssues": [
+        "denial_of_service"
+      ],
+      "claimedState": "unconfirmed",
+      "claimedConfirmed": false,
+      "verdict": "not_reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "observation"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "774bba6064220bf98d35a2dcd80e260918b5be9b559f9454dca95f8e80742cee",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 11-dos_simple",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "53dcfd96beb66caaefc66373d6cef836a0b1f0320d3e4421426cb26590fc2c0c",
+        "actual": "53dcfd96beb66caaefc66373d6cef836a0b1f0320d3e4421426cb26590fc2c0c",
+        "matched": true
+      },
+      "problems": [],
+      "reason": "array_reset_branch_hit_local_gas_limit_without_victim_lockout_or_asset_impact"
+    },
+    {
+      "caseId": "12-eth_tx_order_dependence_minimal",
+      "clean": false,
+      "knownIssues": [
+        "front_running"
+      ],
+      "claimedState": "unconfirmed",
+      "claimedConfirmed": false,
+      "verdict": "not_reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "observation"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "36ea4d170dca2c7aa25b41abdfffaa8fa9aa064f62e654bcf10b3cab1f2b6ccc",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 12-eth_tx_order_dependence_minimal",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "ff02571525b00a0261fa98cc57fc00822124d72ce0039b4e46423523154bf5ed",
+        "actual": "ff02571525b00a0261fa98cc57fc00822124d72ce0039b4e46423523154bf5ed",
+        "matched": true
+      },
+      "problems": [],
+      "reason": "reward_claim_path_reproduced_but_pending_transaction_ordering_was_not_modeled"
+    },
+    {
+      "caseId": "13-etherstore",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "afterTargetBalanceWei",
+        "attackerBalanceAfterAttackWei",
+        "attackerBalanceBeforeAttackWei",
+        "attackerCreditAfterWei",
+        "attackerCreditBeforeWei",
+        "beforeTargetBalanceWei",
+        "extractedWei",
+        "profitWei",
+        "victimCreditAfterWei",
+        "victimCreditBeforeWei",
+        "victimFundingWei"
+      ],
+      "stateEvidence": [],
+      "changedPairs": [
+        "afterTargetBalanceWei",
+        "beforeTargetBalanceWei"
+      ],
+      "evidenceSha256": "c77982e2bdcc061659a2993e9c71baa895df3317a3ab388700ea473d5d6d28c4",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 13-etherstore",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "bffe7255c351724c3ab15f6c4c4909a3d756650791360e86cf2f71c48046aa79",
+        "actual": "bffe7255c351724c3ab15f6c4c4909a3d756650791360e86cf2f71c48046aa79",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "14-reentrance",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "afterTargetBalanceWei",
+        "attackerBalanceBeforeAttackWei",
+        "attackerBalanceWei",
+        "beforeTargetBalanceWei",
+        "extractedWei",
+        "profitWei",
+        "remainingCreditWei",
+        "seededBalanceWei",
+        "victimCreditAfterWei",
+        "victimCreditBeforeWei",
+        "victimFundingWei"
+      ],
+      "stateEvidence": [
+        "attackStatus"
+      ],
+      "changedPairs": [
+        "afterTargetBalanceWei",
+        "beforeTargetBalanceWei"
+      ],
+      "evidenceSha256": "dcf04dacfff66164ecc8120b1bf51e42a87b902ae2bd8d1923466a7a54417405",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 14-reentrance",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "78ebf8f92bb978386a96fb1b4bec2ad2aaa77916a6ed7e49c2ae74c92f466ea4",
+        "actual": "78ebf8f92bb978386a96fb1b4bec2ad2aaa77916a6ed7e49c2ae74c92f466ea4",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "15-reentrancy_simple",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "afterTargetBalanceWei",
+        "attackerBalanceBeforeAttackWei",
+        "attackerBalanceWei",
+        "beforeTargetBalanceWei",
+        "extractedWei",
+        "profitWei",
+        "remainingCreditWei",
+        "seededBalanceWei",
+        "victimCreditAfterWei",
+        "victimCreditBeforeWei",
+        "victimFundingWei"
+      ],
+      "stateEvidence": [
+        "attackStatus"
+      ],
+      "changedPairs": [
+        "afterTargetBalanceWei",
+        "beforeTargetBalanceWei"
+      ],
+      "evidenceSha256": "f6ce3971b1aeb5fe1ea31258b5b73f9b44457331d77c9f3ab8aeb06a1539ad87",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 15-reentrancy_simple",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "98b4c8b45c2e6711b1c58fb6991375f698a66f148799ca7aff6e27db8a9803e1",
+        "actual": "98b4c8b45c2e6711b1c58fb6991375f698a66f148799ca7aff6e27db8a9803e1",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "16-simple_dao",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "afterTargetBalanceWei",
+        "attackerBalanceAfterAttackWei",
+        "attackerBalanceBeforeAttackWei",
+        "attackerCreditAfterWei",
+        "attackerCreditBeforeWei",
+        "beforeTargetBalanceWei",
+        "extractedWei",
+        "profitWei",
+        "victimCreditAfterWei",
+        "victimCreditBeforeWei",
+        "victimFundingWei"
+      ],
+      "stateEvidence": [],
+      "changedPairs": [
+        "afterTargetBalanceWei",
+        "beforeTargetBalanceWei"
+      ],
+      "evidenceSha256": "b43ddfb25e355e87b967aaebb677a2566e9a340cbf55f509237872717179a1dc",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 16-simple_dao",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "bcd0fdfad9f6594fdbc940967321856490ed4bffbe8b6ab9c75c6b85072528a5",
+        "actual": "bcd0fdfad9f6594fdbc940967321856490ed4bffbe8b6ab9c75c6b85072528a5",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "17-timed_crowdsale",
+      "clean": false,
+      "knownIssues": [
+        "time_manipulation"
+      ],
+      "claimedState": "unconfirmed",
+      "claimedConfirmed": false,
+      "verdict": "not_reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "observation"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "88588321ef745269cb5b06f6d7788f9308ae64f8c10e134ff36e2b6ab65f7bef",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 17-timed_crowdsale",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "52fa5d86b7ee71874f54c1973562f0ff76b58a0a2ba2371e5193f783bd30222e",
+        "actual": "52fa5d86b7ee71874f54c1973562f0ff76b58a0a2ba2371e5193f783bd30222e",
+        "matched": true
+      },
+      "problems": [],
+      "reason": "timestamp_boundary_observed_without_state_or_asset_impact"
+    },
+    {
+      "caseId": "18-lotto",
+      "clean": false,
+      "knownIssues": [
+        "unchecked_low_level_calls"
+      ],
+      "claimedState": "unconfirmed",
+      "claimedConfirmed": false,
+      "verdict": "not_reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "observation"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "5d11919a284d8dff97bf1b004064bc6a34f06e9c4e6d09b6943fcf10e2c3e47b",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 18-lotto",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "09c8886de37a52a987d1a40588bd8fe352b8bb8bbfb9960caf8a6664a893b223",
+        "actual": "09c8886de37a52a987d1a40588bd8fe352b8bb8bbfb9960caf8a6664a893b223",
+        "matched": true
+      },
+      "problems": [],
+      "reason": "unchecked_send_observed_without_reachable_value_or_failure_impact"
+    },
+    {
+      "caseId": "19-mishandled",
+      "clean": false,
+      "knownIssues": [
+        "unchecked_low_level_calls"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "checkedReverted"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "ed1fbaf0304d11563ce6b1252290c23b30f5defabd3788b5d09f1541cfa9c93a",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 19-mishandled",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "ac992f26a8a567c74fe30e0f48d0c421d3f483ff431f6672a6dae5dd6c9e168d",
+        "actual": "ac992f26a8a567c74fe30e0f48d0c421d3f483ff431f6672a6dae5dd6c9e168d",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "20-reentrancy_cross_function",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "afterTargetBalanceWei",
+        "attackerBalanceBeforeAttackWei",
+        "attackerBalanceWei",
+        "beforeTargetBalanceWei",
+        "extractedWei",
+        "profitWei",
+        "remainingCreditWei",
+        "seededBalanceWei",
+        "victimCreditAfterWei",
+        "victimCreditBeforeWei",
+        "victimFundingWei"
+      ],
+      "stateEvidence": [
+        "attackStatus"
+      ],
+      "changedPairs": [
+        "afterTargetBalanceWei",
+        "beforeTargetBalanceWei"
+      ],
+      "evidenceSha256": "2aa9727ab9d29053864ce39f3ebba5e7794c7fab1416526f17e549564c35a3c5",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 20-reentrancy_cross_function",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "0196d033850b295690465d0f7d2baae8b3570df29c9d03d507496b45155a84e5",
+        "actual": "0196d033850b295690465d0f7d2baae8b3570df29c9d03d507496b45155a84e5",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "21-erc4626-donation",
+      "clean": false,
+      "knownIssues": [
+        "erc4626_donation"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "evidence_stale",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "attackerNetProfitWei",
+        "vaultBalanceAfterRedeem",
+        "vaultBalanceBeforeRedeem"
+      ],
+      "stateEvidence": [
+        "after",
+        "before",
+        "redeemStatus"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "38c6019993e283cf63a1f6a9c63f965d55e76a22bea061dd70a38bc5be0f2e7e",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 21-erc4626-donation",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "3a6e72d17cec1300696e39b8b7a748bf3b8d00468ec467683c537274d50b860d",
+        "actual": "c65fb8a7560db1a1ec6b23ad6b5d34fa447e72febbac3c8731df4b459b5e05b1",
+        "matched": false
+      },
+      "problems": [
+        "sourceSha256 与当前源码不符，证据绑定在旧版本上"
+      ],
+      "reason": null
+    },
+    {
+      "caseId": "22-erc4626-rounding",
+      "clean": false,
+      "knownIssues": [
+        "erc4626_rounding"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "evidence_stale",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "observation"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "415b5be9542f84e700f4779f2b51cb1ba34a2f7834493f08b79a7ad90dcdc483",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 22-erc4626-rounding",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "04553f84175897e85930c55e56f2b8cf517e11be4b2f4754ab78e6a045416b57",
+        "actual": "2a65f9c2da2fef439304aa61a4e1e798bf3ac41a35d881fd5e972a69df7a416f",
+        "matched": false
+      },
+      "problems": [
+        "sourceSha256 与当前源码不符，证据绑定在旧版本上"
+      ],
+      "reason": null
+    },
+    {
+      "caseId": "23-lending-health-factor",
+      "clean": false,
+      "knownIssues": [
+        "lending_health_factor"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "after",
+        "before"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "5cf6fcedd0809b6060432e7655c2b69b534245ff2c2197b6dbb935d55a97f131",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 23-lending-health-factor",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "da7b88c9747175d2eae448b19df074d019bfa7658f1f5895f65c446ef8d2cd46",
+        "actual": "da7b88c9747175d2eae448b19df074d019bfa7658f1f5895f65c446ef8d2cd46",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "24-lending-bad-debt",
+      "clean": false,
+      "knownIssues": [
+        "lending_bad_debt"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "evidence_stale",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "after",
+        "before"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "6a8504a3605b7942b472412c26c65a84b91e6ac5cbb09fde0625bdfa34682978",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 24-lending-bad-debt",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "39b7961179bfd33ec5662429a444c6898dba02bd23c677e4e703bf66d534b9c4",
+        "actual": "ae9dec6e7c03e9100f9262760f15f293a288c46bfc914026cdf4b2328094897e",
+        "matched": false
+      },
+      "problems": [
+        "sourceSha256 与当前源码不符，证据绑定在旧版本上"
+      ],
+      "reason": null
+    },
+    {
+      "caseId": "25-amm-k-decrease",
+      "clean": false,
+      "knownIssues": [
+        "amm_k_decrease"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "fabricated",
+      "hasEvidence": false,
+      "balanceEvidence": [],
+      "stateEvidence": [],
+      "changedPairs": [],
+      "evidenceSha256": "423b67d21398896243d704d40d371e97ba5e92063bc9d61efe7fe1aba4a30f40",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 25-amm-k-decrease",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "c2aa2d2c6cf4f8b7ede60a5ac69633ab649f0d0d0a414ea5c7dfc30607037981",
+        "actual": "c2aa2d2c6cf4f8b7ede60a5ac69633ab649f0d0d0a414ea5c7dfc30607037981",
+        "matched": true
+      },
+      "problems": [
+        "声称复现成功，但没有任何余额或状态前后证据"
+      ],
+      "reason": null
+    },
+    {
+      "caseId": "26-amm-fee",
+      "clean": false,
+      "knownIssues": [
+        "amm_fee_accounting"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "unauthorizedCaller"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "17ddb2d3c655d4b512898a99c9c92b87ccd8f104db1b9724f155635d2a7db5c5",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 26-amm-fee",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "83d8de17cc5b3b5b7bce29a4637087926a6e79571330c2cf1b777f1f45d50e5f",
+        "actual": "83d8de17cc5b3b5b7bce29a4637087926a6e79571330c2cf1b777f1f45d50e5f",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "27-oracle-stale",
+      "clean": false,
+      "knownIssues": [
+        "oracle_stale_price"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "fabricated",
+      "hasEvidence": false,
+      "balanceEvidence": [],
+      "stateEvidence": [],
+      "changedPairs": [],
+      "evidenceSha256": "0b42fd352d0f5007ede594b85b25255dfa151f851827cac0d792fd52a14da5bf",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 27-oracle-stale",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "0d34cc2d1984e820eeaf026926a7e9b545a332f7c74324a345fef97a855eb5df",
+        "actual": "0d34cc2d1984e820eeaf026926a7e9b545a332f7c74324a345fef97a855eb5df",
+        "matched": true
+      },
+      "problems": [
+        "声称复现成功，但没有任何余额或状态前后证据"
+      ],
+      "reason": null
+    },
+    {
+      "caseId": "28-cross-call",
+      "clean": false,
+      "knownIssues": [
+        "unchecked_cross_contract_assumption"
+      ],
+      "claimedState": "unconfirmed",
+      "claimedConfirmed": false,
+      "verdict": "not_reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "observationConfirmed"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "b141b8dbf6fa1568abc5c17bd54ca59d7a09a6a9061284dfceceb8e97b88ccd9",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 28-cross-call",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "796b73d83823023a234fe51756faabda0776665554fb4d7fbd1142ab1e2ba89b",
+        "actual": "796b73d83823023a234fe51756faabda0776665554fb4d7fbd1142ab1e2ba89b",
+        "matched": true
+      },
+      "problems": [],
+      "reason": "false_return_observed_without_downstream_failure_or_asset_impact"
+    },
+    {
+      "caseId": "29-delegatecall",
+      "clean": false,
+      "knownIssues": [
+        "unprotected_upgrade"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "delegatecallWroteAttacker"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "22dcd5d345887974f5c31a7880a6e6cf60cbd1ff37d43d0da4a370a46857cc49",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 29-delegatecall",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "c664f6ab2814325b9ec7cded9376e1bfda500fb5e7fe7d4733ed2cad43c20895",
+        "actual": "c664f6ab2814325b9ec7cded9376e1bfda500fb5e7fe7d4733ed2cad43c20895",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "30-reentrancy-withdraw",
+      "clean": false,
+      "knownIssues": [
+        "reentrancy"
+      ],
+      "claimedState": "passed",
+      "claimedConfirmed": true,
+      "verdict": "evidence_stale",
+      "hasEvidence": true,
+      "balanceEvidence": [
+        "afterTargetBalance",
+        "attackerContractBalanceWei",
+        "beforeTargetBalance",
+        "exploitBalance",
+        "profitWei"
+      ],
+      "stateEvidence": [],
+      "changedPairs": [
+        "afterTargetBalance",
+        "beforeTargetBalance"
+      ],
+      "evidenceSha256": "f5040f72e1a5a3b61abbd6650be5856d33f21cbec9cdf7967c95e17cd31436ca",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 30-reentrancy-withdraw",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "1eae3c1cca532a5c25c32caaac820ce42653ac28b641a384a91c65371cd95faf",
+        "actual": "1abffe17b53de8d20aa8690bfa62cdf8b806aebdd877a8ec6fbbd7a7e70033d1",
+        "matched": false
+      },
+      "problems": [
+        "sourceSha256 与当前源码不符，证据绑定在旧版本上"
+      ],
+      "reason": null
+    },
+    {
+      "caseId": "31-clean-vault",
+      "clean": true,
+      "knownIssues": [],
+      "claimedState": "control_passed",
+      "claimedConfirmed": false,
+      "verdict": "not_reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "controlPassed",
+        "invalidControl",
+        "observations",
+        "rejectedActions"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "4fd72f816be46132a4b462e0f198fbc32d047501a3c022c1a826fbe341dec64a",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 31-clean-vault",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "be5c0c53754d19ce0f6bce8cce81e4f63a4b9da4f7f268e5a1bd642086d1450f",
+        "actual": "be5c0c53754d19ce0f6bce8cce81e4f63a4b9da4f7f268e5a1bd642086d1450f",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "32-clean-lending",
+      "clean": true,
+      "knownIssues": [],
+      "claimedState": "control_passed",
+      "claimedConfirmed": false,
+      "verdict": "not_reproduced",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "controlPassed",
+        "invalidControl",
+        "observations",
+        "rejectedActions"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "ead1ef0564f3d4a5b19f2f1e53a1d4b6e0861aee306edb90e292d4833c83913c",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 32-clean-lending",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "946ef29bde9740ff2f4e0b6d5308af392186d34bafc65ffac89697cb7a9962f8",
+        "actual": "946ef29bde9740ff2f4e0b6d5308af392186d34bafc65ffac89697cb7a9962f8",
+        "matched": true
+      },
+      "problems": [],
+      "reason": null
+    },
+    {
+      "caseId": "33-clean-amm",
+      "clean": true,
+      "knownIssues": [],
+      "claimedState": "control_passed",
+      "claimedConfirmed": false,
+      "verdict": "evidence_stale",
+      "hasEvidence": true,
+      "balanceEvidence": [],
+      "stateEvidence": [
+        "controlPassed",
+        "invalidControl",
+        "observations",
+        "rejectedActions"
+      ],
+      "changedPairs": [],
+      "evidenceSha256": "69c7c153fe23bb4c23a0b02f4092252e96d24d39c8962caf46aa7a1921fe6f3f",
+      "reproduceCommand": "python3 scripts/benchmark-dynamic.py --case 33-clean-amm",
+      "sourceBinding": {
+        "checked": true,
+        "recorded": "40348d577e0cfd608572553c3ce0f75ae0ac4c486ce94aac52198608c530ea30",
+        "actual": "165fb0409dc1c4c2eb819023d2565bf51ffa4cd9af29442ca57fb1d2343f38f6",
+        "matched": false
+      },
+      "problems": [
+        "sourceSha256 与当前源码不符，证据绑定在旧版本上"
+      ],
+      "reason": null
+    }
+  ]
+}
