@@ -56,12 +56,48 @@ class DynamicRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = manifest(directory)
             forge = Path(directory) / 'forge-mock'
-            forge.write_text('#!/bin/sh\nprintf "1 failed: invariant\n" >&2\nexit 1\n')
+            # Realistic forge output.  The runner distinguishes an assertion that
+            # broke from a harness that never started by looking for evidence
+            # that a test actually ran, so a stub has to emit that evidence -- the
+            # previous `1 failed: invariant` matched no branch of any format forge
+            # produces, and it passed only because an unrecognised output used to
+            # be read as `violated`.  The real-forge fixture below covers the
+            # genuine path.
+            forge.write_text('#!/bin/sh\n'
+                             'printf "Ran 1 test for test/Invariant.t.sol\\n'
+                             '[FAIL: invariant] testInvariant() (gas: 76755)\\n" >&2\nexit 1\n')
             forge.chmod(0o755)
             with patch.object(RUNNER, '_rpc_block_hash', side_effect=AssertionError('network called')):
                 results = RUNNER.run_harness(path, mode='local', forge=forge)
             self.assertEqual(results[0]['state'], 'violated')
             self.assertEqual(len(results[0]['evidenceSha256']), 64)
+
+    def test_output_that_cannot_tell_a_failure_from_a_broken_harness_is_unavailable(self):
+        # A missing compiler, a bad toolchain, or anything else forge reports
+        # without running a test is not a detection.  Read as `violated` it made
+        # every collected bundle look like it had findings, with the real cause
+        # sitting in the output text that nothing looked at.
+        with tempfile.TemporaryDirectory() as directory:
+            path = manifest(directory)
+            forge = Path(directory) / 'forge-mock'
+            forge.write_text('#!/bin/sh\n'
+                             'printf "Error: Encountered invalid compiler version in src/A.sol: '
+                             'No compiler version installed that matches >=0.6.0, <0.8.0\\n" >&2\nexit 1\n')
+            forge.chmod(0o755)
+            results = RUNNER.run_harness(path, mode='local', forge=forge)
+            self.assertEqual(results[0]['state'], 'unavailable')
+            self.assertEqual(results[0]['reason'], 'required_compiler_not_installed')
+
+    def test_an_unrecognised_failure_is_unavailable_rather_than_violated(self):
+        # The general rule: an error nobody anticipated is not evidence that a
+        # protocol property broke.
+        with tempfile.TemporaryDirectory() as directory:
+            path = manifest(directory)
+            forge = Path(directory) / 'forge-mock'
+            forge.write_text('#!/bin/sh\nprintf "Error: something new\\n" >&2\nexit 1\n')
+            forge.chmod(0o755)
+            results = RUNNER.run_harness(path, mode='local', forge=forge)
+            self.assertEqual(results[0]['state'], 'unavailable')
 
     def test_compilation_failure_is_unavailable(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -72,22 +108,50 @@ class DynamicRunnerTests(unittest.TestCase):
             results = RUNNER.run_harness(path, mode='local', forge=forge)
             self.assertEqual(results[0]['state'], 'unavailable')
 
-    def test_forge_fixture_that_breaks_an_invariant_is_violated(self):
+    def _real_forge_run(self, suites, manifest_ids):
+        """Run real forge over hand-written suites named the way the generator names them.
+
+        `suites` maps invariantId -> the require() condition that suite uses;
+        `manifest_ids` is what the manifest claims was generated, which may be
+        more than what exists on disk.
+        """
         forge = ROOT / 'work' / 'tools' / 'forge'
         if not forge.is_file():
             self.skipTest('bundled forge binary is unavailable')
         with tempfile.TemporaryDirectory() as directory:
-            path = manifest(directory)
-            (path / 'test').mkdir()
-            (path / 'test' / 'Invariant.t.sol').write_text('''// SPDX-License-Identifier: MIT
-pragma solidity >=0.8.19;
-contract InvariantFixture {
-    function testInvariant() public pure { require(false, "invariant violated"); }
-}
-''')
-            results = RUNNER.run_harness(path, mode='local', forge=forge)
-            self.assertEqual(results[0]['state'], 'violated')
-            self.assertEqual(len(results[0]['evidenceSha256']), 64)
+            path = Path(directory)
+            (path / 'test').mkdir(parents=True, exist_ok=True)
+            (path / 'foundry.toml').write_text('[profile.default]\nsrc = "src"\ntest = "test"\n')
+            for identifier, condition in suites.items():
+                stem = 'Invariant_%s' % identifier[:16]
+                (path / 'test' / (stem + '.t.sol')).write_text(
+                    '// SPDX-License-Identifier: MIT\npragma solidity >=0.8.19;\n'
+                    'contract %s {\n    function testInvariant() public pure { require(%s, "invariant violated"); }\n}\n'
+                    % (stem, condition))
+            (path / 'harness.json').write_text(json.dumps({'schemaVersion': 1, 'tests': [
+                {'invariantId': identifier, 'path': 'test/Invariant_%s.t.sol' % identifier[:16],
+                 'template': 'probe', 'status': 'unverified'} for identifier in manifest_ids]}))
+            return {row['invariantId']: row for row in RUNNER.run_harness(path, mode='local', forge=forge)}
+
+    def test_forge_fixture_that_breaks_an_invariant_is_violated(self):
+        identifier = hashlib.sha256(b'invariant').hexdigest()
+        rows = self._real_forge_run({identifier: 'false'}, [identifier])
+        self.assertEqual(rows[identifier]['state'], 'violated')
+        self.assertEqual(len(rows[identifier]['evidenceSha256']), 64)
+
+    def test_real_forge_attributes_each_suite_and_reports_the_one_it_never_ran(self):
+        # Against real forge, not a mock: the suite key forge emits must be the
+        # key attribution looks for, or every assertion would read as missing.
+        broken = hashlib.sha256(b'broken').hexdigest()
+        holding = hashlib.sha256(b'holding').hexdigest()
+        never_generated = hashlib.sha256(b'absent').hexdigest()
+        rows = self._real_forge_run({broken: 'false', holding: 'true'},
+                                    [broken, holding, never_generated])
+        self.assertEqual(rows[broken]['state'], 'violated')
+        self.assertEqual(rows[holding]['state'], 'passed')
+        self.assertEqual(rows[never_generated]['state'], 'unavailable')
+        self.assertEqual(rows[never_generated]['reason'], 'suite_result_missing')
+        self.assertEqual(rows[broken]['suiteReconciliation'], {'generated': 3, 'recorded': 2, 'missing': 1})
 
 
 if __name__ == '__main__':
