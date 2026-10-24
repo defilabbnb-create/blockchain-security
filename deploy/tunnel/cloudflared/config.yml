@@ -1,0 +1,35 @@
+tunnel: d2d5fc4c-7476-441e-9fc6-631e4dd0a3cb
+credentials-file: /Users/d288/Desktop/区块链安全/deploy/tunnel/cloudflared/credentials.json
+
+# 协议说明：本机 Shadowrocket 开了 fake-ip，region*.v2.argotunnel.com 被解析到
+# 198.18.x.x 假 IP，QUIC(UDP 7844) 在这条路径上不通，http2(TCP 7844) 的 TLS
+# 握手也会被截断（TLS handshake with edge error: EOF）。
+# 因此强制 http2；真实边缘 IP 与 --edge-bind-address 由 run.sh 在启动时注入，
+# 详见 run.sh 顶部说明（三项条件缺一不可）。
+protocol: http2
+edge-ip-version: "4"
+
+# 多线程/多连接：4 条并行边缘连接分担请求，提升吞吐与稳定性。
+ha-connections: 4
+
+no-autoupdate: true
+no-prechecks: true
+grace-period: 30s
+metrics: 127.0.0.1:20241
+
+# 隧道三层结构：
+#   公网 -> Cloudflare 边缘 -> cloudflared -> 127.0.0.1:8789(自建代理) -> 127.0.0.1:8788(Web 服务)
+# 中间那层代理负责：Basic Auth 口令校验、改写 Host/Origin（应用只允许本机访问）、
+# 把 chunked 响应转成 Content-Length 定长返回。
+# 这里不要直接指 8788：那样会绕过口令保护，应用也会因 Host 校验返回 403。
+ingress:
+  - hostname: blksec.luckytad.vip
+    service: http://127.0.0.1:8789
+    originRequest:
+      connectTimeout: 30s
+      noHappyEyeballs: false
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      # 保持 false：SSE (/api/events) 需要流式传输，不能缓冲成定长。
+      disableChunkedEncoding: false
+  - service: http_status:404

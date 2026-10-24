@@ -19,6 +19,15 @@ work/
 reports/
 .DS_Store
 
+# 隧道部署配置进版本控制（deploy/ 不在 work/ 的忽略范围内），
+# 但密钥与口令绝不入库：
+#   credentials.json 含 Cloudflare TunnelSecret（等于隧道接管凭据）
+#   .plainpass / .bcrypt 是公网访问口令
+# 换机器时用同目录的 *.example 模板重建这两个文件。
+deploy/tunnel/cloudflared/credentials.json
+deploy/tunnel/.plainpass
+deploy/tunnel/.bcrypt
+
 # 本地生成物：语料与训练语料快照、体量大，不入库（work/ 之外的）。
 training-data/
 benchmark/results/

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>NO_PROXY</key>
+		<string>127.0.0.1,localhost,::1</string>
+		<key>no_proxy</key>
+		<string>127.0.0.1,localhost,::1</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>Label</key>
+	<string>com.d288.security.webtunnel.serveo-watchdog</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/python3</string>
+		<string>/Users/d288/Library/Application Support/SecurityWebTunnel/serveo-watchdog.py</string>
+		<string>once</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>120</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/d288/Library/Logs/SecurityWebTunnel/serveo-watchdog.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/d288/Library/Logs/SecurityWebTunnel/serveo-watchdog.log</string>
+	<key>ThrottleInterval</key>
+	<integer>30</integer>
+	<key>WorkingDirectory</key>
+	<string>/</string>
+</dict>
+</plist>

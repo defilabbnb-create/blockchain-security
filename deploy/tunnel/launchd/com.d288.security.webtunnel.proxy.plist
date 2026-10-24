@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>NO_PROXY</key>
+		<string>127.0.0.1,localhost,::1</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>no_proxy</key>
+		<string>127.0.0.1,localhost,::1</string>
+		<key>TUNNEL_PASS_FILE</key>
+		<string>/Users/d288/Desktop/区块链安全/deploy/tunnel/.plainpass</string>
+		<key>TUNNEL_PROXY_PORT</key>
+		<string>8789</string>
+		<key>TUNNEL_REQUIRE_AUTH</key>
+		<!-- 0 = 免口令，浏览器直接打开 https://blksec.luckytad.vip 即可访问。
+		     改成 1 即恢复口令保护，无需改动任何代码。 -->
+		<string>0</string>
+		<key>TUNNEL_UPSTREAM_PORT</key>
+		<string>8788</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.d288.security.webtunnel.proxy</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>/Users/d288/Desktop/区块链安全/deploy/tunnel/proxy-server.mjs</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/d288/Library/Logs/SecurityWebTunnel/proxy.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/d288/Library/Logs/SecurityWebTunnel/proxy.log</string>
+	<key>ThrottleInterval</key>
+	<integer>15</integer>
+	<key>WorkingDirectory</key>
+	<string>/</string>
+</dict>
+</plist>

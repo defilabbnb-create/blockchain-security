@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<!-- 隧道出站要绕开 Shadowrocket 的 TUN，run.sh 会用 --edge-bind-address
+		     绑定物理网卡；这里再排除代理环境变量，避免 http2 走代理。 -->
+		<key>NO_PROXY</key>
+		<string>127.0.0.1,localhost,::1</string>
+		<key>no_proxy</key>
+		<string>127.0.0.1,localhost,::1</string>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.d288.security.webtunnel.cloudflared</string>
+	<key>ProgramArguments</key>
+	<array>
+		<!-- 不能直接指向 Desktop 下的脚本：那边带 com.apple.macl 标记（TCC），
+		     launchd 执行会 EPERM（exit 126）。这个副本用 cp -X 复制，不带该标记。
+		     源文件：deploy/tunnel/cloudflared/run.sh（改动后需重新 cp -X 同步）。 -->
+		<string>/bin/sh</string>
+		<string>/Users/d288/Library/Application Support/SecurityWebTunnel/run-cloudflared.sh</string>
+	</array>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/d288/Library/Logs/SecurityWebTunnel/cloudflared.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/d288/Library/Logs/SecurityWebTunnel/cloudflared.log</string>
+	<key>ThrottleInterval</key>
+	<integer>15</integer>
+	<key>WorkingDirectory</key>
+	<string>/</string>
+</dict>
+</plist>

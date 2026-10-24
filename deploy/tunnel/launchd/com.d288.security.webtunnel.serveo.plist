@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>NO_PROXY</key>
+		<string>127.0.0.1,localhost,::1</string>
+		<key>PATH</key>
+		<string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>no_proxy</key>
+		<string>127.0.0.1,localhost,::1</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.d288.security.webtunnel.serveo</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/ssh</string>
+		<string>-o</string>
+		<string>StrictHostKeyChecking=no</string>
+		<string>-o</string>
+		<string>ServerAliveInterval=30</string>
+		<string>-o</string>
+		<string>ServerAliveCountMax=3</string>
+		<string>-o</string>
+		<string>ExitOnForwardFailure=yes</string>
+		<!-- 不能用 -N：serveo 需要分配会话才会在 stdout 打印分配到的域名，
+		     -N 会导致日志里拿不到公网地址。 -->
+		<string>-R</string>
+		<string>80:localhost:8789</string>
+		<string>serveo.net</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/d288/Library/Logs/SecurityWebTunnel/serveo.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/d288/Library/Logs/SecurityWebTunnel/serveo.log</string>
+	<key>ThrottleInterval</key>
+	<integer>15</integer>
+	<key>WorkingDirectory</key>
+	<string>/</string>
+</dict>
+</plist>

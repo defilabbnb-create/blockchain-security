@@ -1,0 +1,4 @@
+# 公网访问口令（Basic Auth 的密码部分，用户名固定为 sec）。
+# 换机器时把本文件复制为 deploy/tunnel/.plainpass 并填入实际口令。
+# 该文件已被 .gitignore 排除，不要提交真实口令。
+# 生成方式：openssl rand -base64 24 | tr -d '\n'
