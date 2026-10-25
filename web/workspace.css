@@ -1,0 +1,1032 @@
+/* ==========================================================================
+   运维工作区（#workspace-view）专用样式。
+
+   约定：
+   - 只在 #workspace-view 作用域内覆盖共享类；共享类本身定义在 styles.css，不改。
+   - 所有新选择器加 .ws- 前缀，避免与其它并行任务的样式冲突。
+   - 深色主题保留；圆角、阴影、字号层级、状态徽章「图标 + 文字 + 颜色」三重编码。
+   ========================================================================== */
+
+/* ---------- 页头 ---------- */
+#workspace-view .ws-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 18px 24px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+#workspace-view .ws-head-main { min-width: 0; }
+#workspace-view .ws-head .eyebrow { gap: 10px; }
+#workspace-view .ws-head h1 {
+  margin: 10px 0 0;
+  font-size: clamp(24px, 2.6vw, 34px);
+  line-height: 1.18;
+  letter-spacing: -.02em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+#workspace-view .ws-head-lead {
+  margin: 10px 0 0;
+  max-width: 78ch;
+  /* 说明里会带 64 位十六进制的漏洞 / 任务 ID，没有断点；不允许它把页面撑出横向滚动条。 */
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.75;
+}
+#workspace-view .ws-head-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 14px;
+}
+/* 只读 / 会改数据 的明确标记：图标 + 文字 + 颜色，三重编码 */
+#workspace-view .ws-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: 600 11px/1.4 var(--sans);
+  white-space: nowrap;
+}
+#workspace-view .ws-flag i { font-style: normal; font-size: 12px; line-height: 1; }
+#workspace-view .ws-flag-readonly { color: var(--info); background: var(--info-bg); }
+#workspace-view .ws-flag-write { color: var(--warn); background: var(--warn-bg); }
+#workspace-view .ws-flag-write::before { content: '✎'; font-style: normal; }
+#workspace-view .ws-flag-readonly::before { content: '👁'; font-style: normal; }
+#workspace-view .ws-head-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ---------- 卡片 ---------- */
+#workspace-view .workspace-body { gap: 18px; padding-top: 24px; }
+#workspace-view .workspace-card {
+  border-radius: var(--radius-lg);
+  border-color: var(--line);
+  background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface-1) 100%);
+  box-shadow: var(--shadow-card);
+}
+#workspace-view .workspace-card-head {
+  padding: 16px 20px 13px;
+  align-items: center;
+}
+#workspace-view .workspace-card-head h2 {
+  font-size: 15px;
+  letter-spacing: -.01em;
+}
+#workspace-view .workspace-card-head p {
+  margin: 5px 0 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.6;
+}
+#workspace-view .ws-card-body { padding: 4px 20px 18px; }
+
+/* ---------- 计数条 ---------- */
+#workspace-view .workspace-counts {
+  border-radius: var(--radius);
+  overflow: hidden;
+  border-color: var(--line);
+  gap: 1px;
+}
+#workspace-view .workspace-count {
+  min-height: 76px;
+  padding: 14px 16px;
+  gap: 6px;
+  background: var(--surface-1);
+}
+#workspace-view .workspace-count span { font-size: 11px; }
+#workspace-view .workspace-count b { font-size: 21px; letter-spacing: -.02em; }
+
+/* ---------- 表格：窄屏横向滚动，不撑破页面 ---------- */
+#workspace-view .workspace-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  max-width: 100%;
+}
+#workspace-view .workspace-table { min-width: 560px; }
+#workspace-view .workspace-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface-2);
+  font: 600 10px/1.5 var(--sans);
+  letter-spacing: .04em;
+  padding: 11px 12px;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line-bright);
+}
+#workspace-view .workspace-table td {
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  max-width: 340px;
+}
+#workspace-view .workspace-table tbody tr:nth-child(even) { background: rgba(255, 255, 255, .012); }
+#workspace-view .workspace-table tbody tr:hover { background: var(--surface-hover); }
+#workspace-view .ws-table-hint {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 10px 20px 0;
+  color: var(--faint);
+  font-size: 11px;
+}
+/* 长地址 / 哈希：可换行 + 完整值在 title */
+#workspace-view .ws-value {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: var(--muted);
+  font: 11px/1.6 var(--mono);
+}
+#workspace-view .ws-value-block {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+#workspace-view code.ws-clip {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  color: var(--faint);
+  font: 10px/1.6 var(--mono);
+}
+
+/* ---------- 状态徽章：图标 + 文字 + 颜色 ---------- */
+#workspace-view .ws-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font: 600 11px/1.4 var(--sans);
+  white-space: nowrap;
+}
+#workspace-view .ws-badge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+#workspace-view .ws-badge-ok { color: var(--ok); background: var(--ok-bg); }
+#workspace-view .ws-badge-warn { color: var(--warn); background: var(--warn-bg); }
+#workspace-view .ws-badge-danger { color: var(--danger); background: var(--danger-bg); }
+#workspace-view .ws-badge-info { color: var(--info); background: var(--info-bg); }
+#workspace-view .ws-badge-muted { color: var(--muted); background: rgba(139, 156, 163, .12); }
+
+/* ---------- 表单 ---------- */
+#workspace-view .workspace-form { padding: 16px 20px 20px; }
+#workspace-view .workspace-form-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+#workspace-view .workspace-form-note {
+  margin: 7px 0 14px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+#workspace-view .workspace-form-grid { gap: 12px; }
+#workspace-view .workspace-form label,
+#workspace-view .workspace-filters label {
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 500;
+}
+/* 标签与输入垂直排列，标签在上、控件在下 */
+#workspace-view .workspace-form input,
+#workspace-view .workspace-form select,
+#workspace-view .workspace-form textarea,
+#workspace-view .workspace-filters input,
+#workspace-view .workspace-filters select,
+#workspace-view .workspace-ask-form input,
+#workspace-view .corpus-filters select {
+  min-height: 38px;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-bright);
+  background: #0d161d;
+  color: var(--text);
+  font-size: 12.5px;
+  outline: 0;
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+#workspace-view .workspace-form textarea { min-height: 84px; line-height: 1.6; }
+#workspace-view .workspace-form input:hover:not(:disabled),
+#workspace-view .workspace-form select:hover:not(:disabled),
+#workspace-view .workspace-form textarea:hover:not(:disabled),
+#workspace-view .workspace-filters input:hover,
+#workspace-view .workspace-filters select:hover {
+  border-color: #3d5765;
+}
+#workspace-view .workspace-form input:focus,
+#workspace-view .workspace-form select:focus,
+#workspace-view .workspace-form textarea:focus,
+#workspace-view .workspace-filters input:focus,
+#workspace-view .workspace-filters select:focus,
+#workspace-view .workspace-ask-form input:focus {
+  border-color: var(--teal-deep);
+  box-shadow: var(--focus-ring);
+}
+#workspace-view .workspace-form input:disabled,
+#workspace-view .workspace-form select:disabled,
+#workspace-view .workspace-form textarea:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+#workspace-view .workspace-form input::placeholder,
+#workspace-view .workspace-form textarea::placeholder,
+#workspace-view .workspace-ask-form input::placeholder { color: #5d7079; }
+
+/* 提交按钮：会改数据的按钮旁明确写「会创建/修改什么」 */
+#workspace-view .workspace-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  margin-top: 14px;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--teal-deep);
+  background: #163a3a;
+  color: var(--teal);
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: background .16s ease, border-color .16s ease, opacity .16s ease;
+}
+#workspace-view .workspace-submit:hover:not(:disabled) { background: #1b4b48; border-color: var(--teal); }
+#workspace-view .workspace-submit:disabled { opacity: .5; cursor: not-allowed; }
+/* 破坏性 / 会改数据的动作 */
+#workspace-view .ws-submit-write {
+  border-color: #6f5938;
+  background: #241d10;
+  color: var(--warn);
+}
+#workspace-view .ws-submit-write:hover:not(:disabled) { background: #2f2513; border-color: var(--warn); }
+#workspace-view .ws-submit-danger {
+  border-color: #754240;
+  background: #241414;
+  color: var(--red);
+}
+#workspace-view .ws-submit-danger:hover:not(:disabled) { background: #2f1818; border-color: var(--red); }
+
+/* 按钮旁 / 表单下的影响说明 */
+#workspace-view .ws-effect {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 10px 0 0;
+  color: var(--warn);
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+#workspace-view .ws-effect i { font-style: normal; flex: 0 0 auto; }
+#workspace-view .ws-effect-write { color: var(--warn); }
+#workspace-view .ws-effect-read { color: var(--info); }
+#workspace-view .ws-effect-neutral { color: var(--faint); }
+
+/* 结果反馈 */
+#workspace-view .workspace-form-result {
+  display: block;
+  min-height: 20px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--line-bright);
+  background: rgba(255, 255, 255, .02);
+  color: var(--muted);
+  font: 12px/1.6 var(--sans);
+  overflow-wrap: anywhere;
+}
+#workspace-view .workspace-form-result:empty { display: none; }
+#workspace-view .workspace-form-result[data-state="ready"] {
+  border-left-color: var(--ok);
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+#workspace-view .workspace-form-result[data-state="error"] {
+  border-left-color: var(--danger);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+#workspace-view .workspace-form-result[data-state="loading"] {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+#workspace-view .workspace-form-result[data-state="loading"]::before {
+  content: '⟳ ';
+  display: inline-block;
+  animation: ws-spin 1.1s linear infinite;
+}
+@keyframes ws-spin { to { transform: rotate(360deg); } }
+
+/* ---------- 状态提示条 ---------- */
+#workspace-view .workspace-status {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+#workspace-view .workspace-status-info { border-left-color: var(--info); background: var(--info-bg); }
+#workspace-view .workspace-status-empty { border-left-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+/* workspace-status-warn：styles.css 里没有这条（共享文件不归本任务改），
+   离线阶段提示条与云端通道未配置提示都靠它。没有它会掉到默认无左边框样式。 */
+#workspace-view .workspace-status-warn {
+  border-left-color: var(--warn);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+#workspace-view .workspace-status-error { border-left-color: var(--danger); background: var(--danger-bg); color: var(--danger); }
+#workspace-view .workspace-status strong { color: var(--text); }
+#workspace-view .workspace-status-warn strong { color: var(--warn); }
+
+/* ---------- 页头「下一步」导航 ---------- */
+#workspace-view .ws-next {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 20px;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, .015);
+}
+#workspace-view .ws-next > strong {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font: 600 10px/1.6 var(--sans);
+  letter-spacing: .06em;
+}
+#workspace-view .ws-next > span { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+#workspace-view .ws-next a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  color: var(--teal);
+  font-size: 12px;
+  text-decoration: underline;
+  text-decoration-color: #2f5e59;
+  text-underline-offset: 3px;
+}
+#workspace-view .ws-next a:hover { color: var(--text); }
+#workspace-view .ws-next a span[aria-hidden] { color: var(--faint); }
+
+/* ---------- 错误补充说明（后端原始错误文本） ---------- */
+#workspace-view .ws-inline-error-detail {
+  display: block;
+  margin-top: 6px;
+  padding-left: 9px;
+  border-left: 2px solid var(--danger);
+  color: var(--faint);
+  font: 11px/1.6 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- 空状态：告诉用户下一步做什么 ---------- */
+#workspace-view .ws-empty {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding: 26px 22px;
+  border: 1px dashed var(--line-bright);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, .015);
+}
+#workspace-view .ws-empty-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+#workspace-view .ws-empty-title i { font-style: normal; }
+#workspace-view .ws-empty-text { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+#workspace-view .ws-empty-links { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 4px; }
+#workspace-view .ws-empty-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--teal);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: #2f5e59;
+}
+#workspace-view .ws-empty-links a:hover { color: var(--text); }
+
+/* ---------- 骨架 / 读取中 ---------- */
+#workspace-view .ws-loading {
+  display: grid;
+  gap: 10px;
+  padding: 20px;
+}
+#workspace-view .ws-skeleton {
+  height: 13px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #16232c 25%, #1e2f3a 37%, #16232c 63%);
+  background-size: 400% 100%;
+  animation: ws-shimmer 1.4s ease infinite;
+}
+#workspace-view .ws-skeleton:nth-child(1) { width: 42%; }
+#workspace-view .ws-skeleton:nth-child(2) { width: 72%; }
+#workspace-view .ws-skeleton:nth-child(3) { width: 58%; }
+#workspace-view .ws-skeleton:nth-child(4) { width: 66%; }
+@keyframes ws-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+#workspace-view .ws-loading-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+#workspace-view .ws-loading-note::before {
+  content: '⟳';
+  display: inline-block;
+  animation: ws-spin 1.1s linear infinite;
+}
+
+/* ---------- 状态条补充变体 ----------
+   app.js 会用 workspaceStatus(msg, 'warn')，但共享样式只有 info/empty/error，
+   缺 warn 就会掉回默认灰边，提示层级丢失。这里补齐。 */
+#workspace-view .workspace-status-warn {
+  border-left-color: var(--amber);
+  color: var(--amber);
+}
+
+/* ---------- 页头「下一步」导航 ----------
+   workspaceFrame 的 next 参数会渲染 .ws-next，之前没有任何样式，
+   链接会裸着堆在正文末尾，读者不知道这是导航。 */
+#workspace-view .ws-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--teal);
+  background: var(--bg-panel);
+  font-size: 12px;
+}
+#workspace-view .ws-next > strong {
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+#workspace-view .ws-next > span {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+#workspace-view .ws-next a {
+  color: var(--teal);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+#workspace-view .ws-next a:hover {
+  color: var(--text);
+  border-bottom-color: var(--teal);
+}
+#workspace-view .ws-next a:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--teal));
+  outline-offset: 3px;
+}
+
+/* ---------- 表单内联错误明细 ----------
+   离线被拒时主句是「当前处于离线阶段…」，后端原始 error 放小字补充，
+   不能和主句混成一段。 */
+#workspace-view .ws-inline-error-detail {
+  display: block;
+  margin-top: 4px;
+  color: var(--faint);
+  font: 10px/1.6 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- 定义列表 ---------- */
+#workspace-view .workspace-definition { padding: 6px 20px 16px; }
+#workspace-view .workspace-definition > div {
+  grid-template-columns: minmax(96px, 132px) minmax(0, 1fr);
+  gap: 14px;
+  padding: 11px 0;
+}
+#workspace-view .workspace-definition dt { font-size: 11px; color: var(--faint); }
+#workspace-view .workspace-definition dd { font-size: 12px; line-height: 1.65; }
+
+/* ---------- 折叠 / JSON ---------- */
+#workspace-view .workspace-json {
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+}
+#workspace-view .workspace-json summary,
+#workspace-view .ws-fold summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--teal);
+  font-size: 12px;
+  list-style: none;
+  min-height: 32px;
+}
+#workspace-view .workspace-json summary::-webkit-details-marker,
+#workspace-view .ws-fold summary::-webkit-details-marker { display: none; }
+#workspace-view .workspace-json summary::before,
+#workspace-view .ws-fold summary::before {
+  content: '▸';
+  display: inline-block;
+  transition: transform .16s ease;
+  color: var(--faint);
+}
+#workspace-view .workspace-json[open] summary::before,
+#workspace-view .ws-fold[open] summary::before { transform: rotate(90deg); }
+#workspace-view .workspace-json pre {
+  max-height: 340px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  line-height: 1.65;
+}
+#workspace-view .ws-fold {
+  border-top: 1px solid var(--line);
+  padding: 10px 0;
+}
+#workspace-view .ws-fold pre {
+  max-height: 340px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 9px 0 0;
+  padding: 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: #0d161d;
+  color: var(--muted);
+  font: 11px/1.65 var(--mono);
+}
+
+/* ---------- 行内动作按钮 ---------- */
+#workspace-view .workspace-link {
+  color: var(--teal);
+  text-decoration: underline;
+  text-decoration-color: #2f5e59;
+  text-underline-offset: 3px;
+}
+#workspace-view .workspace-link:hover { color: var(--text); }
+/* 按钮型的 workspace-link：需要 ≥36px 的点击区域 */
+#workspace-view button.workspace-link,
+#workspace-view .ws-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .03);
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, color .16s ease;
+}
+#workspace-view button.workspace-link:hover:not(:disabled),
+#workspace-view .ws-btn:hover:not(:disabled) {
+  border-color: var(--teal-deep);
+  background: #16302f;
+  color: var(--text);
+}
+#workspace-view button.workspace-link:disabled,
+#workspace-view .ws-btn:disabled { opacity: .42; cursor: not-allowed; }
+#workspace-view .ws-btn-danger { border-color: #754240; color: var(--red); }
+#workspace-view .ws-btn-danger:hover:not(:disabled) { background: #241414; border-color: var(--red); color: var(--red); }
+#workspace-view .ws-btn-warn { border-color: #6f5938; color: var(--warn); }
+#workspace-view .ws-btn-warn:hover:not(:disabled) { background: #241d10; border-color: var(--warn); color: var(--warn); }
+#workspace-view .ws-btn-primary { border-color: var(--teal-deep); background: #163a3a; color: var(--teal); }
+
+/* 动作组 + 结果提示 */
+#workspace-view .ws-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+#workspace-view .ws-action-result {
+  flex-basis: 100%;
+  margin-top: 2px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--line-bright);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+#workspace-view .ws-action-result:empty { display: none; }
+#workspace-view .ws-action-result[data-state="ready"] { border-left-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+#workspace-view .ws-action-result[data-state="error"] { border-left-color: var(--danger); background: var(--danger-bg); color: var(--danger); }
+#workspace-view .ws-action-result[data-state="loading"] { border-left-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+
+/* ---------- 严重度 / 状态小徽章 ---------- */
+#workspace-view .workspace-severity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font: 600 11px/1.4 var(--sans);
+}
+#workspace-view .workspace-severity i { font-style: normal; }
+#workspace-view .workspace-severity.critical,
+#workspace-view .workspace-severity.high { color: var(--danger); background: var(--danger-bg); }
+#workspace-view .workspace-severity.medium { color: var(--warn); background: var(--warn-bg); }
+#workspace-view .workspace-severity.low,
+#workspace-view .workspace-severity.informational { color: var(--info); background: var(--info-bg); }
+#workspace-view .workspace-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font: 600 11px/1.4 var(--sans);
+}
+#workspace-view .workspace-state::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+/* ---------- 能力声明 ---------- */
+#workspace-view .workspace-capability-list { padding: 14px 20px 18px; gap: 8px; }
+#workspace-view .workspace-capability {
+  border-radius: 999px;
+  padding: 5px 11px;
+  font: 600 11px/1.4 var(--sans);
+}
+#workspace-view .workspace-capability i { width: 7px; height: 7px; }
+
+/* ---------- 边界说明条 ---------- */
+#workspace-view .workspace-boundary {
+  border-radius: var(--radius);
+  border: 1px solid #6f5938;
+  border-left: 3px solid var(--warn);
+  padding: 12px 15px;
+  background: rgba(231, 185, 109, .08);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+#workspace-view .workspace-boundary strong { color: var(--warn); font-weight: 600; }
+
+/* ---------- 页脚 / 记录说明 ---------- */
+#workspace-view .workspace-footer,
+#workspace-view .workspace-record-note {
+  color: var(--faint);
+  font: 11.5px/1.75 var(--sans);
+}
+#workspace-view .workspace-footer {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+#workspace-view .workspace-record-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 13px 0;
+}
+#workspace-view .workspace-record-note::before {
+  content: 'ⓘ';
+  flex: 0 0 auto;
+  color: var(--info);
+}
+
+/* ---------- 返回链接 ---------- */
+#workspace-view .workspace-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-bright);
+  background: rgba(255, 255, 255, .02);
+  color: var(--teal);
+  font-size: 12px;
+  transition: border-color .16s ease, background .16s ease;
+}
+#workspace-view .workspace-back:hover { border-color: var(--teal-deep); background: #13252c; }
+
+/* ---------- 任务操作条 ---------- */
+#workspace-view .task-operator-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+#workspace-view .task-operator-actions button {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .03);
+  color: var(--teal);
+  cursor: pointer;
+  font: 500 12px var(--sans);
+}
+#workspace-view .task-operator-actions button:hover:not(:disabled) { border-color: var(--teal-deep); background: #16302f; }
+#workspace-view .task-operator-actions button[data-task-action="cancel"] { color: var(--red); border-color: #754240; }
+#workspace-view .task-operator-actions button:disabled { opacity: .45; cursor: not-allowed; }
+#workspace-view .task-action-result {
+  flex-basis: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--line-bright);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+#workspace-view .task-action-result:empty { display: none; }
+#workspace-view .task-action-result[data-state="ready"] { border-left-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+#workspace-view .task-action-result[data-state="error"] { border-left-color: var(--danger); background: var(--danger-bg); color: var(--danger); }
+#workspace-view .task-action-result[data-state="loading"] { border-left-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+
+/* ---------- 任务历史 ---------- */
+#workspace-view .task-history { padding: 6px 20px 16px; }
+#workspace-view .task-history li { padding: 11px 0 12px 18px; }
+#workspace-view .task-history b { font-size: 12px; }
+#workspace-view .task-history p { font-size: 11.5px; }
+
+/* ---------- 漏洞中心筛选栏 ---------- */
+#workspace-view .workspace-finding-tools {
+  display: grid;
+  gap: 0;
+  align-items: end;
+  border-bottom: 1px solid var(--line);
+}
+#workspace-view .workspace-filters {
+  grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(128px, .7fr));
+  gap: 12px;
+  padding: 15px 20px;
+}
+#workspace-view .workspace-filters + .workspace-table-wrap { padding: 0 20px 8px; }
+#workspace-view .workspace-export {
+  margin: 12px 20px 16px;
+  justify-self: start;
+}
+
+/* ---------- 人工处置 ---------- */
+#workspace-view .workspace-triage-history {
+  margin: 0 20px 18px;
+  border-top: 1px solid var(--line);
+  padding: 12px 0 0;
+}
+#workspace-view .workspace-triage-notes li { padding: 10px 0; }
+#workspace-view .workspace-triage-notes p { font-size: 12px; }
+
+/* ---------- 问答 ---------- */
+#workspace-view .workspace-chat {
+  min-height: 170px;
+  max-height: 340px;
+  padding: 14px 20px;
+}
+#workspace-view .workspace-chat-message {
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  font-size: 12px;
+}
+#workspace-view .workspace-chat-message b { font: 600 11px/1.5 var(--sans); }
+#workspace-view .workspace-chat-message span { font-size: 12px; line-height: 1.7; }
+#workspace-view .workspace-ask-form {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 14px 20px 18px;
+}
+#workspace-view .workspace-ask-form button {
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* ---------- 语料控制台 ---------- */
+#workspace-view .corpus-lanes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  padding: 16px 20px 20px;
+}
+#workspace-view .corpus-lane-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  padding: 14px 15px 15px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+#workspace-view .corpus-lane-card .workspace-card-head { padding: 0 0 10px; border-bottom: 1px solid var(--line); }
+#workspace-view .corpus-lane-card .workspace-card-head h2 { font-size: 14px; }
+#workspace-view .corpus-lane-card .workspace-definition { padding: 0; }
+#workspace-view .corpus-lane-card .workspace-definition > div {
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 0;
+}
+#workspace-view .corpus-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font: 600 11px/1.4 var(--sans);
+  white-space: nowrap;
+}
+#workspace-view .corpus-badge::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+#workspace-view .corpus-running { color: var(--info); background: var(--info-bg); }
+#workspace-view .corpus-done { color: var(--ok); background: var(--ok-bg); }
+#workspace-view .corpus-paused { color: var(--warn); background: var(--warn-bg); }
+#workspace-view .corpus-error { color: var(--danger); background: var(--danger-bg); }
+#workspace-view .corpus-idle { color: var(--muted); background: rgba(139, 156, 163, .12); }
+#workspace-view .corpus-unknown { color: var(--faint); background: rgba(86, 103, 113, .14); }
+#workspace-view .corpus-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+#workspace-view .corpus-action-result {
+  flex-basis: 100%;
+  margin-top: 2px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid var(--line-bright);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+#workspace-view .corpus-action-result:empty { display: none; }
+#workspace-view .corpus-action-result[data-state="ready"] { border-left-color: var(--ok); background: var(--ok-bg); color: var(--ok); }
+#workspace-view .corpus-action-result[data-state="error"] { border-left-color: var(--danger); background: var(--danger-bg); color: var(--danger); }
+#workspace-view .corpus-action-result[data-state="loading"] { border-left-color: var(--warn); background: var(--warn-bg); color: var(--warn); }
+#workspace-view .corpus-note {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.65;
+}
+#workspace-view .corpus-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 16px 20px 20px;
+}
+#workspace-view .corpus-filters label { display: grid; gap: 6px; color: var(--muted); font-size: 11.5px; }
+#workspace-view .corpus-filters .corpus-action-result { grid-column: 1 / -1; }
+
+/* ---------- 代码产物 ---------- */
+#workspace-view .reverse-artifact { margin-top: 9px; }
+#workspace-view .reverse-artifact-load {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, .03);
+  color: var(--teal);
+  cursor: pointer;
+  font: 500 12px var(--sans);
+}
+#workspace-view .reverse-artifact-load:hover:not(:disabled) { border-color: var(--teal-deep); background: #16302f; }
+#workspace-view .reverse-artifact-load:disabled { opacity: .45; cursor: not-allowed; }
+#workspace-view .reverse-artifact-status {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+#workspace-view .reverse-artifact-status[data-state="error"] { color: var(--danger); }
+#workspace-view .reverse-artifact-status[data-state="ready"] { color: var(--ok); }
+#workspace-view .reverse-artifact pre {
+  max-height: 460px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 9px 0 0;
+  padding: 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: #101a20;
+  color: var(--text);
+  font: 11.5px/1.65 var(--mono);
+}
+#workspace-view .reverse-validation {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+  margin-bottom: 9px;
+}
+#workspace-view .reverse-validation strong { color: var(--text); }
+#workspace-view .reverse-validation span { color: var(--faint); }
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 1080px) {
+  #workspace-view .workspace-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #workspace-view .corpus-filters { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  #workspace-view .ws-head { grid-template-columns: 1fr; align-items: start; }
+  #workspace-view .ws-head-side { justify-content: flex-start; }
+}
+@media (max-width: 700px) {
+  #workspace-view .workspace-head h1 { font-size: 26px; }
+  #workspace-view .ws-head-lead { font-size: 12.5px; }
+  #workspace-view .workspace-filters { grid-template-columns: 1fr; }
+  #workspace-view .workspace-definition > div { grid-template-columns: 88px minmax(0, 1fr); gap: 10px; }
+  #workspace-view .workspace-chat-message { grid-template-columns: 1fr; gap: 4px; }
+  #workspace-view .corpus-lanes { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  #workspace-view .workspace-body { padding-top: 18px; }
+  #workspace-view .workspace-counts { grid-template-columns: 1fr 1fr; }
+  #workspace-view .workspace-count { min-height: 66px; padding: 12px 13px; }
+  #workspace-view .workspace-count b { font-size: 18px; }
+  #workspace-view .workspace-form { padding: 14px 14px 18px; }
+  #workspace-view .workspace-filters { padding: 14px; }
+  #workspace-view .workspace-definition { padding: 6px 14px 14px; }
+  #workspace-view .workspace-card-head { padding: 14px 14px 12px; }
+  #workspace-view .workspace-ask-form { grid-template-columns: 1fr; }
+  #workspace-view .workspace-ask-form button { width: 100%; }
+  #workspace-view .workspace-export { margin: 12px 14px 16px; }
+  #workspace-view .workspace-triage-history { margin-inline: 14px; }
+  #workspace-view .ws-head-meta { gap: 7px; }
+}
+
+/* ---------- 降低动效 ---------- */
+@media (prefers-reduced-motion: reduce) {
+  #workspace-view *,
+  #workspace-view *::before,
+  #workspace-view *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+  #workspace-view .ws-skeleton { background: #16232c; }
+  #workspace-view .workspace-form-result[data-state="loading"]::before,
+  #workspace-view .ws-loading-note::before { animation: none; }
+}

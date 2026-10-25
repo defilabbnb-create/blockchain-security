@@ -6,6 +6,8 @@
 
 - 用户问当前进度、链筛选、跨链、风险链路、测试或同步时，先执行 `npm run ask -- "用户的问题"`。不要凭旧聊天或本文件给出动态数字。
 - Web 默认启动于 `http://127.0.0.1:8788`；`/api/health` 查看健康、实例与快照更新时间，`/api/status` 查看完整状态，`/api/sync` 查看同步索引。读取失败时明确报告失败，不把缓存说成实时。可用 `PORT` 覆盖监听端口。
+- Web 服务由 launchd 常驻：`com.d288.security.webserver`，配置在 `deploy/tunnel/launchd/com.d288.security.webserver.plist`，日志 `~/Library/Logs/SecurityWebTunnel/web.log`。改前端文件后必须重启服务：`launchctl kickstart -k gui/$(id -u)/com.d288.security.webserver`。
+- **前端模块改动后必须重启服务**：服务端把可提供的静态资源清单（`assets`）在启动时固化，而 `index.html` 是每次从磁盘读。两者不同步时，页面会拿到新版 `index.html`（含新的 `modulepreload`），但新模块全部 404 —— 浏览器模块图加载直接失败，页面只剩静态 HTML、所有交互失效，而后端接口与单元测试全绿，看起来一切正常。核对方式：逐条请求 `index.html` 里每个 `modulepreload` 路径，必须全是 200。
 - 离线证据是 `work/dsh-status.json` 和 `work/dsh-sync.json`；读取两份时检查 `syncVersion` 相同，同时引用 `generatedAt` 与 `lastReportAt`。不一致时重读，仍不一致则说明尚未同步。
 - 共享文件不证明 DSH/DHLsh 客户端已消费；未经对话验收，不声称两个客户端端到端通过。
 - 优先队列不代表扫描进程正在运行。当前 TVL 是报告时刻的代理指标，历史峰值只是热度线索。

@@ -3,11 +3,160 @@ import * as protocolView from './views/protocol.js';
 import * as findingView from './views/finding.js';
 import * as executionView from './views/execution.js';
 import * as corpusView from './views/corpus.js';
+import * as homeView from './views/home.js';
 import { getJSON } from './lib/api.js';
+import { scopeAfterToggle } from './lib/home-model.js';
 
-const state = { snapshot: null, showAllChains: false, showAllFindings: false, selectedPath: null, asking: false, lastVulnRender: '', taskPage: null, taskCursors: [null], taskPageIndex: 0, loadingTasks: false, workspaceRoute: null, workspaceRequest: 0 };
-const auditViews = { map: overviewView, protocols: protocolView, discoveries: findingView, execution: executionView };
+const state = { snapshot: null, showAllChains: false, showAllFindings: false, selectedPath: null, asking: false, lastVulnRender: '', taskPage: null, taskCursors: [null], taskPageIndex: 0, loadingTasks: false, workspaceRoute: null, workspaceRequest: 0, homeControl: null };
+const auditViews = { map: overviewView, protocols: protocolView, discoveries: findingView, execution: executionView, home: homeView };
 const $ = (selector) => document.querySelector(selector);
+const CORPUS_POLL_INTERVAL_MS = 4000;
+let corpusPollTimer = null;
+
+/* 链上采集开关的模块级状态。
+ *
+ * 位置很重要：启动代码在文件中部就会调用 startCollectionPolling()，
+ * 而它读 COLLECTION_POLL_INTERVAL_MS。ES 模块按书写顺序求值，
+ * 若这些声明落在启动代码之后，启动那一行会撞上暂时性死区
+ * （ReferenceError），模块求值就此中止，页面上的交互全部失效，
+ * 而后端与接口看起来一切正常。
+ * 声明必须排在启动代码之前。 */
+const COLLECTION_POLL_INTERVAL_MS = 5000;
+const COLLECTION_STATE_CLASS = { running: 'running', starting: 'running', disabled: '', idle: '', completed: '', stale: 'warn', failed: 'danger', interrupted: 'warn', invalidated: 'warn', draining: 'running', waiting_for_new_candidates: 'running' };
+let collectionPollTimer = null;
+let collectionBusy = false;
+
+/* ------------------------------------------------------------------
+ * 外壳：抽屉、面包屑、错误横幅。
+ *
+ * 诚实性约束（见 .cursor/rules/silent-wrong-value-review.mdc）：
+ *   - 接口读取失败时如实显示「读取失败：xxx」，并给出重试入口；
+ *     绝不静默白屏，也不把失败说成成功。
+ *   - 失败提示不会清空页面上已有的数据；它只说明「这次读取没成功」。
+ * ------------------------------------------------------------------ */
+
+/** 顶部横幅：统一显示接口读取失败，可点击重试。 */
+function showGlobalError(message, retry) {
+  const banner = $('#global-banner');
+  const text = $('#global-banner-text');
+  if (!banner || !text) return;
+  text.textContent = message;
+  banner.hidden = false;
+  banner.dataset.state = 'error';
+  const button = $('#global-banner-retry');
+  if (button) {
+    button.hidden = typeof retry !== 'function';
+    button.onclick = typeof retry === 'function' ? () => { banner.hidden = true; retry(); } : null;
+  }
+}
+
+/** 读取成功后收起失败横幅（不改动页面上的数据）。 */
+function clearGlobalError() {
+  const banner = $('#global-banner');
+  if (banner && !banner.hidden) banner.hidden = true;
+}
+
+/** 统一的失败提示文案：永远带上失败原因。 */
+function describeError(error, prefix = '读取失败') {
+  const message = error?.message || String(error ?? '') || '未知原因';
+  return `${prefix}：${message}`;
+}
+
+/* 抽屉：≤900px 时侧边栏变成可展开的顶部抽屉。
+ *
+ * 交互约定（可访问性）：
+ *   - 汉堡按钮 aria-expanded 反映开关状态。
+ *   - Esc 关闭抽屉，并把焦点还给汉堡按钮（焦点不能丢在已隐藏的抽屉里）。
+ *   - 抽屉打开时焦点移进抽屉；点导航项后自动收起（窄屏下抽屉会挡住内容）。
+ *   - 视口变宽回到桌面布局时，抽屉状态必须复位，否则会留下一个「看不见却开着」的抽屉。 */
+const SIDEBAR_BREAKPOINT = '(max-width: 900px)';
+function isDrawerMode() { return window.matchMedia(SIDEBAR_BREAKPOINT).matches; }
+
+function setDrawerOpen(open) {
+  const sidebar = $('#app-sidebar');
+  const toggle = $('#nav-toggle');
+  if (!sidebar || !toggle) return;
+  sidebar.classList.toggle('drawer-open', open);
+  toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  toggle.setAttribute('aria-label', open ? '关闭导航菜单' : '打开导航菜单');
+  toggle.setAttribute('title', open ? '关闭导航菜单' : '打开导航菜单');
+  document.body.classList.toggle('nav-drawer-open', open);
+}
+
+function closeDrawer({ restoreFocus = false } = {}) {
+  const toggle = $('#nav-toggle');
+  if (!isDrawerMode() && !document.body.classList.contains('nav-drawer-open')) return;
+  setDrawerOpen(false);
+  if (restoreFocus && toggle) toggle.focus();
+}
+
+/** 打开抽屉：把焦点送进抽屉第一个可点项，键盘用户不会「开着菜单却还在页面上」。 */
+function openDrawer() {
+  const sidebar = $('#app-sidebar');
+  if (!sidebar) return;
+  setDrawerOpen(true);
+  const first = sidebar.querySelector('.nav-item');
+  if (first && typeof first.focus === 'function') first.focus();
+}
+
+/** 路由名 → 人话页面名。面包屑与 aria-label 用它。 */
+const ROUTE_LABELS = Object.freeze({
+  home: '首页', discoveries: '发现', map: '风险地图', protocols: '协议', execution: '执行与复现',
+  overview: '安全总览', 'analysis-tasks': '分析队列', projects: '项目管理', collection: '创建采集',
+  scan: '创建扫描', tasks: '任务中心', 'findings-view': '漏洞中心', finding: '漏洞详情',
+  dynamic: '动态检查', reverse: '代码查看', permissions: '权限与业务', replay: '调用重放',
+  ai: '状态问答', sync: '模型与同步', corpus: '离线语料控制台', task: '任务详情',
+});
+
+/* 旧总览里的区块锚点。滚动到这些区块时，侧边栏高亮的仍然是「旧版总览」，
+ * 而不是某个不存在的锚点链接 —— 否则用户滚到「链状态」时侧栏一个都不亮。
+ * 声明放在这里：setActiveView() 与 syncNavigation() 都会读它，
+ * 放在使用点之后会撞上暂时性死区，整个模块求值中止。 */
+const OVERVIEW_ANCHOR_HASHES = Object.freeze(['overview', 'analysis-tasks', 'chains', 'routes', 'vulnerability-chains', 'findings', 'sync']);
+
+function updateBreadcrumb(route) {
+  const crumb = $('#breadcrumb-current');
+  if (!crumb) return;
+  const root = route?.name || 'overview';
+  crumb.textContent = ROUTE_LABELS[root] || '安全总览';
+}
+
+/* 健康指示：圆点 + 文字 + title 三重编码。
+ * 颜色不是唯一线索 —— 灰度与色盲显示下也能靠文字分辨状态。 */
+const HEALTH_TONES = Object.freeze({
+  ok: 'live', warn: 'warn', danger: 'danger', idle: '',
+});
+
+/**
+ * 更新一个健康指示（圆点 + 文案）。
+ * @param {string} dotSelector 圆点元素的 id
+ * @param {string} textSelector 文案元素的 id
+ * @param {string} text 文案（人话）
+ * @param {'ok'|'warn'|'danger'|'idle'} tone 语气
+ */
+function setHealthIndicator(dotSelector, textSelector, text, tone = 'idle') {
+  const dot = $(dotSelector);
+  if (dot) dot.className = `status-dot ${HEALTH_TONES[tone] ?? ''}`.trim();
+  const label = $(textSelector);
+  if (label) label.textContent = text;
+}
+
+/** 刷新按钮的「正在刷新」反馈：按钮进入忙状态并转圈，避免用户重复点。 */
+function setRefreshing(refreshing) {
+  const button = $('#refresh-button');
+  const status = $('#refresh-status');
+  if (status) {
+    status.hidden = !refreshing;
+    status.textContent = refreshing ? '正在刷新…' : '';
+  }
+  if (!button) return;
+  button.classList.toggle('is-refreshing', refreshing);
+  button.setAttribute('aria-busy', refreshing ? 'true' : 'false');
+  button.setAttribute('aria-label', refreshing ? '正在重新读取当前状态' : '重新读取当前状态');
+  button.setAttribute('title', refreshing ? '正在重新读取当前状态' : '重新读取当前状态');
+  button.disabled = refreshing;
+}
+
 
 function escapeHTML(value) {
   return String(value ?? '').replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
@@ -55,6 +204,13 @@ const evidenceStateLabels = Object.freeze({
 });
 const triageStatusLabels = Object.freeze({
   unreviewed: '待处理', in_review: '复核中', false_positive: '误报', fixed: '已修复', accepted_risk: '已接受风险',
+});
+/* 证据类型：后端目前只产出 static_signal，其余按通用词保留，不臆造含义。 */
+const evidenceKindLabels = Object.freeze({
+  static_signal: '静态信号',
+  dynamic_reproduction: '动态复现',
+  replay_evidence: '重放证据',
+  manual_note: '人工记录',
 });
 
 const analysisStateLabels = Object.freeze({
@@ -279,8 +435,9 @@ function renderSnapshot(snapshot) {
   $('#sync-model-state').textContent = model.baseUrlHost || '未配置';
   $('#sync-version').textContent = `同步 ${formatDate(snapshot.generatedAt)}`;
   const modelReady = model.configured === true;
-  $('#model-health').textContent = modelReady ? '已配置' : '未配置';
-  $('#model-dot').className = `status-dot ${modelReady ? 'live' : 'warn'}`;
+  // 云端审查通道：圆点 + 文字同步更新。未配置只影响云端复核，
+  // 网页其余功能照常可用 —— 所以文案要说清，不写成「服务异常」。
+  setHealthIndicator('#model-dot', '#model-health', modelReady ? '已配置' : '未配置', modelReady ? 'ok' : 'warn');
   $('#side-sync-label').textContent = 'DSH / DHLsh 共享快照';
   $('#file-sync-state').textContent = '已写入';
   $('#side-sync-dot').className = `status-dot ${modelReady ? 'live' : 'warn'}`;
@@ -399,6 +556,7 @@ async function loadStatus() {
   const response = await fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   renderSnapshot(await response.json());
+  clearGlobalError();
 }
 
 async function refreshHealth() {
@@ -408,9 +566,13 @@ async function refreshHealth() {
     const ok = response.ok && health.status !== 'down';
     $('#runtime-memory').textContent = health.memory?.rss ? `${(health.memory.rss / 1048576).toFixed(0)} MB` : '--';
     $('#runtime-uptime').textContent = `运行 ${Math.floor((health.uptimeSec || 0) / 60)} 分钟`;
-    $('#service-health').textContent = ok ? (health.status === 'degraded' ? '降级' : '在线') : '异常';
+    const text = ok ? (health.status === 'degraded' ? '降级' : '在线') : '异常';
+    $('#service-health').textContent = text;
+    // 圆点跟着文字走：在线=teal，降级/异常=amber/red，颜色不是唯一线索。
+    setHealthIndicator('#service-dot', '#service-health', text, ok ? (health.status === 'degraded' ? 'warn' : 'ok') : 'danger');
   } catch {
     $('#service-health').textContent = '离线';
+    setHealthIndicator('#service-dot', '#service-health', '离线', 'danger');
   }
 }
 
@@ -451,8 +613,37 @@ async function ask(question) {
 $('#vulnerability-tabs').addEventListener('click', (event) => { const tab = event.target.closest('[data-path]'); if (!tab) return; state.selectedPath = tab.dataset.path; renderVulnerabilityChains(state.snapshot.vulnerabilityChains, state.snapshot.staticAnalysis.localSecurityTests); });
 for (const id of ['#chain-search', '#chain-filter']) $(id).addEventListener('input', () => { if (state.snapshot) renderChains(state.snapshot.chains); });
 $('#refresh-button').addEventListener('click', async () => {
+  const button = $('#refresh-button');
+  // 首页路由下必须重新拉取 /api/status 与采集控制面状态，
+  // 否则用户点“刷新状态”看到的还是首次读到的缓存。
+  // 这一分支的取数逻辑由「首页」任务接管；这里只负责外观反馈。
+  if (parseWorkspaceRoute().name === 'home') {
+    $('#service-health').textContent = '同步中';
+    setRefreshing(true);
+    try {
+      await refreshHomeView({ reloadSnapshot: true });
+      $('#service-health').textContent = '在线';
+    } catch (error) {
+      $('#service-health').textContent = '离线';
+      homeMessage(`刷新失败：${error?.message || error}`, 'error');
+    } finally {
+      setRefreshing(false);
+    }
+    return;
+  }
   $('#service-health').textContent = '同步中';
-  try { await loadStatus(); $('#service-health').textContent = '在线'; } catch { $('#service-health').textContent = '离线'; }
+  setRefreshing(true);
+  try {
+    await loadStatus();
+    $('#service-health').textContent = '在线';
+    clearGlobalError();
+  } catch (error) {
+    $('#service-health').textContent = '离线';
+    // 读取失败必须说清失败原因并给出重试入口，不能静默白屏。
+    showGlobalError(describeError(error), () => { void $('#refresh-button')?.click(); });
+  } finally {
+    setRefreshing(false);
+  }
 });
 $('#task-refresh').addEventListener('click', () => loadTaskPage({ reset: true }));
 $('#task-next').addEventListener('click', () => {
@@ -468,10 +659,39 @@ $('#task-prev').addEventListener('click', () => {
   }
 });
 $('#close-report-dialog').addEventListener('click', () => $('#task-report-dialog').close());
+// 失败横幅的关闭按钮：只是收起提示，不会改动页面上的数据。
+$('#global-banner-close')?.addEventListener('click', () => { const banner = $('#global-banner'); if (banner) banner.hidden = true; });
 $('#ask-form').addEventListener('submit', (event) => { event.preventDefault(); const input = $('#ask-input'); const value = input.value; input.value = ''; ask(value); });
 document.querySelectorAll('[data-question]').forEach((button) => button.addEventListener('click', () => ask(button.dataset.question)));
 $('#show-all-chains').addEventListener('click', (event) => { state.showAllChains = !state.showAllChains; event.currentTarget.innerHTML = state.showAllChains ? '收起队列 <span>↑</span>' : '查看队列 <span>→</span>'; if (state.snapshot) renderChains(state.snapshot.chains); });
 $('#show-all-findings').addEventListener('click', (event) => { state.showAllFindings = !state.showAllFindings; event.currentTarget.innerHTML = state.showAllFindings ? '收起分析 <span>↑</span>' : '展开分析 <span>→</span>'; if (state.snapshot) renderFindings(state.snapshot.highPriorityFindings); });
+
+/* ------------------------------------------------------------------
+ * 抽屉（窄屏导航）的交互接线。
+ *
+ * 三条约定：
+ *   1. 汉堡按钮是唯一的开关，aria-expanded 始终反映真实状态。
+ *   2. Esc 关闭抽屉并把焦点还给汉堡按钮（焦点不能落在已隐藏的元素上）。
+ *   3. 窄屏下点导航项后自动收起抽屉，否则新页面会被抽屉盖住。
+ * ------------------------------------------------------------------ */
+$('#nav-toggle')?.addEventListener('click', () => {
+  if (document.body.classList.contains('nav-drawer-open')) closeDrawer({ restoreFocus: true });
+  else openDrawer();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (!document.body.classList.contains('nav-drawer-open')) return;
+  closeDrawer({ restoreFocus: true });
+});
+// 窄屏点导航项后收起抽屉；桌面宽度下不干预（抽屉本就不存在）。
+document.querySelectorAll('.nav-item').forEach((link) => link.addEventListener('click', () => {
+  if (isDrawerMode()) closeDrawer();
+}));
+// 视口跨过断点时复位：回到桌面布局后不留一个「看不见却开着」的抽屉。
+const drawerQuery = window.matchMedia(SIDEBAR_BREAKPOINT);
+const onDrawerBreakpointChange = () => { if (!isDrawerMode()) setDrawerOpen(false); };
+if (typeof drawerQuery.addEventListener === 'function') drawerQuery.addEventListener('change', onDrawerBreakpointChange);
+else if (typeof drawerQuery.addListener === 'function') drawerQuery.addListener(onDrawerBreakpointChange);
 
 try {
   const events = new EventSource('/api/events');
@@ -479,10 +699,23 @@ try {
   events.addEventListener('snapshot-error', () => { $('#service-health').textContent = '读取异常'; });
   events.addEventListener('error', () => { $('#service-health').textContent = '重连中'; });
 } catch {}
-loadStatus().catch((error) => { $('#service-health').textContent = '离线'; $('#updated-at').textContent = `读取失败：${error.message}`; });
+loadStatus().catch((error) => {
+  $('#service-health').textContent = '离线';
+  setHealthIndicator('#service-dot', '#service-health', '离线', 'danger');
+  $('#updated-at').textContent = `读取失败：${error.message}`;
+  // 首次读取失败也要说清并给重试入口，不能只剩一片空白。
+  showGlobalError(describeError(error), () => { void loadStatus().catch((retryError) => {
+    showGlobalError(describeError(retryError), () => { void loadStatus().catch(() => {}); });
+  }); });
+});
 loadTaskPage({ reset: true });
 refreshHealth();
 setInterval(() => { if (!document.hidden) refreshHealth(); }, 15000);
+// 链上采集开关：状态与采集进程分开轮询，切换后立刻刷新。
+$('#collection-switch-toggle')?.addEventListener('click', () => { void toggleCollectionSwitch(); });
+$('#collection-chain-scope')?.addEventListener('change', () => { void loadCollectionStatus(); });
+void loadCollectionStatus();
+startCollectionPolling();
 const sections = ['overview', 'analysis-tasks', 'chains', 'routes', 'vulnerability-chains', 'findings', 'sync'].map((id) => document.getElementById(id));
 let navFrame = null;
 function syncNavigation() {
@@ -492,8 +725,20 @@ function syncNavigation() {
     return;
   }
   const current = [...sections].reverse().find((section) => section.getBoundingClientRect().top <= innerHeight * .25) || sections[0];
+  const currentHash = current?.id || 'overview';
+  const isOverviewSection = OVERVIEW_ANCHOR_HASHES.includes(currentHash);
+  // 旧总览内部的显式锚点优先：「分析队列」「模型与同步」都有独立入口，
+  // 点击后必须高亮自己，不能又被滚动位置改回「旧版总览」。
+  const requestedHash = location.hash.replace(/^#/, '');
+  const overviewNavHash = requestedHash === 'analysis-tasks' || requestedHash === 'sync'
+    ? requestedHash
+    : 'overview';
   document.querySelectorAll('.nav-item').forEach((link) => {
-    const active = link.hash === '#' + current.id;
+    const hash = link.getAttribute('href')?.slice(1) || '';
+    // 旧总览内部滚动：高亮「旧版总览」；「分析队列」有自己的入口，单独高亮它。
+    const active = isOverviewSection
+      ? (overviewNavHash === 'analysis-tasks' ? hash === 'analysis-tasks' : hash === overviewNavHash)
+      : hash === currentHash;
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'location'); else link.removeAttribute('aria-current');
   });
@@ -503,8 +748,11 @@ addEventListener('scroll', scheduleNavigation, { passive: true });
 addEventListener('resize', scheduleNavigation);
 syncNavigation();
 
-addEventListener('hashchange', routeWorkspace);
-routeWorkspace();
+// 注意：路由首次渲染（routeWorkspace()）必须放在文件末尾的「启动段」里。
+// workspaceFrame() 会同步读取 WORKSPACE_FLAG_CLASS 等模块级常量；
+// 若在这里就调用 routeWorkspace()，那些常量尚未初始化（暂时性死区），
+// 整个模块求值会中断 —— 页面只剩静态 HTML，所有交互失效。
+// 首次渲染与 hashchange 监听统一放到文件末尾启动段执行。
 
 function setDetailsHTML(element, html) {
   if (element.innerHTML === html) return;
@@ -718,6 +966,157 @@ async function optionalResource(path) {
   catch (error) { return { ok: false, path, error }; }
 }
 
+/* ------------------------------------------------------------------
+ * 链上采集开关（首页一键开启）。
+ *
+ * 诚实性约束（见 .cursor/rules/silent-wrong-value-review.mdc）：
+ *   - 「开关已打开」与「现在正在采集」是两件事，分别显示，不能混成一个状态。
+ *   - 后端返回 startFailed / stopFailed 时，如实显示错误，不假装成功。
+ *   - 读取失败时保持上一次显示，不清空成误导性的默认状态。
+ *   - 开关状态由后端决定，前端置灰只是提示，真正的拒绝在后端。
+ * ------------------------------------------------------------------ */
+
+function collectionScopeValue() {
+  const select = $('#collection-chain-scope');
+  return select && select.value ? select.value : 'all';
+}
+
+/** 把选中的链换算成后端要的 chainIds 数组；'all' 表示全部链。 */
+function collectionScopeChainIds(status) {
+  const scope = collectionScopeValue();
+  if (scope === 'all') return [];
+  const chains = Array.isArray(status?.availableChains) ? status.availableChains : [];
+  const wanted = String(scope).split(',').map((item) => item.trim()).filter(Boolean);
+  const ids = [];
+  for (const chain of chains) {
+    const names = [chain.chainId, chain.name, chain.llamaName].filter((item) => item !== undefined && item !== null).map((item) => String(item));
+    if (names.some((name) => wanted.includes(name))) ids.push(chain.chainId);
+  }
+  return ids;
+}
+
+function renderCollectionScope(status) {
+  const select = $('#collection-chain-scope');
+  if (!select) return;
+  const chains = Array.isArray(status?.availableChains) ? status.availableChains : [];
+  const current = select.value;
+  const selected = Array.isArray(status?.selectedChainIds) && status.selectedChainIds.length
+    ? status.selectedChainIds.map(String)
+    : null;
+  const signature = `${chains.map((chain) => chain.chainId).join(',')}|${selected ? selected.join(',') : ''}`;
+  if (select.dataset.signature !== signature) {
+    select.dataset.signature = signature;
+    select.innerHTML = '<option value="all">全部链</option>'
+      + chains.map((chain) => `<option value="${escapeHTML(chain.chainId)}">${escapeHTML(chain.name)} · ${escapeHTML(chain.chainId)}</option>`).join('');
+    if (selected && selected.length === 1 && chains.some((chain) => chain.chainId === selected[0])) {
+      select.value = selected[0];
+    } else if (current && current !== 'all' && chains.some((chain) => chain.chainId === current)) {
+      select.value = current;
+    } else {
+      select.value = 'all';
+    }
+  }
+  const note = $('#collection-scope-note');
+  if (note) {
+    note.textContent = selected && selected.length
+      ? `已选择 ${selected.length} 条链。`
+      : `全部 ${chains.length} 条已配置链。`;
+  }
+}
+
+/** 渲染开关状态。enabled 与 running 分开呈现。 */
+function renderCollectionSwitch(status) {
+  if (!status) return;
+  const toggle = $('#collection-switch-toggle');
+  const label = $('#collection-switch-label');
+  const statusText = $('#collection-switch-status');
+  const message = $('#collection-switch-message');
+  renderCollectionScope(status);
+
+  if (toggle) {
+    toggle.setAttribute('aria-pressed', status.enabled === true ? 'true' : 'false');
+    toggle.disabled = collectionBusy;
+    if (label) label.textContent = status.enabled ? '关闭链上采集' : '开启链上采集';
+  }
+  if (statusText) {
+    const stateClass = COLLECTION_STATE_CLASS[status.state] || '';
+    statusText.className = `switch-status ${stateClass}`;
+    statusText.textContent = status.running
+      ? `正在采集 · ${status.stateLabel}`
+      : status.enabled
+        ? `开关已打开 · ${status.stateLabel}`
+        : '开关已关闭';
+  }
+  if (message) {
+    let text = '';
+    let tone = '';
+    if (status.startFailed) {
+      text = `开启失败：${status.startError || '未知原因'}`;
+      tone = 'danger';
+    } else if (status.stopFailed) {
+      text = `停止请求失败：${status.stopError || '未知原因'}`;
+      tone = 'danger';
+    } else if (status.lastError) {
+      text = status.lastError;
+      tone = 'warn';
+    } else if (status.running && status.heartbeatAt) {
+      text = `最近心跳 ${formatDate(status.heartbeatAt)}。采集只读链上代码与已验证源码，不执行资产操作。`;
+    } else if (status.enabled) {
+      text = '开关已打开，当前没有采集在运行。';
+    } else {
+      text = '采集未开启。开启后自动启动一轮只读采集。';
+    }
+    message.className = `collection-switch-message ${tone}`;
+    message.textContent = text;
+  }
+}
+
+async function loadCollectionStatus() {
+  try {
+    const data = await apiJSON('/api/v1/chain-collection/status');
+    renderCollectionSwitch(data);
+  } catch {
+    // 读取失败时保留上一次显示，不清空成误导性的默认状态。
+    const statusText = $('#collection-switch-status');
+    if (statusText && statusText.textContent === '读取开关状态…') statusText.textContent = '读取开关状态失败';
+  }
+}
+
+function startCollectionPolling() {
+  if (collectionPollTimer) clearInterval(collectionPollTimer);
+  collectionPollTimer = setInterval(() => { if (!document.hidden) void loadCollectionStatus(); }, COLLECTION_POLL_INTERVAL_MS);
+}
+
+async function toggleCollectionSwitch() {
+  if (collectionBusy) return;
+  const toggle = $('#collection-switch-toggle');
+  const message = $('#collection-switch-message');
+  const wasEnabled = toggle?.getAttribute('aria-pressed') === 'true';
+  collectionBusy = true;
+  if (toggle) toggle.disabled = true;
+  if (message) { message.className = 'collection-switch-message'; message.textContent = wasEnabled ? '正在关闭…' : '正在开启…'; }
+  try {
+    // 先把范围记下来，再切开关：这样「开启」用的就是刚选的链。
+    if (!wasEnabled && collectionScopeValue() !== 'all') {
+      const current = await apiJSON('/api/v1/chain-collection/status');
+      const chainIds = collectionScopeChainIds(current);
+      if (chainIds.length === 0) throw new Error('选中的链没有匹配到任何已配置链');
+      await apiJSON('/api/v1/chain-collection/switch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chainIds }) });
+    }
+    const data = await apiJSON('/api/v1/chain-collection/switch', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: !wasEnabled }) });
+    renderCollectionSwitch(data);
+  } catch (error) {
+    if (message) {
+      message.className = 'collection-switch-message danger';
+      message.textContent = `操作失败：${error.message}`;
+    }
+    await loadCollectionStatus();
+  } finally {
+    collectionBusy = false;
+    if (toggle) toggle.disabled = false;
+  }
+}
+
 function workspaceItems(payload) { return Array.isArray(payload?.items) ? payload.items : []; }
 function workspaceValue(value, max = 220) {
   if (value === undefined || value === null || value === '') return '未提供';
@@ -742,8 +1141,152 @@ function readableLimitation(value) {
   if (/只读采集 worker.*fail-closed/i.test(text)) return '只读取公开信息，区块范围有限；任务会由后台执行，发现链上记录变化时会停止并保留证据。';
   return text.replace(/fail-closed/gi, '停止并保留证据').replace(/runner/gi, '后台任务').replace(/worker/gi, '后台任务');
 }
-function workspaceFrame({ kicker, title, description, body, footer = '' }) {
-  return `<div class="workspace-head"><div><div class="eyebrow">${escapeHTML(kicker)}</div><h1>${escapeHTML(title)}</h1><p>${escapeHTML(description)}</p></div><a class="workspace-back" href="#overview">返回安全总览</a></div><div class="workspace-body">${body}</div>${footer ? `<div class="workspace-footer">${escapeHTML(footer)}</div>` : ''}`;
+/* ------------------------------------------------------------------
+ * 工作区通用外观与小部件。
+ *
+ * 三条硬约束（对每一页都成立）：
+ *   1. 页头必须有「只读 / 会改数据」标记，且是图标 + 文字 + 颜色三重编码，
+ *      灰度与色盲显示下也能分辨。
+ *   2. 空状态必须告诉用户下一步做什么，并给可点的入口，不能只写「没有记录」。
+ *   3. 会写数据的按钮旁必须写清楚「会创建 / 修改什么」。
+ * ------------------------------------------------------------------ */
+const WORKSPACE_FLAG_TEXT = Object.freeze({
+  read: '只读 · 只查看已有记录，不改任何数据',
+  write: '会改数据 · 表单会创建或修改记录',
+  mixed: '含写入操作 · 记录只读，按钮会改数据',
+});
+const WORKSPACE_FLAG_CLASS = Object.freeze({ read: 'ws-flag-readonly', write: 'ws-flag-write', mixed: 'ws-flag-write' });
+const WORKSPACE_FLAG_ICON = Object.freeze({ read: '○', write: '✎', mixed: '✎' });
+
+function workspaceFrame({ kicker, title, description, body, footer = '', mode = 'read', next = [] }) {
+  const flagKey = WORKSPACE_FLAG_CLASS[mode] ? mode : 'read';
+  const steps = Array.isArray(next) ? next.filter((step) => Array.isArray(step) && step[0] && step[1]) : [];
+  const nextLinks = steps.length
+    ? `<nav class="ws-next" aria-label="下一步建议"><strong>下一步</strong><span>${steps.map(([hash, label]) => `<a href="${escapeHTML(hash)}">${escapeHTML(label)} <span aria-hidden="true">→</span></a>`).join('')}</span></nav>`
+    : '';
+  return `<div class="workspace-head ws-head"><div class="ws-head-main"><div class="eyebrow">${escapeHTML(kicker)}</div><h1>${escapeHTML(title)}</h1><p class="ws-head-lead">${escapeHTML(description)}</p><div class="ws-head-meta"><span class="ws-flag ${WORKSPACE_FLAG_CLASS[flagKey]}"><i aria-hidden="true">${WORKSPACE_FLAG_ICON[flagKey]}</i>${escapeHTML(WORKSPACE_FLAG_TEXT[flagKey])}</span></div></div><div class="ws-head-side"><a class="workspace-back" href="#overview">返回安全总览</a></div></div><div class="workspace-body">${body}${nextLinks}</div>${footer ? `<div class="workspace-footer">${escapeHTML(footer)}</div>` : ''}`;
+}
+
+/** 空状态：说明发生了什么，并给出下一步可点入口。 */
+function workspaceEmpty({ title = '这里还没有记录', text = '', links = [] }) {
+  const steps = Array.isArray(links) ? links.filter((step) => Array.isArray(step) && step[0] && step[1]) : [];
+  const linkHtml = steps.length
+    ? `<div class="ws-empty-links">${steps.map(([href, label]) => `<a href="${escapeHTML(href)}">${escapeHTML(label)} <span aria-hidden="true">→</span></a>`).join('')}</div>`
+    : '';
+  return `<div class="ws-empty"><div class="ws-empty-title"><i aria-hidden="true">◌</i>${escapeHTML(title)}</div>${text ? `<p class="ws-empty-text">${escapeHTML(text)}</p>` : ''}${linkHtml}</div>`;
+}
+
+/** 长值：可换行显示，超长时截断，完整值放在 title 里。 */
+function workspaceClip(value, max = 200) {
+  const full = workspaceValue(value, 4000);
+  if (!full || full === '未提供') return '<span class="ws-value">未提供</span>';
+  const clipped = full.length > max;
+  return `<span class="ws-value"${clipped ? ` title="${escapeHTML(full)}"` : ''}>${escapeHTML(clipped ? `${full.slice(0, max)}…` : full)}</span>`;
+}
+
+/** 地址 / 哈希这类等宽内容：单行省略号，完整值在 title 里。 */
+function workspaceCode(value, max = 46) {
+  const full = workspaceValue(value, 4000);
+  if (!full || full === '未提供') return '<span class="ws-value">未提供</span>';
+  const clipped = full.length > max;
+  return `<code class="ws-clip" title="${escapeHTML(full)}">${escapeHTML(clipped ? `${full.slice(0, max)}…` : full)}</code>`;
+}
+
+/** 状态徽章：颜色 + 圆点图标 + 文字，三重编码。 */
+function workspaceBadge(label, kind = 'muted') {
+  const safe = ['ok', 'warn', 'danger', 'info', 'muted'].includes(kind) ? kind : 'muted';
+  return `<span class="ws-badge ws-badge-${safe}"><i aria-hidden="true"></i>${escapeHTML(String(label ?? '未记录'))}</span>`;
+}
+
+const WORKSPACE_STATE_KIND = Object.freeze({
+  queued: 'muted', preparing: 'info', running: 'info', checkpointing: 'info',
+  pausing: 'warn', paused: 'warn', cancelling: 'warn', pending: 'muted',
+  succeeded: 'ok', completed: 'ok', done: 'ok', passed: 'ok',
+  partial: 'warn', failed: 'danger', blocked: 'danger', interrupted: 'danger',
+  unavailable: 'warn', error: 'danger', cancelled: 'muted', stopped: 'muted',
+  idle: 'muted', unknown: 'muted', not_performed: 'muted', idle_state: 'muted',
+});
+
+/** 工作区统一的状态徽章：中文标签 + 颜色。 */
+function workspaceStateBadge(value, labels = {}) {
+  const key = String(value ?? '').trim();
+  const text = labels[key] || evidenceStateLabels[key] || taskStateLabels[key] || analysisStateLabels[key] || key || '未记录';
+  return workspaceBadge(text, WORKSPACE_STATE_KIND[key] || 'muted');
+}
+
+/* 漏洞 / 证据状态里出现但共享标签表里没有的取值。这些是后端实际返回的原始值，
+   保留原词在括号里，方便对照接口原文。 */
+const WORKSPACE_EVIDENCE_LABELS = Object.freeze({
+  hypothesis: '待确认（只是线索）',
+  static_signal: '静态信号',
+  unconfirmed_observation: '未确认的观察',
+  observed: '已观察到',
+  reproduced: '已复现',
+  rejected: '已排除',
+  insufficient: '证据不足',
+  poc_confirmed: '复现验证通过（PoC）',
+  poc_failed: '复现验证未通过（PoC）',
+  invariant_violated: '安全规则被打破（不变量违反）',
+});
+
+function workspaceEvidenceLabel(value) {
+  const key = String(value ?? '').trim();
+  if (!key) return '未记录';
+  return WORKSPACE_EVIDENCE_LABELS[key] || evidenceStateLabels[key] || key;
+}
+
+/* 漏洞的 check 字段是分析工具的规则 ID（多为英文短横线命名）。
+   直接摆出来，小白看不懂；这里给出中文说法，括号里保留原规则 ID 对照。
+   映射表来自当前实际出现的规则集合，没覆盖到的原样显示，不编造含义。 */
+const WORKSPACE_CHECK_LABELS = Object.freeze({
+  'arbitrary-send-erc20': '可把代币转给任意地址（可疑转出）',
+  'calls-loop': '在循环里做外部调用',
+  'cyclomatic-complexity': '逻辑分支过多',
+  'dead-code': '存在不会执行的代码',
+  'divide-before-multiply': '先除后乘（精度可能被吃掉）',
+  'events-access': '事件参数可能被篡改',
+  'incorrect-equality': '等值判断可能写错',
+  'low-level-calls': '使用了底层调用（绕过常规检查）',
+  'missing-zero-check': '缺少零值校验',
+  'naming-convention': '命名不符合约定（代码风格问题）',
+  'pragma': '缺少编译器版本声明',
+  'reentrancy-benign': '重入风险（影响较小）',
+  'reentrancy-events': '重入风险（事件先于状态更新）',
+  'reentrancy-no-eth': '重入风险（无 ETH 转移）',
+  'solc-version': '编译器版本较旧',
+  'timestamp': '直接依赖区块时间（可能被操纵）',
+  'unimplemented-functions': '有函数只有声明没有实现',
+  'unindexed-event-address': '事件里的地址未建索引',
+  'uninitialized-local': '局部变量未初始化',
+  'unused-return': '调用结果没有检查',
+});
+
+/** 规则 ID 的人话说法；没收录的原样返回，不臆造含义。 */
+function workspaceCheckLabel(value) {
+  const key = String(value ?? '').trim();
+  if (!key) return '未记录';
+  const label = WORKSPACE_CHECK_LABELS[key];
+  return label ? `${label}（${key}）` : key;
+}
+
+const WORKSPACE_SEVERITY_KEYS = Object.freeze({ critical: 'critical', high: 'high', medium: 'medium', low: 'low', informational: 'info', info: 'info' });
+const WORKSPACE_SEVERITY_TEXT = Object.freeze({ critical: '严重', high: '高危', medium: '中危', low: '低危', info: '提示' });
+
+/** 严重度统一成小写键，避免 "High" / "high" 混在一起出现两个选项。 */
+function workspaceSeverityKey(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  return WORKSPACE_SEVERITY_KEYS[raw] || '';
+}
+function workspaceSeverityLabel(value) {
+  const key = workspaceSeverityKey(value);
+  return key ? WORKSPACE_SEVERITY_TEXT[key] : '未分级';
+}
+/** 严重度徽章：图标 + 文字 + 颜色。 */
+function workspaceSeverityBadge(value) {
+  const key = workspaceSeverityKey(value);
+  const icon = { critical: '▲', high: '▲', medium: '■', low: '▼', info: '·' }[key] || '·';
+  const kind = { critical: 'danger', high: 'danger', medium: 'warn', low: 'info', info: 'info' }[key] || 'muted';
+  return `<span class="ws-badge ws-badge-${kind}"><i aria-hidden="true">${icon}</i>${escapeHTML(workspaceSeverityLabel(value))}</span>`;
 }
 function workspaceCard(title, content, className = '') { return `<article class="workspace-card ${className}"><div class="workspace-card-head"><h2>${escapeHTML(title)}</h2></div>${content}</article>`; }
 function workspaceCount(label, value) { return `<div class="workspace-count"><span>${escapeHTML(label)}</span><b>${escapeHTML(value)}</b></div>`; }
@@ -751,11 +1294,11 @@ function workspaceCapability(name, capabilities) {
   const stateValue = capabilityState(capabilities, name);
   return `<span class="workspace-capability ${stateValue.kind}"><i></i>${escapeHTML(capabilityLabels[name] || name)} · ${escapeHTML(stateValue.label)}</span>`;
 }
-function workspaceTable(items, columns, emptyMessage = '接口返回空集；当前没有可展示记录。') {
-  if (!items.length) return workspaceStatus(emptyMessage, 'empty');
+function workspaceTable(items, columns, emptyMessage = '接口返回空集；当前没有可展示记录。', emptyLinks = []) {
+  if (!items.length) return workspaceEmpty({ title: '这里还没有记录', text: emptyMessage, links: emptyLinks });
   const head = columns.map((column) => `<th scope="col">${escapeHTML(column.label)}</th>`).join('');
   const rows = items.map((item) => `<tr>${columns.map((column) => `<td>${column.render ? column.render(item) : `<span>${escapeHTML(workspaceValue(item[column.key]))}</span>`}</td>`).join('')}</tr>`).join('');
-  return `<div class="workspace-table-wrap"><table class="workspace-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="workspace-table-wrap"><table class="workspace-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div><p class="ws-table-hint"><span aria-hidden="true">↔</span>表格可左右滑动查看全部列</p>`;
 }
 function workspaceJsonDetails(label, value) {
   return `<details class="workspace-json"><summary>${escapeHTML(label)}</summary><pre>${escapeHTML(workspaceObject(value))}</pre></details>`;
@@ -800,7 +1343,7 @@ function taskActionControls(item, revision) {
   if (item.state === 'paused') actions.push(['resume', '恢复']);
   if (['queued', 'preparing', 'running', 'checkpointing', 'paused'].includes(item.state)) actions.push(['cancel', '取消']);
   if (!actions.length) return '';
-  return `<div class="task-operator-actions" data-task-id="${escapeHTML(id)}" data-task-revision="${revision}">${actions.map(([action, label]) => `<button type="button" class="workspace-link" data-task-action="${action}">${label}</button>`).join('')}<span class="task-action-result" role="status" aria-live="polite"></span></div>`;
+  return `<div class="task-operator-actions" data-task-id="${escapeHTML(id)}" data-task-revision="${revision}">${actions.map(([action, label]) => `<button type="button" class="workspace-link" data-task-action="${action}">${label}</button>`).join('')}<span class="task-action-result" role="status" aria-live="polite"></span><p class="ws-effect ws-effect-write"><i aria-hidden="true">✎</i><span>这些按钮会<b>修改该任务的运行状态</b>（暂停、恢复或取消），并写入任务历史。</span></p></div>`;
 }
 function findingLink(item, label = null) {
   const id = item?.findingId || item?.id || '';
@@ -808,19 +1351,54 @@ function findingLink(item, label = null) {
 }
 function hideOverview(hidden) {
   const workspace = $('#workspace-view');
-  workspace.hidden = !hidden;
+  const onAuditRoute = ['map', 'home', 'protocols', 'discoveries', 'execution'].includes(state.workspaceRoute?.name);
+  // 审计视图（首页 / 风险地图 / 协议 / 发现 / 执行）和运维工作区互斥。
+  // 以前审计路由也会走 hideOverview(true)，把工作区容器一并显示出来：
+  // 从「任务中心」切到风险地图时，旧的任务中心内容（约 620px）还留在页面上，
+  // 把真正的页面顶下去 690px，页面看起来正常但首屏是上一页的残留。
+  workspace.hidden = !hidden || onAuditRoute;
+  if (onAuditRoute) workspace.replaceChildren();
   const audit = $('#audit-view');
-  if (audit) audit.hidden = !['map', 'protocols', 'discoveries', 'execution'].includes(state.workspaceRoute?.name);
-  for (const element of document.querySelectorAll('.main-content > *:not(.topbar):not(#workspace-view):not(#audit-view)')) element.hidden = hidden;
+  if (audit) audit.hidden = !onAuditRoute;
+  // 旧总览的页内目录（锚点小导航）只属于旧总览，别的视图里要一起收起来。
+  const anchorNav = document.querySelector('.overview-anchor-nav');
+  if (anchorNav) anchorNav.hidden = hidden;
+  for (const element of document.querySelectorAll('.main-content > *:not(.topbar):not(#workspace-view):not(#audit-view):not(#global-banner):not(#main-region)')) element.hidden = hidden;
   document.querySelector('.main-content').classList.toggle('workspace-mode', hidden);
 }
 function setActiveView(route) {
   const root = route?.name || 'overview';
+  // 面包屑跟着当前页走：旧版是固定「多链作战台」，用户不知道自己在哪一页。
+  updateBreadcrumb(route);
+  if (root === 'overview') {
+    // 旧总览是一个页面，「分析队列」「模型与同步」是它的页内锚点。
+    // 同一时刻只能高亮一个：滚到哪一块就高亮那一项，否则侧栏会亮起三行。
+    highlightOverviewAnchor(route?.anchor);
+    return;
+  }
   document.querySelectorAll('.nav-item').forEach((link) => {
     const hash = link.getAttribute('href')?.slice(1) || '';
-    const active = root === 'overview' ? hash === (route.anchor || 'overview') : hash === root || (root === 'task' && hash === 'tasks') || (root === 'finding' && hash === 'finding');
+    const active = hash === root || (root === 'task' && hash === 'tasks') || (root === 'finding' && hash === 'finding');
     link.classList.toggle('active', active);
     if (active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current');
+  });
+}
+
+/**
+ * 旧总览内部的高亮：把当前区块映射到侧边栏的某一项。
+ * 只有「旧版总览」「分析队列」「模型与同步」这三个是旧总览的页内入口。
+ */
+function highlightOverviewAnchor(anchorHash) {
+  const hash = String(anchorHash || 'overview');
+  // 页内目录会跳到 #chains / #routes 等区块；这些区块没有独立侧栏入口，
+  // 因此应继续高亮「旧版总览」，而不是让整个侧栏失去当前位置。
+  const hasNavEntry = [...document.querySelectorAll('.nav-item')].some((link) => link.getAttribute('href')?.slice(1) === hash);
+  const target = hasNavEntry ? hash : 'overview';
+  document.querySelectorAll('.nav-item').forEach((link) => {
+    const linkHash = link.getAttribute('href')?.slice(1) || '';
+    const active = linkHash === target;
+    link.classList.toggle('active', active);
+    if (active) link.setAttribute('aria-current', 'location'); else link.removeAttribute('aria-current');
   });
 }
 
@@ -829,64 +1407,115 @@ async function renderProjectsWorkspace() {
   const projectItems = workspaceItems(projects.data), contractItems = workspaceItems(contracts.data);
   const projectRows = workspaceTable(projectItems, [
     { label: '项目', render: (item) => `<strong>${escapeHTML(workspaceValue(item.input?.projectId || item.id))}</strong>` },
-    { label: '状态', render: (item) => `<span class="workspace-state">${escapeHTML(stateLabel(item.state, taskStateLabels))}</span>` },
-    { label: '源码目录', render: (item) => `<code>${escapeHTML(workspaceValue(item.input?.sourcePath))}</code>` },
+    { label: '状态', render: (item) => workspaceStateBadge(item.state, taskStateLabels) },
+    { label: '源码目录', render: (item) => workspaceCode(item.input?.sourcePath, 44) },
     { label: '更新时间', render: (item) => `<span>${escapeHTML(formatDate(item.updatedAt || item.createdAt))}</span>` },
     { label: '任务', render: (item) => taskLink(item, '打开任务') },
-  ], workspaceError(projects) || '当前没有项目任务。');
+  ], workspaceError(projects) || '还没有导入过本地项目。导入后这里会列出项目 ID、源码目录和对应任务。', [['#collection', '去导入本地项目']]);
   const contractRows = workspaceTable(contractItems, [
     { label: '合约', render: (item) => `<strong>${escapeHTML(workspaceValue(item.input?.contractId || item.id))}</strong>` },
-    { label: '地址', render: (item) => `<code>${escapeHTML(workspaceValue(item.input?.address))}</code>` },
+    { label: '地址', render: (item) => workspaceCode(item.input?.address, 44) },
     { label: '链', render: (item) => `<span>${escapeHTML(workspaceValue(item.input?.chainId))}</span>` },
-    { label: '状态', render: (item) => `<span class="workspace-state">${escapeHTML(stateLabel(item.state, taskStateLabels))}</span>` },
+    { label: '状态', render: (item) => workspaceStateBadge(item.state, taskStateLabels) },
     { label: '任务', render: (item) => taskLink(item, '打开任务') },
-  ], workspaceError(contracts) || '当前没有合约记录；接口与执行器状态分开显示。');
-  const capabilityBody = capabilities.ok ? Object.entries(capabilities.data.capabilities || {}).map(([name]) => workspaceCapability(name, capabilities.data)).join(' ') : workspaceStatus(workspaceError(capabilities), 'error');
-  return workspaceFrame({ kicker: '资源 / 项目', title: '项目管理', description: '项目、合约任务和能力声明来自持久化 API；没有记录时保持空状态。', body: `<div class="workspace-counts">${workspaceCount('项目任务', String(projectItems.length))}${workspaceCount('合约记录', String(contractItems.length))}</div>${workspaceCard('当前能力', `<div class="workspace-capability-list">${capabilityBody}</div>`)}<div class="workspace-grid-two">${workspaceCard('项目任务', projectRows)}${workspaceCard('合约记录', contractRows)}</div>`, footer: `项目数据版本 ${workspaceValue(projects.data?.consistency?.revision ?? '未提供')} · 合约资源执行状态由能力接口声明` });
+  ], workspaceError(contracts) || '还没有关联到链上地址的合约。地址由你提供，系统尚未验证部署代码与源码是否一致。', [['#collection', '去创建采集任务']]);
+  const capabilityBody = capabilities.ok
+    ? `<div class="workspace-capability-list">${Object.entries(capabilities.data.capabilities || {}).map(([name]) => workspaceCapability(name, capabilities.data)).join(' ')}</div>`
+    : workspaceStatus(workspaceError(capabilities) || '读取能力声明失败。', 'error');
+  return workspaceFrame({
+    kicker: '资源 / 项目',
+    title: '项目管理',
+    description: '这页列出已经导入到本机的项目和已关联的合约地址，并显示每项能力是否可执行。什么时候用：想知道「哪些代码在跑、跑到哪一步」时先看这里。',
+    mode: 'read',
+    body: `<div class="workspace-counts">${workspaceCount('项目任务', String(projectItems.length))}${workspaceCount('合约记录', String(contractItems.length))}${workspaceCount('能力项', capabilities.ok ? String(Object.keys(capabilities.data.capabilities || {}).length) : '未记录')}</div>${workspaceCard('当前能力', capabilityBody)}<div class="workspace-grid-two">${workspaceCard('项目任务', projectRows)}${workspaceCard('合约记录', contractRows)}</div>`,
+    footer: `项目数据版本 ${workspaceValue(projects.data?.consistency?.revision ?? '未提供')} · 合约资源执行状态由能力接口声明`,
+    next: [['#collection', '创建采集任务'], ['#tasks', '查看任务队列']],
+  });
+}
+
+/* 后端返回的错误码。前端不自己判断能不能采集，一律以后端 error 字段为准。 */
+function workspaceErrorCode(error) {
+  const code = error?.payload?.error?.code ?? error?.code ?? error?.payload?.code ?? '';
+  return typeof code === 'string' ? code : '';
+}
+
+/** 离线阶段被后端拒绝时的如实提示：说清是后端拒绝，不是前端拦的。 */
+const WORKSPACE_OFFLINE_HINT = '当前处于离线阶段，后端拒绝链上采集';
+function workspaceOfflineDetails(error) {
+  const code = workspaceErrorCode(error);
+  const message = error?.message ? String(error.message) : '';
+  const isOffline = code === 'chain_collection_disabled' || /离线阶段不开放链上采集|链上采集.*拒绝/.test(message);
+  return isOffline ? { code, message } : null;
+}
+function workspaceOfflineMessage(error) {
+  const details = workspaceOfflineDetails(error);
+  if (!details) return '';
+  const backend = details.message || '链上采集启动请求已被后端拒绝。';
+  return `${WORKSPACE_OFFLINE_HINT}。${backend}${details.code ? `（后端错误码：${details.code}）` : ''}`;
+}
+function workspaceOfflineNotice(error) {
+  const details = workspaceOfflineDetails(error);
+  if (!details) return '';
+  return `<div class="workspace-status workspace-status-error"><strong>${escapeHTML(WORKSPACE_OFFLINE_HINT)}</strong><br>${escapeHTML(details.message || '链上采集启动请求已被后端拒绝。')}${details.code ? `<br>后端错误码：${escapeHTML(details.code)}` : ''}<br>这是后端的硬性拒绝，不是页面拦截；本页不会把它显示成成功。</div>`;
 }
 
 function collectionForm(capabilities) {
   const stateValue = capabilityState(capabilities, 'collection');
   const disabled = stateValue.kind === 'blocked';
-  return `<form class="workspace-form" data-resource-form="collection"><div class="workspace-form-title">链上采集任务</div><p class="workspace-form-note">读取指定区块的公开信息，不会签名、授权或发交易。当前状态：${escapeHTML(stateValue.label)}。${escapeHTML(readableLimitation(stateValue.limitation))}</p><div class="workspace-form-grid"><label>项目 ID<input name="projectId" required maxlength="200" placeholder="已有项目 ID"></label><label>链 ID<input name="chainId" required maxlength="100" placeholder="例如 1"></label><label class="workspace-form-wide">只读链节点地址<input name="rpcUrl" required maxlength="2000" placeholder="https://…"></label><label>合约地址（可选）<input name="address" maxlength="100" placeholder="0x…"></label><label>开始区块<input name="fromBlock" required maxlength="100" placeholder="例如 1000000"></label><label>结束区块（可选）<input name="toBlock" maxlength="100" placeholder="默认只读一个区块"></label></div><button class="workspace-submit" type="submit" ${disabled ? 'disabled' : ''}>${disabled ? '执行器未就绪' : '提交采集任务'}</button><span class="workspace-form-result" data-form-result></span></form>`;
+  return `<form class="workspace-form" data-resource-form="collection"><div class="workspace-form-title">链上采集任务</div><p class="workspace-form-note">读取指定区块的公开信息，不会签名、授权或发交易。当前状态：${escapeHTML(stateValue.label)}。${escapeHTML(readableLimitation(stateValue.limitation))}</p><div class="workspace-form-grid"><label>项目 ID<input name="projectId" required maxlength="200" placeholder="已有项目 ID"></label><label>链 ID<input name="chainId" required maxlength="100" placeholder="例如 1"></label><label class="workspace-form-wide">只读链节点地址<input name="rpcUrl" required maxlength="2000" placeholder="https://…"></label><label>合约地址（可选）<input name="address" maxlength="100" placeholder="0x…"></label><label>开始区块<input name="fromBlock" required maxlength="100" placeholder="例如 1000000"></label><label>结束区块（可选）<input name="toBlock" maxlength="100" placeholder="默认只读一个区块"></label></div><button class="workspace-submit ws-submit-write" type="submit" ${disabled ? 'disabled' : ''}>${disabled ? '执行器未就绪' : '提交采集任务'}</button><p class="ws-effect ws-effect-write"><i aria-hidden="true">✎</i><span>提交后会在本机任务队列里<b>创建一条采集任务记录</b>，只读取所填区块的公开信息；不会签名、不会授权、不会发交易。</span></p><span class="workspace-form-result" data-form-result></span></form>`;
 }
 function projectImportForm() {
-  return `<form class="workspace-form" data-resource-form="project"><div class="workspace-form-title">导入本地项目</div><p class="workspace-form-note">提交后进入共享任务队列；不会执行资产操作。</p><div class="workspace-form-grid"><label>项目 ID<input name="projectId" required maxlength="200" placeholder="项目标识"></label><label class="workspace-form-wide">源码目录<input name="sourcePath" required maxlength="1000" placeholder="绝对路径（允许根目录内）"></label></div><button class="workspace-submit" type="submit">提交项目导入</button><span class="workspace-form-result" data-form-result></span></form>`;
+  return `<form class="workspace-form" data-resource-form="project"><div class="workspace-form-title">导入本地项目</div><p class="workspace-form-note">提交后进入共享任务队列；不会执行资产操作。</p><div class="workspace-form-grid"><label>项目 ID<input name="projectId" required maxlength="200" placeholder="项目标识"></label><label class="workspace-form-wide">源码目录<input name="sourcePath" required maxlength="1000" placeholder="绝对路径（允许根目录内）"></label></div><button class="workspace-submit ws-submit-write" type="submit">提交项目导入</button><p class="ws-effect ws-effect-write"><i aria-hidden="true">✎</i><span>提交后会在本机任务队列里<b>创建一条项目导入任务</b>，并登记这个项目 ID 与源码目录；不会执行资产操作。</span></p><span class="workspace-form-result" data-form-result></span></form>`;
 }
 async function renderCollectionWorkspace() {
   const [collection, projects, capabilities] = await Promise.all([optionalResource('/api/v1/collection?limit=100'), optionalResource('/api/v1/projects?limit=100'), optionalResource('/api/v1/capabilities')]);
   const rows = workspaceTable(workspaceItems(collection.data), [
     { label: '任务', render: (item) => taskLink(item, '打开任务') },
-    { label: '项目', render: (item) => `<code>${escapeHTML(workspaceValue(item.input?.projectId))}</code>` },
-    { label: '链 / 地址', render: (item) => `<code>${escapeHTML(workspaceValue(item.input?.chainId))} / ${escapeHTML(workspaceValue(item.input?.address))}</code>` },
-    { label: '状态', render: (item) => `<span class="workspace-state">${escapeHTML(stateLabel(item.state, taskStateLabels))}</span>` },
+    { label: '项目', render: (item) => workspaceCode(item.input?.projectId, 34) },
+    { label: '链 / 地址', render: (item) => `<code class="ws-clip" title="${escapeHTML(workspaceValue(item.input?.address))}">${escapeHTML(workspaceValue(item.input?.chainId))} / ${escapeHTML(workspaceValue(item.input?.address))}</code>` },
+    { label: '状态', render: (item) => workspaceStateBadge(item.state, taskStateLabels) },
     { label: '检查点', render: (item) => workspaceJsonDetails('查看检查点', item.checkpoint || {}) },
-  ], workspaceError(collection) || '当前没有采集任务。');
+  ], workspaceError(collection) || '还没有采集任务记录。填好下面的表单提交后，任务会出现在这里。', [['#tasks', '查看任务中心']]);
   const caps = capabilities.ok ? capabilities.data : null;
-  return workspaceFrame({ kicker: '任务 / 采集', title: '创建采集任务', description: '填写只读地址和区块范围后，任务会进入队列；没有真实结果时页面会明确显示空状态。', body: `<div class="workspace-grid-two">${workspaceCard('提交入口', `${projectImportForm()}${collectionForm(caps)}`)}${workspaceCard('现有采集任务', rows)} </div><div class="workspace-record-note">已发现项目任务：${escapeHTML(String(workspaceItems(projects.data).length))} 条。采集接口：${caps ? workspaceCapability('collection', caps) : workspaceError(capabilities)}</div>` });
+  const offlineNotice = `<div class="workspace-status workspace-status-warn"><strong>当前处于离线阶段</strong><br>离线阶段不开放链上采集：提交采集任务会被后端直接拒绝（错误码 chain_collection_disabled）。本页如实显示后端的拒绝结果，不会显示成功。</div>`;
+  return workspaceFrame({
+    kicker: '任务 / 采集',
+    title: '创建采集任务',
+    description: '这页用来把本地项目和链上只读采集任务放进本机队列。什么时候用：拿到一个已验证源码目录或一条链的只读节点地址时。提交只读取公开信息，不签名、不授权、不发交易。',
+    mode: 'write',
+    body: `${offlineNotice}<div class="workspace-grid-two">${workspaceCard('提交入口', `${projectImportForm()}${collectionForm(caps)}`)}${workspaceCard('现有采集任务', rows)}</div><div class="workspace-record-note">已发现项目任务：${escapeHTML(String(workspaceItems(projects.data).length))} 条。采集接口：${caps ? workspaceCapability('collection', caps) : workspaceError(capabilities)}</div>`,
+    next: [['#projects', '查看项目管理'], ['#tasks', '查看任务中心']],
+  });
 }
 
-function scanForm({ title = '本地源码分析任务', description = '提交已验证的源码包后，任务会进入队列并保留检查记录。只有已有专用方案的目标才会运行本地隔离测试。', button = '创建分析任务' } = {}) {
-  return `<form class="workspace-form" data-resource-form="scan"><div class="workspace-form-title">${escapeHTML(title)}</div><p class="workspace-form-note">${escapeHTML(description)}</p><div class="workspace-form-grid"><label class="workspace-form-wide">已验证源码包文件路径<input name="sourcePath" required maxlength="1000" placeholder="项目文件夹内的源码包"></label><label class="workspace-form-wide">依赖源码包路径（可选）<input name="dependencyPath" maxlength="1000" placeholder="项目文件夹内的依赖文件"></label></div><button class="workspace-submit" type="submit">${escapeHTML(button)}</button><span class="workspace-form-result" data-form-result></span></form>`;
+function scanForm({ title = '本地源码分析任务', description = '提交已验证的源码包后，任务会进入队列并保留检查记录。只有已有专用方案的目标才会运行本地隔离测试。', button = '创建分析任务', effect = '提交后会在本机任务队列里<b>创建一条源码分析任务</b>，并保存这份源码包的检查记录；不会执行链上交易。' } = {}) {
+  return `<form class="workspace-form" data-resource-form="scan"><div class="workspace-form-title">${escapeHTML(title)}</div><p class="workspace-form-note">${escapeHTML(description)}</p><div class="workspace-form-grid"><label class="workspace-form-wide">已验证源码包文件路径<input name="sourcePath" required maxlength="1000" placeholder="项目文件夹内的源码包"></label><label class="workspace-form-wide">依赖源码包路径（可选）<input name="dependencyPath" maxlength="1000" placeholder="项目文件夹内的依赖文件"></label></div><button class="workspace-submit ws-submit-write" type="submit">${escapeHTML(button)}</button><p class="ws-effect ws-effect-write"><i aria-hidden="true">✎</i><span>${effect}</span></p><span class="workspace-form-result" data-form-result></span></form>`;
 }
 function decompileForm() {
-  return `<form class="workspace-form" data-resource-form="decompile"><div class="workspace-form-title">整理一段合约代码</div><p class="workspace-form-note">粘贴以 0x 开头的完整代码，或填写项目 work 目录内的代码文件路径。生成内容是阅读辅助稿，不是原始源码。</p><div class="workspace-form-grid"><label class="workspace-form-wide">代码内容（可选）<textarea name="runtimeBytecode" rows="7" maxlength="262146" placeholder="0x 开头的十六进制代码"></textarea></label><label class="workspace-form-wide">或代码文件路径<input name="bytecodePath" maxlength="1000" placeholder="work/...json"></label></div><button class="workspace-submit" type="submit">创建整理任务</button><span class="workspace-form-result" data-form-result role="status" aria-live="polite"></span></form>`;
+  return `<form class="workspace-form" data-resource-form="decompile"><div class="workspace-form-title">整理一段合约代码</div><p class="workspace-form-note">粘贴以 0x 开头的完整代码，或填写项目 work 目录内的代码文件路径。生成内容是阅读辅助稿，不是原始源码。</p><div class="workspace-form-grid"><label class="workspace-form-wide">代码内容（可选）<textarea name="runtimeBytecode" rows="7" maxlength="262146" placeholder="0x 开头的十六进制代码"></textarea></label><label class="workspace-form-wide">或代码文件路径<input name="bytecodePath" maxlength="1000" placeholder="work/...json"></label></div><button class="workspace-submit ws-submit-write" type="submit">创建整理任务</button><p class="ws-effect ws-effect-write"><i aria-hidden="true">✎</i><span>提交后会在本机任务队列里<b>创建一条代码整理任务</b>，并保存这次生成的阅读辅助稿；产物是工具推测的结果，不是项目原始源码。</span></p><span class="workspace-form-result" data-form-result role="status" aria-live="polite"></span></form>`;
 }
 async function renderScanWorkspace() {
   const [analysis, scans, capabilities] = await Promise.all([optionalResource('/api/v1/analysis?limit=100'), optionalResource('/api/v1/scans?limit=100'), optionalResource('/api/v1/capabilities')]);
   const analysisRows = workspaceTable(workspaceItems(analysis.data), [
     { label: '分析任务', render: (item) => taskLink(item, workspaceValue(item.taskId || item.id)) },
     { label: '类型', render: (item) => `<span>${escapeHTML(taskTypeLabels[item.type] || workspaceValue(item.type))}</span>` },
-    { label: '状态', render: (item) => `<span class="workspace-state">${escapeHTML(stateLabel(item.state, taskStateLabels))}</span>` },
+    { label: '状态', render: (item) => workspaceStateBadge(item.state, taskStateLabels) },
     { label: '更新时间', render: (item) => `<span>${escapeHTML(formatDate(item.updatedAt || item.createdAt))}</span>` },
-  ], workspaceError(analysis) || '当前没有分析任务。');
+  ], workspaceError(analysis) || '还没有源码分析任务。填好源码包路径提交后，任务会出现在这里。');
   const scanRows = workspaceTable(workspaceItems(scans.data), [
     { label: '扫描', render: (item) => taskLink(item, workspaceValue(item.scanId || item.taskId || item.id)) },
-    { label: '状态', render: (item) => `<span class="workspace-state">${escapeHTML(stateLabel(item.state, taskStateLabels))}</span>` },
+    { label: '状态', render: (item) => workspaceStateBadge(item.state, taskStateLabels) },
     { label: '创建时间', render: (item) => `<span>${escapeHTML(formatDate(item.createdAt))}</span>` },
-  ], workspaceError(scans) || '当前没有扫描记录。');
+  ], workspaceError(scans) || '还没有扫描记录。扫描任务与上面的分析任务共用同一个队列，完成后可以点进去看检查记录。', [['#tasks', '查看任务中心']]);
   const caps = capabilities.ok ? capabilities.data : null;
-  return workspaceFrame({ kicker: '任务 / 扫描', title: '创建扫描任务', description: '扫描配置写入统一任务队列，静态线索与动态证据仍按各自资源显示。', body: `<div class="workspace-grid-two">${workspaceCard('创建任务', scanForm())}${workspaceCard('分析任务', analysisRows)} </div>${workspaceCard('扫描记录', scanRows)}<div class="workspace-record-note">分析接口：${caps ? workspaceCapability('analysis', caps) : workspaceError(capabilities)} · 扫描接口：${caps ? workspaceCapability('scans', caps) : ''}</div>` });
+  return workspaceFrame({
+    kicker: '任务 / 扫描',
+    title: '创建扫描任务',
+    description: '这页把一份已验证的源码包交给本机分析流程。什么时候用：拿到经过验证的源码、想跑静态检查和本地隔离测试时。静态线索只是线索，不会自动变成已确认漏洞。',
+    mode: 'write',
+    body: `<div class="workspace-grid-two">${workspaceCard('创建任务', scanForm())}${workspaceCard('分析任务', analysisRows)}</div>${workspaceCard('扫描记录', scanRows)}<div class="workspace-record-note">分析接口：${caps ? workspaceCapability('analysis', caps) : workspaceError(capabilities)} · 扫描接口：${caps ? workspaceCapability('scans', caps) : ''}</div>`,
+    next: [['#dynamic', '查看动态检查'], ['#tasks', '查看任务中心']],
+  });
 }
 
 async function renderTasksWorkspace() {
@@ -896,26 +1525,50 @@ async function renderTasksWorkspace() {
   const rows = workspaceTable(items, [
     { label: '任务 ID', render: (item) => taskLink(item) },
     { label: '类型', render: (item) => `<span>${escapeHTML(taskTypeLabels[item.type] || workspaceValue(item.type))}</span>` },
-    { label: '状态', render: (item) => `<span class="workspace-state">${escapeHTML(stateLabel(item.state, taskStateLabels))}</span>` },
+    { label: '状态', render: (item) => workspaceStateBadge(item.state, taskStateLabels) },
     { label: '尝试次数', render: (item) => `<span>${escapeHTML(workspaceValue(item.attempts))}</span>` },
     { label: '更新时间', render: (item) => `<span>${escapeHTML(formatDate(item.updatedAt || item.createdAt))}</span>` },
-  ], workspaceError(result) || '当前任务队列为空。');
-  return workspaceFrame({ kicker: '任务 / 队列', title: '任务中心', description: '所有状态来自任务状态存储；打开任务可查看检查点、错误和归档报告。', body: workspaceCard('任务队列', rows), footer: `一致性版本 ${workspaceValue(result.data?.consistency?.revision ?? '未提供')} · ${workspaceValue(result.data?.page?.hasMore ? '结果已分页' : '当前页已完整')}` });
+  ], workspaceError(result) || '任务队列是空的。创建扫描任务或导入项目后，这里会出现对应的任务记录。', [['#scan', '去创建扫描任务'], ['#collection', '去创建采集任务']]);
+  return workspaceFrame({
+    kicker: '任务 / 队列',
+    title: '任务中心',
+    description: '这页列出本机队列里的所有任务。什么时候用：想知道某个分析跑到哪一步、卡住或失败时。点任务 ID 可以看检查点、错误原因和已归档报告。',
+    mode: 'read',
+    body: workspaceCard('任务队列', rows),
+    footer: `一致性版本 ${workspaceValue(result.data?.consistency?.revision ?? '未提供')} · ${workspaceValue(result.data?.page?.hasMore ? '结果已分页' : '当前页已完整')}`,
+    next: [['#scan', '创建扫描任务'], ['#findings-view', '查看漏洞中心']],
+  });
 }
 
-/* 离线语料控制台（LaneW）。轮询间隔 4 秒；接口无数据时保持空状态，不崩溃。 */
-const CORPUS_POLL_INTERVAL_MS = 4000;
-let corpusPollTimer = null;
+/* 离线语料控制台（LaneW）。轮询间隔 4 秒；接口无数据时保持空状态，不崩溃。
+ * CORPUS_POLL_INTERVAL_MS / corpusPollTimer 的声明在文件前部（auditViews 之后）：
+ * 首次 routeWorkspace() 会调用 stopCorpusPolling()，声明放在这里会触发 TDZ。 */
+
+/* 轮询会把整块面板重新渲染，所以页面状态（所选类别、泳道、上一次操作结果）
+ * 必须存在模块级：否则每 4 秒一次的重绘会把用户的筛选和反馈抹掉。 */
+const corpusViewState = {
+  selection: { category: '', laneId: 'static' },
+  feedback: { action: null, filter: null },
+};
 
 function stopCorpusPolling() {
   if (corpusPollTimer) clearInterval(corpusPollTimer);
   corpusPollTimer = null;
 }
 
+/** 读取面板里的当前选择，重绘后要保持一致。 */
+function captureCorpusSelection() {
+  const category = $('#workspace-view [data-corpus-category]');
+  const lane = $('#workspace-view [data-corpus-filter-lane]');
+  if (category) corpusViewState.selection.category = category.value || '';
+  if (lane) corpusViewState.selection.laneId = lane.value || 'static';
+}
+
 /** 刷新语料面板内容；轮询期间任何读取失败都保持当前视图，不清空页面。 */
 async function refreshCorpusWorkspace() {
   const view = $('#workspace-view');
   if (!view || state.workspaceRoute?.name !== 'corpus') return;
+  captureCorpusSelection();
   const requestId = ++state.workspaceRequest;
   let html;
   try { html = await renderCorpusWorkspace(); }
@@ -946,11 +1599,13 @@ async function renderCorpusWorkspace() {
         categories: [],
         readError: overview.error.message,
       },
+      selection: corpusViewState.selection,
+      feedback: corpusViewState.feedback,
     });
   }
   const payload = overview.data?.data || {};
   const categories = filters.ok && Array.isArray(filters.data?.data?.categories) ? filters.data.data.categories : [];
-  return corpusView.render({ ...payload, categories });
+  return corpusView.render({ ...payload, categories, selection: corpusViewState.selection, feedback: corpusViewState.feedback });
 }
 
 function renderArchivedReportSummary(report) {
@@ -966,15 +1621,21 @@ function renderArchivedReportSummary(report) {
 
 async function renderTaskDetailWorkspace(id) {
   const task = await optionalResource(`/api/v1/tasks/${encodeURIComponent(id)}`);
-  if (!task.ok) return workspaceFrame({ kicker: '任务 / 详情', title: '任务详情不可用', description: task.error.message, body: workspaceStatus(task.error.message, 'error') });
+  if (!task.ok) return workspaceFrame({ kicker: '任务 / 详情', title: '任务详情不可用', description: task.error.message, mode: 'read', body: workspaceStatus(task.error.message, 'error') });
   const item = task.data.data || task.data.task || task.data;
   const revision = task.data.consistency?.revision;
+  // 归档报告只属于本地源码分析任务。后端只为 analysis / local-source-analysis
+  // 提供 /api/v1/reports/{id}；对采集等其他任务请求必然 404。
+  // 这里按任务类型决定是否请求，避免每次打开非分析任务都在控制台留下 404。
+  const reportCapable = ['analysis', 'local-source-analysis'].includes(String(item.type || ''));
   const [report, replay] = await Promise.all([
-    optionalResource(`/api/v1/reports/${encodeURIComponent(id)}`),
+    reportCapable ? optionalResource(`/api/v1/reports/${encodeURIComponent(id)}`) : Promise.resolve({ ok: false, path: null, error: { status: 404, message: '该任务类型不提供归档报告。' } }),
     optionalResource(`/api/v1/replay?taskId=${encodeURIComponent(id)}&limit=20`),
   ]);
   const archivedReport = report.data?.report || report.data;
-  const reportBody = report.ok ? `${renderArchivedReportSummary(archivedReport)}${workspaceJsonDetails('查看报告内容（接口原文）', archivedReport)}` : workspaceStatus(report.error.status === 404 ? '该任务尚无可读取报告。' : report.error.message, report.error.status === 404 ? 'empty' : 'error');
+  const reportBody = report.ok
+    ? `${renderArchivedReportSummary(archivedReport)}${workspaceJsonDetails('查看报告内容（接口原文）', archivedReport)}`
+    : workspaceStatus(report.error.status === 404 ? '该任务尚无可读取报告。' : report.error.message, report.error.status === 404 ? 'empty' : 'error');
   const checkpoint = item.checkpoint && typeof item.checkpoint === 'object' ? item.checkpoint : {};
   const lease = item.lease && typeof item.lease === 'object' ? item.lease : null;
   const checkpointFields = [
@@ -1003,7 +1664,7 @@ async function renderTaskDetailWorkspace(id) {
     ], '该任务没有已验证的重放产物。')
     : workspaceStatus(replay.error.message, 'error');
   const detailTitle = String(item.type || '').includes('collection') ? '采集任务详情' : (String(item.type || '').includes('analysis') || String(item.type || '').includes('scan') ? '扫描任务详情' : '任务详情');
-  return workspaceFrame({ kicker: '任务 / 详情', title: detailTitle, description: `任务 ${id} 的状态、阶段历史、检查点和证据。所有字段来自任务 API；未记录内容不会被补写。`, body: `<div class="workspace-grid-two">${workspaceCard('状态与时间', `<dl class="workspace-definition"><div><dt>任务 ID</dt><dd><code>${escapeHTML(id)}</code></dd></div><div><dt>类型</dt><dd>${escapeHTML(taskTypeLabels[item.type] || workspaceValue(item.type))}</dd></div><div><dt>状态</dt><dd><span class="workspace-state">${escapeHTML(stateLabel(item.state, taskStateLabels))}</span></dd></div><div><dt>优先级</dt><dd>${escapeHTML(workspaceValue(item.priority))}</dd></div><div><dt>尝试次数</dt><dd>${escapeHTML(workspaceValue(item.attempts))} / ${escapeHTML(workspaceValue(item.maxAttempts))}</dd></div><div><dt>检查点序号</dt><dd>${escapeHTML(workspaceValue(item.checkpointSeq))}</dd></div><div><dt>下次重试</dt><dd>${escapeHTML(formatDate(item.nextRetryAt))}</dd></div><div><dt>创建时间</dt><dd>${escapeHTML(formatDate(item.createdAt))}</dd></div><div><dt>更新时间</dt><dd>${escapeHTML(formatDate(item.updatedAt))}</dd></div><div><dt>错误</dt><dd>${escapeHTML(workspaceValue(item.error))}</dd></div></dl>${taskActionControls(item, revision)}`)}${workspaceCard('工作进程租约', leaseBody)}</div><div class="workspace-grid-two">${workspaceCard('阶段历史', historyBody)}${workspaceCard('当前检查点', checkpointBody)}</div><div class="workspace-grid-two">${workspaceCard('输入参数', workspaceJsonDetails('查看任务输入（接口原文）', item.payload || item.input || {}))}${workspaceCard('调用重放', replayBody)}</div>${workspaceCard('归档报告', reportBody)}` });
+  return workspaceFrame({ kicker: '任务 / 详情', title: detailTitle, description: `任务 ${id} 的状态、阶段历史、检查点和证据。所有字段来自任务 API；未记录内容不会被补写。`, mode: 'mixed', body: `<div class="workspace-grid-two">${workspaceCard('状态与时间', `<dl class="workspace-definition"><div><dt>任务 ID</dt><dd><code>${escapeHTML(id)}</code></dd></div><div><dt>类型</dt><dd>${escapeHTML(taskTypeLabels[item.type] || workspaceValue(item.type))}</dd></div><div><dt>状态</dt><dd><span class="workspace-state">${escapeHTML(stateLabel(item.state, taskStateLabels))}</span></dd></div><div><dt>优先级</dt><dd>${escapeHTML(workspaceValue(item.priority))}</dd></div><div><dt>尝试次数</dt><dd>${escapeHTML(workspaceValue(item.attempts))} / ${escapeHTML(workspaceValue(item.maxAttempts))}</dd></div><div><dt>检查点序号</dt><dd>${escapeHTML(workspaceValue(item.checkpointSeq))}</dd></div><div><dt>下次重试</dt><dd>${escapeHTML(formatDate(item.nextRetryAt))}</dd></div><div><dt>创建时间</dt><dd>${escapeHTML(formatDate(item.createdAt))}</dd></div><div><dt>更新时间</dt><dd>${escapeHTML(formatDate(item.updatedAt))}</dd></div><div><dt>错误</dt><dd>${escapeHTML(workspaceValue(item.error))}</dd></div></dl>${taskActionControls(item, revision)}`)}${workspaceCard('工作进程租约', leaseBody)}</div><div class="workspace-grid-two">${workspaceCard('阶段历史', historyBody)}${workspaceCard('当前检查点', checkpointBody)}</div><div class="workspace-grid-two">${workspaceCard('输入参数', workspaceJsonDetails('查看任务输入（接口原文）', item.payload || item.input || {}))}${workspaceCard('调用重放', replayBody)}</div>${workspaceCard('归档报告', reportBody)}` });
 }
 
 function renderFindingRows(items) {
@@ -1019,7 +1680,14 @@ function renderFindingRows(items) {
   });
   const target = $('#workspace-finding-rows');
   if (!target) return;
-  target.innerHTML = filtered.length ? filtered.map((item) => `<tr><td>${findingLink(item)}</td><td>${escapeHTML(workspaceValue(item.title || item.check || item.name))}</td><td><span class="workspace-severity ${String(item.severity || item.impact || '').toLowerCase()}">${escapeHTML(severityLabels[item.severity] || severityLabels[item.impact] || workspaceValue(item.severity || item.impact))}</span></td><td>${escapeHTML(evidenceStateLabels[item.status] || evidenceStateLabels[item.state] || workspaceValue(item.status || item.state))}</td><td>${escapeHTML(triageStatusLabels[item.triage?.triageStatus] || '待处理')}</td><td>${escapeHTML(workspaceValue(item.target || item.contract))}</td></tr>`).join('') : `<tr><td colspan="6">${escapeHTML(search || severity !== 'all' || status !== 'all' || triageStatus !== 'all' ? '筛选后没有记录。' : '接口返回空集；当前没有漏洞记录。')}</td></tr>`;
+  // 严重度用统一的人话标签 + 徽章：后端返回的 'High' / 'Medium' / 'Informational'
+  // 混合大小写，直接显示会让表格里出现一半英文一半中文。
+  // 「标题 / 规则」列：接口给了 title 就用中文标题，没有就退回规则的人话说法。
+  const rowTitle = (item) => {
+    const title = String(item?.title || item?.name || '').trim();
+    return title ? title : workspaceCheckLabel(item?.check);
+  };
+  target.innerHTML = filtered.length ? filtered.map((item) => `<tr><td>${findingLink(item)}</td><td>${escapeHTML(rowTitle(item))}</td><td>${workspaceSeverityBadge(item.severity || item.impact)}</td><td>${escapeHTML(workspaceEvidenceLabel(item.status || item.state))}</td><td>${escapeHTML(triageStatusLabels[item.triage?.triageStatus] || '待处理')}</td><td>${escapeHTML(workspaceValue(item.target || item.contract))}</td></tr>`).join('') : `<tr><td colspan="6">${escapeHTML(search || severity !== 'all' || status !== 'all' || triageStatus !== 'all' ? '筛选后没有记录。' : '接口返回空集；当前没有漏洞记录。')}</td></tr>`;
 }
 
 function exportFindingList(items) {
@@ -1040,7 +1708,7 @@ function exportFindingList(items) {
   };
   const rows = [
     ['漏洞 ID', '标题', '严重度', '检测状态', '人工处置', '指派人', '标签', '目标'],
-    ...filtered.map((item) => [item.findingId || item.id, item.title || item.check || item.name, severityLabels[item.severity] || severityLabels[item.impact] || item.severity || item.impact, evidenceStateLabels[item.status] || item.status || item.state, triageStatusLabels[item.triage?.triageStatus] || '待处理', item.triage?.assignee, (item.triage?.tags || []).join(', '), item.target || item.contract]),
+    ...filtered.map((item) => [item.findingId || item.id, item.title || item.check || item.name, severityLabels[item.severity] || severityLabels[item.impact] || item.severity || item.impact, workspaceEvidenceLabel(item.status || item.state), triageStatusLabels[item.triage?.triageStatus] || '待处理', item.triage?.assignee, (item.triage?.tags || []).join(', '), item.target || item.contract]),
   ];
   const blob = new Blob([`\ufeff${rows.map((row) => row.map(cell).join(',')).join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -1048,10 +1716,36 @@ function exportFindingList(items) {
   link.href = url; link.download = '漏洞列表.csv'; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+/* 验证结论摘要：validation 是 { localTest, deploymentBound, exploitabilityEstablished }。
+ * 直接把 JSON 摊给读者看不懂，翻译成中文；同时保留"没有确认可利用"这一事实，
+ * 不因为本地测试通过就写成已确认漏洞。
+ * 名字刻意不叫 workspaceValidationSummary，避免与并行任务可能新增的同名函数
+ * 重复声明（ES 模块里重复函数声明是 SyntaxError，会让整个 app.js 加载失败）。 */
+function findingValidationText(value) {
+  const entry = value && typeof value === 'object' ? value : {};
+  const localLabels = {
+    passed_source_bound: '本地测试通过（仅绑定源码）',
+    passed: '本地测试通过',
+    failed: '本地测试未通过',
+    not_run: '尚未运行本地测试',
+    not_performed: '未执行本地测试',
+  };
+  const local = entry.localTest;
+  const localText = localLabels[local] || (local ? String(local) : '未记录');
+  const deployment = entry.deploymentBound === true ? '是' : '否';
+  const exploitability = entry.exploitabilityEstablished === true ? '是' : '否';
+  return `本地测试：${localText}；已绑定部署合约：${deployment}；已确认可利用：${exploitability}。`;
+}
 const findingFieldLabels = Object.freeze({
   findingId: '漏洞 ID', id: '记录 ID', title: '标题', check: '检测规则', severity: '严重度', impact: '影响等级',
   confidence: '置信度', status: '确认状态', state: '状态', target: '目标', contract: '合约', function: '函数', selector: '选择器',
   source: '来源', sourceRef: '来源引用', evidence: '证据', description: '说明', recommendation: '修复建议', createdAt: '创建时间', updatedAt: '更新时间',
+  // 后端快照里的原始字段名，之前直接以英文显示在界面上，读者看不出含义。
+  kind: '证据类型', confidenceScore: '置信度分值', evidenceStatus: '证据状态', confirmed: '是否已确认',
+  sourceRefs: '来源清单', relatedSourceChecks: '关联检查点', validation: '验证结论', assetChanges: '资产变化',
+  permissionChanges: '权限变化', trace: '调用轨迹', stateDiff: '状态差异', seed: '随机种子', fork: '分叉区块',
+  markdown: '检测说明', chainId: '风险链路', element: '目标元素', origin: '来源类型', snapshotGeneratedAt: '快照生成时间',
+  validated: '是否已验证', localTest: '本地测试', exploitability: '可利用性', relatedFindings: '关联漏洞',
 });
 async function renderFindingsWorkspace() {
   const result = await optionalResource('/api/v1/findings?limit=1000');
@@ -1060,27 +1754,78 @@ async function renderFindingsWorkspace() {
   $('#nav-findings-view').textContent = String(items.length);
   const severities = [...new Set(items.map((item) => item.severity || item.impact).filter(Boolean))];
   const statuses = [...new Set(items.map((item) => item.status || item.state).filter(Boolean))];
-  const body = workspaceError(result) ? workspaceStatus(workspaceError(result), 'error') : `<div class="workspace-finding-tools"><div class="workspace-filters"><label>搜索<input id="workspace-finding-search" type="search" placeholder="标题、合约、规则"></label><label>严重度<select id="workspace-finding-severity"><option value="all">全部</option>${severities.map((value) => `<option value="${escapeHTML(value)}">${escapeHTML(severityLabels[value] || value)}</option>`).join('')}</select></label><label>检测状态<select id="workspace-finding-status"><option value="all">全部</option>${statuses.map((value) => `<option value="${escapeHTML(value)}">${escapeHTML(evidenceStateLabels[value] || value)}</option>`).join('')}</select></label><label>人工处置<select id="workspace-finding-triage-status"><option value="all">全部</option>${Object.entries(triageStatusLabels).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></label></div><button class="workspace-submit workspace-export" id="workspace-findings-export" type="button" title="导出当前已载入列表">导出当前列表 CSV</button></div><div class="workspace-table-wrap"><table class="workspace-table"><thead><tr><th>稳定 ID</th><th>标题 / 规则</th><th>严重度</th><th>检测状态</th><th>人工处置</th><th>目标</th></tr></thead><tbody id="workspace-finding-rows"></tbody></table></div>`;
-  return workspaceFrame({ kicker: '风险 / 归并', title: '漏洞中心', description: '漏洞状态、严重度和证据链接来自分析资源；静态候选不会自动变成确认漏洞。', body: workspaceCard('漏洞记录', body), footer: `当前记录 ${items.length} 条 · 数据版本 ${workspaceValue(result.data?.consistency?.revision ?? '未提供')}` });
+  const body = workspaceError(result) ? workspaceStatus(workspaceError(result), 'error') : `<div class="workspace-finding-tools"><div class="workspace-filters"><label>搜索<input id="workspace-finding-search" type="search" placeholder="标题、合约、规则"></label><label>严重度<select id="workspace-finding-severity"><option value="all">全部</option>${severities.map((value) => `<option value="${escapeHTML(value)}">${escapeHTML(severityLabels[value] || value)}</option>`).join('')}</select></label><label>检测状态<select id="workspace-finding-status"><option value="all">全部</option>${statuses.map((value) => `<option value="${escapeHTML(value)}">${escapeHTML(workspaceEvidenceLabel(value))}</option>`).join('')}</select></label><label>人工处置<select id="workspace-finding-triage-status"><option value="all">全部</option>${Object.entries(triageStatusLabels).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></label></div><button class="workspace-submit workspace-export" id="workspace-findings-export" type="button" title="导出当前已载入列表">导出当前列表 CSV</button></div><div class="workspace-table-wrap"><table class="workspace-table"><thead><tr><th>稳定 ID</th><th>标题 / 规则</th><th>严重度</th><th>检测状态</th><th>人工处置</th><th>目标</th></tr></thead><tbody id="workspace-finding-rows"></tbody></table></div>`;
+  return workspaceFrame({ kicker: '风险 / 归并', title: '漏洞中心', description: '漏洞状态、严重度和证据链接来自分析资源；静态候选不会自动变成确认漏洞。', mode: 'read', body: workspaceCard('漏洞记录', body), footer: `当前记录 ${items.length} 条 · 数据版本 ${workspaceValue(result.data?.consistency?.revision ?? '未提供')}` });
 }
 
 async function renderFindingDetailWorkspace(id) {
   if (!id) {
     const result = await optionalResource('/api/v1/findings?limit=100');
     const items = workspaceItems(result.data);
-    const rows = workspaceTable(items, [{ label: '漏洞', render: (item) => findingLink(item, workspaceValue(item.title || item.check || item.findingId || item.id)) }, { label: '严重度', render: (item) => `<span>${escapeHTML(severityLabels[item.severity] || severityLabels[item.impact] || workspaceValue(item.severity || item.impact))}</span>` }, { label: '状态', render: (item) => `<span>${escapeHTML(evidenceStateLabels[item.status] || workspaceValue(item.status || item.state))}</span>` }], workspaceError(result) || '当前没有漏洞记录，请从漏洞中心选择一条。');
-    return workspaceFrame({ kicker: '风险 / 详情', title: '漏洞详情', description: '请选择一条已有漏洞记录查看证据。', body: workspaceCard('可用漏洞', rows) });
+    const rows = workspaceTable(items, [{ label: '漏洞', render: (item) => findingLink(item, workspaceValue(item.title || item.check || item.findingId || item.id)) }, { label: '严重度', render: (item) => workspaceSeverityBadge(item.severity || item.impact) }, { label: '状态', render: (item) => `<span>${escapeHTML(workspaceEvidenceLabel(item.status || item.state))}</span>` }], workspaceError(result) || '当前没有漏洞记录，请从漏洞中心选择一条。');
+    return workspaceFrame({ kicker: '风险 / 详情', title: '漏洞详情', description: '请选择一条已有漏洞记录查看证据。', mode: 'read', body: workspaceCard('可用漏洞', rows) });
   }
-  const [finding, evidence] = await Promise.all([optionalResource(`/api/v1/findings/${encodeURIComponent(id)}`), optionalResource(`/api/v1/evidence?findingId=${encodeURIComponent(id)}&limit=100`)]);
+  const finding = await optionalResource(`/api/v1/findings/${encodeURIComponent(id)}`);
   if (!finding.ok) return workspaceFrame({ kicker: '风险 / 详情', title: '漏洞详情不可用', description: finding.error.message, body: workspaceStatus(finding.error.message, 'error') });
-  const item = finding.data.finding || finding.data.data || finding.data;
-  const evidenceItems = workspaceItems(evidence.data);
-  const fields = Object.entries(item || {}).filter(([key]) => !['evidence', 'raw', 'details', 'triage'].includes(key)).map(([key, value]) => `<div><dt>${escapeHTML(findingFieldLabels[key] || key)}</dt><dd>${escapeHTML(workspaceValue(value, 900))}</dd></div>`).join('');
+  // 信封层级：响应是 { data: { finding: {...} } }。
+  // 之前读成 data.data.finding，取到的其实是 { finding: {...} } 这层外壳，
+  // 于是页面只剩一个名为「finding」的字段，标题退化成哈希，证据表永远为空。
+  const item = finding.data?.data?.finding || finding.data?.finding || finding.data?.data || finding.data;
+  // 证据接口按稳定 ID 过滤（finding-xxx），而路由里可能带的是另一套 ID（哈希）。
+  // 两套 ID 都查一遍，避免出现「明明有证据却显示为空」的静默错值。
+  const evidenceIds = [item?.findingId, id].filter((value) => typeof value === 'string' && value);
+  const evidenceReads = await Promise.all(evidenceIds.map((value) => optionalResource(`/api/v1/evidence?findingId=${encodeURIComponent(value)}&limit=100`)));
+  const evidenceItems = [];
+  const seenEvidence = new Set();
+  for (const read of evidenceReads) {
+    if (!read.ok) continue;
+    for (const row of workspaceItems(read.data)) {
+      const key = String(row.evidenceId || row.id || JSON.stringify(row));
+      if (seenEvidence.has(key)) continue;
+      seenEvidence.add(key);
+      evidenceItems.push(row);
+    }
+  }
+  const evidenceError = evidenceReads.find((read) => !read.ok)?.error || null;
+  // 字段值里的状态词与布尔值也要人话化：
+  // 直接把 hypothesis / false 摆出来，读者只能猜含义。
+  const findingFieldValue = (key, value) => {
+    if (typeof value === 'boolean') return value ? '是' : '否';
+    if (['status', 'state', 'evidenceStatus', 'kind'].includes(key)) return workspaceEvidenceLabel(value);
+    // 规则 ID 给人话说法，括号里保留原 ID 对照。
+    if (key === 'check') return workspaceCheckLabel(value);
+    // 用 try/catch 而不是直接调用：这段代码可能被并行任务同时改动，
+    // 直接调用一个尚未定义的函数会让整页渲染抛错（页面只剩「读取失败」）。
+    // 调用失败就退回显示原始对象：不丢信息，也不假装有结论。
+    if (key === 'validation' && value && typeof value === 'object') {
+      try { return findingValidationText(value); }
+      catch { return workspaceValue(value, 900); }
+    }
+    return workspaceValue(value, 900);
+  };
+  const fields = Object.entries(item || {}).filter(([key]) => !['evidence', 'raw', 'details', 'triage'].includes(key)).map(([key, value]) => `<div><dt>${escapeHTML(findingFieldLabels[key] || key)}</dt><dd>${escapeHTML(findingFieldValue(key, value))}</dd></div>`).join('');
   const triage = item.triage || { triageStatus: 'unreviewed', assignee: null, tags: [], notes: [] };
   const notes = Array.isArray(triage.notes) ? triage.notes.slice(-20).reverse() : [];
   const noteList = notes.length ? `<ol class="workspace-triage-notes">${notes.map((entry) => `<li><span>${escapeHTML(formatDate(entry.at))}</span><p>${escapeHTML(entry.note)}</p></li>`).join('')}</ol>` : '<p class="workspace-form-note">当前没有处置备注。</p>';
   const triageEditor = `<form class="workspace-form workspace-triage-form" data-finding-triage="${escapeHTML(item.findingId || id)}" data-revision="${escapeHTML(finding.data.consistency?.revision ?? '')}" data-current-status="${escapeHTML(triage.triageStatus || 'unreviewed')}"><div class="workspace-form-grid"><label>处置状态<select name="triageStatus">${Object.entries(triageStatusLabels).map(([value, label]) => `<option value="${value}" ${(triage.triageStatus || 'unreviewed') === value ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label>指派给<input name="assignee" maxlength="200" value="${escapeHTML(triage.assignee || '')}" placeholder="姓名或小组；留空可清除"></label><label class="workspace-form-wide">标签（逗号分隔）<input name="tags" maxlength="2000" value="${escapeHTML((triage.tags || []).join(', '))}" placeholder="例如：资产会计, 升级"></label><label class="workspace-form-wide">添加备注<textarea name="note" rows="3" maxlength="4000" placeholder="误报、修复或接受风险时需填写原因"></textarea></label></div><p class="workspace-form-note">人工处置仅用于跟踪，不会更改检测状态、严重度、确认结果或原始证据。</p><button class="workspace-submit" type="submit">保存处置</button><span class="workspace-form-result" data-triage-result role="status" aria-live="polite"></span></form><details class="workspace-triage-history"><summary>处置备注（${notes.length}）</summary>${noteList}</details>`;
-  return workspaceFrame({ kicker: '风险 / 详情', title: workspaceValue(item.title || item.check || id, 160), description: '查看检测依据并记录人工处置；分析结果与工作跟踪分开展示。', body: `<div class="workspace-grid-two">${workspaceCard('判定与影响', `<dl class="workspace-definition">${fields || '<div><dt>记录</dt><dd>接口没有提供结构化字段。</dd></div>'}</dl>`)}${workspaceCard('证据', evidence.ok ? workspaceTable(evidenceItems, [{ label: '证据 ID', render: (row) => `<code>${escapeHTML(workspaceValue(row.evidenceId || row.id))}</code>` }, { label: '状态', render: (row) => `<span>${escapeHTML(evidenceStateLabels[row.status] || workspaceValue(row.status))}</span>` }, { label: '来源', render: (row) => `<code>${escapeHTML(workspaceValue(row.source || row.sourceRef))}</code>` }, { label: '摘要', render: (row) => `<span>${escapeHTML(workspaceValue(row.summary || row.description, 360))}</span>` }], '该漏洞尚无单独证据记录。') : workspaceStatus(evidence.error.message, 'error'))}</div>${workspaceCard('人工处置', triageEditor)}${workspaceJsonDetails('漏洞原始对象', item)}` });
+  // 证据记录的真实字段是 markdown / kind / sourceRefs，
+  // 早前只读 summary / description，两者恒为空，表格看起来"有证据但没内容"。
+  const evidenceTable = workspaceTable(evidenceItems, [
+    { label: '证据 ID', render: (row) => `<code>${escapeHTML(workspaceValue(row.evidenceId || row.id))}</code>` },
+    { label: '类型', render: (row) => `<span>${escapeHTML(evidenceKindLabels[row.kind] || workspaceValue(row.kind))}</span>` },
+    { label: '状态', render: (row) => `<span>${escapeHTML(workspaceEvidenceLabel(row.status || row.evidenceStatus))}</span>` },
+    { label: '来源', render: (row) => `<code>${escapeHTML(workspaceValue(row.source || (Array.isArray(row.sourceRefs) ? row.sourceRefs.map((ref) => ref?.ref).filter(Boolean).join('、') : null)))}</code>` },
+    { label: '摘要', render: (row) => `<span>${escapeHTML(workspaceValue(row.summary || row.description || row.markdown, 360))}</span>` },
+  ], '该漏洞尚无单独证据记录。');
+  // 证据接口读失败时不能装作"没有证据"：静默的空表会让人误以为证据确实为空。
+  const evidenceBody = evidenceError
+    ? `${workspaceStatus(evidenceError.message, 'error')}${evidenceItems.length ? evidenceTable : ''}`
+    : evidenceTable;
+  // 页头标题：接口没有 title 字段时，用「规则的人话说法」当标题，
+  // 原 ID 放进 kicker 与描述里，避免标题退化成一串哈希。
+  const humanTitle = String(item?.title || item?.name || '').trim() || workspaceCheckLabel(item?.check);
+  const frameDescription = `查看检测依据并记录人工处置；分析结果与工作跟踪分开展示。漏洞 ID：${id}。`;
+  return workspaceFrame({ kicker: '风险 / 详情', title: humanTitle, description: frameDescription, mode: 'write', body: `<div class="workspace-grid-two">${workspaceCard('判定与影响', `<dl class="workspace-definition">${fields || '<div><dt>记录</dt><dd>接口没有提供结构化字段。</dd></div>'}</dl>`)}${workspaceCard('证据', evidenceBody)}</div>${workspaceCard('人工处置', triageEditor)}${workspaceJsonDetails('漏洞原始对象', item)}` });
 }
 
 function dynamicEvidence(report) {
@@ -1229,7 +1974,7 @@ async function renderDynamicWorkspace() {
   const recentNote = recent.length
     ? `最近 ${recent.length} 条目标记录：有检查状态记录 ${recentReported} 条，明确未执行 ${recentNotPerformed} 条，其中结果不可用 ${recentUnavailable} 条，状态未记录 ${recentUnrecorded} 条。`
     : '报告没有最近目标明细；不能据此推断所有目标都已检查。';
-  return workspaceFrame({ kicker: '检查 / 本地执行', title: '动态检查', description: '提交已验证的源码包进行检查；只有具备专用本地方案的目标会额外执行隔离测试。结果和未覆盖范围都会留在任务记录中。', body: `<div class="workspace-boundary"><strong>检查范围：</strong>没有专用测试方案时会标记为“未执行”；未执行不代表通过，也不代表发现漏洞。</div><div class="workspace-counts">${workspaceCount('报告涉及的合约', targetCount === null ? '未记录' : displayCount(targetCount))}${workspaceCount('累计运行检查', performed === null ? '未记录' : displayCount(performed))}${workspaceCount('记录为未通过', failed === null ? '未记录' : displayCount(failed))}${workspaceCount('运行组数', suiteCount === null ? '未记录' : displayCount(suiteCount))}</div>${workspaceCard('提交源码检查', scanForm({ title: '源码分析与本地测试', description: '填写已验证源码包文件。系统会先做代码分析；只有命中已有专用方案时才运行隔离测试。', button: '提交检查任务' }))}${workspaceCard('最近目标结果', rows)}<div class="workspace-record-note">${escapeHTML(recentNote)} 上方数字来自整份报告；目标明细只显示最近记录。检查结果只覆盖实际运行的场景，不等于漏洞确认。报告状态：${escapeHTML(stateLabel(run.observedState || run.state, { interrupted: '已中断', completed: '已完成', running: '运行中', stale: '已过期' }))}。</div>` });
+  return workspaceFrame({ kicker: '检查 / 本地执行', title: '动态检查', description: '提交已验证的源码包进行检查；只有具备专用本地方案的目标会额外执行隔离测试。结果和未覆盖范围都会留在任务记录中。', mode: 'write', body: `<div class="workspace-boundary"><strong>检查范围：</strong>没有专用测试方案时会标记为“未执行”；未执行不代表通过，也不代表发现漏洞。</div><div class="workspace-counts">${workspaceCount('报告涉及的合约', targetCount === null ? '未记录' : displayCount(targetCount))}${workspaceCount('累计运行检查', performed === null ? '未记录' : displayCount(performed))}${workspaceCount('记录为未通过', failed === null ? '未记录' : displayCount(failed))}${workspaceCount('运行组数', suiteCount === null ? '未记录' : displayCount(suiteCount))}</div>${workspaceCard('提交源码检查', scanForm({ title: '源码分析与本地测试', description: '填写已验证源码包文件。系统会先做代码分析；只有命中已有专用方案时才运行隔离测试。', button: '提交检查任务' }))}${workspaceCard('最近目标结果', rows)}<div class="workspace-record-note">${escapeHTML(recentNote)} 上方数字来自整份报告；目标明细只显示最近记录。检查结果只覆盖实际运行的场景，不等于漏洞确认。报告状态：${escapeHTML(stateLabel(run.observedState || run.state, { interrupted: '已中断', completed: '已完成', running: '运行中', stale: '已过期' }))}。</div>` });
 }
 
 async function renderReverseWorkspace() {
@@ -1271,20 +2016,20 @@ async function renderReverseWorkspace() {
   const decompileSummary = decompiledCount === null
     ? '报告没有记录易读版本的生成总数。'
     : `报告记录已生成易读版本 ${displayCount(decompiledCount)} 份；尚未请求 ${displayCount(notRequestedCount)} 份；生成不完整 ${displayCount(incompleteCount)} 份。`;
-  return workspaceFrame({ kicker: '代码 / 阅读辅助', title: '代码查看', description: '查看已有代码记录，或提交代码生成阅读辅助稿。生成内容由工具推测，不是项目原始源码。', body: `<div class="workspace-boundary"><strong>结果说明：</strong>生成内容可能不完整或不准确；请结合已验证源码和其他证据复核。</div><div class="workspace-counts">${workspaceCount('已读取代码', runtimeCount === null ? (recent.length || bytecodeItems.length ? `${recent.length || bytecodeItems.length} 条记录` : '未记录') : displayCount(runtimeCount))}${workspaceCount('已生成易读版本', decompiledCount === null ? '未记录' : displayCount(decompiledCount))}${workspaceCount('尚未请求整理', notRequestedCount === null ? '未记录' : displayCount(notRequestedCount))}${workspaceCount('生成不完整', incompleteCount === null ? '未记录' : displayCount(incompleteCount))}</div>${workspaceCard('提交代码整理', decompileForm())}<div class="workspace-grid-two">${workspaceCard('读取到的代码', bytecodeRows)}${workspaceCard('易读版本结果', decompileRows)}</div><div class="workspace-record-note">${escapeHTML(campaignSummary)} ${escapeHTML(decompileSummary)} ${escapeHTML(recentNote)} 原始编号、代码摘要和文件位置已收在各条记录的展开详情中。</div>` });
+  return workspaceFrame({ kicker: '代码 / 阅读辅助', title: '代码查看', description: '查看已有代码记录，或提交代码生成阅读辅助稿。生成内容由工具推测，不是项目原始源码。', mode: 'write', body: `<div class="workspace-boundary"><strong>结果说明：</strong>生成内容可能不完整或不准确；请结合已验证源码和其他证据复核。</div><div class="workspace-counts">${workspaceCount('已读取代码', runtimeCount === null ? (recent.length || bytecodeItems.length ? `${recent.length || bytecodeItems.length} 条记录` : '未记录') : displayCount(runtimeCount))}${workspaceCount('已生成易读版本', decompiledCount === null ? '未记录' : displayCount(decompiledCount))}${workspaceCount('尚未请求整理', notRequestedCount === null ? '未记录' : displayCount(notRequestedCount))}${workspaceCount('生成不完整', incompleteCount === null ? '未记录' : displayCount(incompleteCount))}</div>${workspaceCard('提交代码整理', decompileForm())}<div class="workspace-grid-two">${workspaceCard('读取到的代码', bytecodeRows)}${workspaceCard('易读版本结果', decompileRows)}</div><div class="workspace-record-note">${escapeHTML(campaignSummary)} ${escapeHTML(decompileSummary)} ${escapeHTML(recentNote)} 原始编号、代码摘要和文件位置已收在各条记录的展开详情中。</div>` });
 }
 
 async function renderPermissionsWorkspace() {
   const [analysis, rules, invariants] = await Promise.all([optionalResource('/api/v1/analysis?limit=100'), optionalResource('/api/v1/rules?limit=100&allVersions=false'), optionalResource('/api/v1/invariants?limit=100&allVersions=false')]);
   const analysisItems = workspaceItems(analysis.data), ruleItems = workspaceItems(rules.data), invariantItems = workspaceItems(invariants.data);
   const body = `<div class="workspace-grid-three">${workspaceCard('分析与调用图', workspaceTable(analysisItems, [{ label: '任务', render: (item) => taskLink(item, workspaceValue(item.taskId || item.id)) }, { label: '阶段', render: (item) => `<span>${escapeHTML(stateLabel(item.state, taskStateLabels))}</span>` }, { label: '检查点', render: (item) => workspaceJsonDetails('查看', item.checkpoint || {}) }], workspaceError(analysis) || '当前没有分析记录。'))}${workspaceCard('规则版本', workspaceTable(ruleItems, [{ label: '规则', render: (item) => `<code>${escapeHTML(workspaceValue(item.ruleId || item.id))}</code>` }, { label: '名称', render: (item) => `<span>${escapeHTML(workspaceValue(item.name))}</span>` }, { label: '版本', render: (item) => `<span>${escapeHTML(workspaceValue(item.version))}</span>` }, { label: '启用', render: (item) => `<span>${item.enabled === true ? '是' : item.enabled === false ? '否' : '未提供'}</span>` }], workspaceError(rules) || '当前没有规则版本。'))}${workspaceCard('业务不变量', workspaceTable(invariantItems, [{ label: '不变量', render: (item) => `<code>${escapeHTML(workspaceValue(item.invariantId || item.id))}</code>` }, { label: '描述', render: (item) => `<span>${escapeHTML(workspaceValue(item.description || item.name, 300))}</span>` }, { label: '版本', render: (item) => `<span>${escapeHTML(workspaceValue(item.version))}</span>` }, { label: '状态', render: (item) => `<span>${escapeHTML(workspaceValue(item.state || item.enabled))}</span>` }], workspaceError(invariants) || '当前没有业务不变量。'))}</div>`;
-  return workspaceFrame({ kicker: '模型 / 约束', title: '权限与业务模型', description: '展示自动分析、规则版本和不变量记录；接口目前只读时不会提供虚假的编辑成功状态。', body, footer: '自动推断与用户规则来源由各资源记录区分；没有记录时不推断权限关系。' });
+  return workspaceFrame({ kicker: '模型 / 约束', title: '权限与业务模型', description: '展示自动分析、规则版本和不变量记录；接口目前只读时不会提供虚假的编辑成功状态。', mode: 'read', body, footer: '自动推断与用户规则来源由各资源记录区分；没有记录时不推断权限关系。' });
 }
 
 async function renderReplayWorkspace() {
   const [replay, evidence] = await Promise.all([optionalResource('/api/v1/replay?limit=100'), optionalResource('/api/v1/evidence?limit=100')]);
   const replayItems = workspaceItems(replay.data), evidenceItems = workspaceItems(evidence.data);
-  return workspaceFrame({ kicker: '证据 / 执行', title: '调用轨迹和重放', description: '只展示已归档的重放产物与证据；没有重放执行器时明确显示不可用。', body: `<div class="workspace-grid-two">${workspaceCard('重放产物', workspaceTable(replayItems, [{ label: '产物', render: (item) => `<code>${escapeHTML(workspaceValue(item.artifactId || item.id))}</code>` }, { label: '任务', render: (item) => taskLink(item, workspaceValue(item.taskId)) }, { label: '状态', render: (item) => `<span>${escapeHTML(workspaceValue(item.state || item.status))}</span>` }, { label: '来源', render: (item) => workspaceJsonDetails('查看来源', item.provenance || item) }], workspaceError(replay) || '当前没有重放产物。'))}${workspaceCard('证据记录', workspaceTable(evidenceItems, [{ label: '漏洞', render: (item) => findingLink(item, workspaceValue(item.findingId)) }, { label: '状态', render: (item) => `<span>${escapeHTML(evidenceStateLabels[item.status] || workspaceValue(item.status))}</span>` }, { label: '交易 / 区块', render: (item) => `<code>${escapeHTML(workspaceValue(item.transactionHash || item.txHash))} / ${escapeHTML(workspaceValue(item.blockNumber))}</code>` }, { label: '调用树', render: (item) => workspaceJsonDetails('查看调用树', item.callTree || item.trace || {}) }], workspaceError(evidence) || '当前没有证据记录。'))}</div><div class="workspace-status workspace-status-info">页面不执行签名、授权或链上广播；重新执行必须由隔离环境任务提供可验证结果。</div>` });
+  return workspaceFrame({ kicker: '证据 / 执行', title: '调用轨迹和重放', description: '只展示已归档的重放产物与证据；没有重放执行器时明确显示不可用。', mode: 'read', body: `<div class="workspace-grid-two">${workspaceCard('重放产物', workspaceTable(replayItems, [{ label: '产物', render: (item) => `<code>${escapeHTML(workspaceValue(item.artifactId || item.id))}</code>` }, { label: '任务', render: (item) => taskLink(item, workspaceValue(item.taskId)) }, { label: '状态', render: (item) => `<span>${escapeHTML(workspaceValue(item.state || item.status))}</span>` }, { label: '来源', render: (item) => workspaceJsonDetails('查看来源', item.provenance || item) }], workspaceError(replay) || '当前没有重放产物。'))}${workspaceCard('证据记录', workspaceTable(evidenceItems, [{ label: '漏洞', render: (item) => findingLink(item, workspaceValue(item.findingId)) }, { label: '状态', render: (item) => `<span>${escapeHTML(evidenceStateLabels[item.status] || workspaceValue(item.status))}</span>` }, { label: '交易 / 区块', render: (item) => `<code>${escapeHTML(workspaceValue(item.transactionHash || item.txHash))} / ${escapeHTML(workspaceValue(item.blockNumber))}</code>` }, { label: '调用树', render: (item) => workspaceJsonDetails('查看调用树', item.callTree || item.trace || {}) }], workspaceError(evidence) || '当前没有证据记录。'))}</div><div class="workspace-status workspace-status-info">页面不执行签名、授权或链上广播；重新执行必须由隔离环境任务提供可验证结果。</div>` });
 }
 
 async function askWorkspace(question, target) {
@@ -1326,7 +2071,7 @@ async function renderAiWorkspace() {
     : '云端审查通道未配置；结构化状态与本地分析仍可使用。';
   const modelRole = model.participatesInSecurityAnalysis === true ? '云端通道用于安全审查；漏洞状态仍以报告证据和审计记录为准。' : '当前通道不参与安全审查。';
   const modelStatus = `<div class="workspace-status ${model.configured ? 'workspace-status-info' : 'workspace-status-warn'}"><strong>状态：${escapeHTML(modelState)}</strong><br>${escapeHTML(modelDetail)}<br>${escapeHTML(modelRole)}</div><div class="workspace-record-note">状态问答默认返回结构化事实；只有显式请求时才发送到已配置的云端通道。</div>`;
-  return workspaceFrame({ kicker: '状态 / 协作', title: '状态问答与云端审查通道', description: '这里显示云端审查配置、审计证据和服务健康。网页问答默认使用当前快照中的结构化事实。', body: `<div class="workspace-counts">${workspaceCount('云端审查通道', modelState)}${workspaceCount('云端审查完成', cloudReviewLabel)}${workspaceCount('服务健康', health.ok ? workspaceValue(health.data.status || '在线') : '不可用')}</div>${collaborationBoundary(snapshot, audits)}<div class="workspace-grid-two">${workspaceCard('云端审查通道状态', modelStatus)}${workspaceCard('审查审计记录', auditTable)}</div>${workspaceCard('结构化状态问答', `<div class="workspace-chat" id="workspace-ai-messages"><div class="workspace-chat-message assistant"><b>状态</b><span>默认只根据当前快照回答任务、证据和限制。</span></div></div><form class="workspace-ask-form" data-ai-form><input name="question" maxlength="2000" placeholder="询问当前任务、证据或限制" required><button type="submit">查询</button></form>`)}<div class="workspace-record-note">云端审查完成数只使用报告中的明确记录；没有记录时显示“未记录”。历史审查记录不会自动转换成云端结论。</div>` });
+  return workspaceFrame({ kicker: '状态 / 协作', title: '状态问答与云端审查通道', description: '这里显示云端审查配置、审计证据和服务健康。网页问答默认使用当前快照中的结构化事实。', mode: 'mixed', body: `<div class="workspace-counts">${workspaceCount('云端审查通道', modelState)}${workspaceCount('云端审查完成', cloudReviewLabel)}${workspaceCount('服务健康', health.ok ? workspaceValue(health.data.status || '在线') : '不可用')}</div>${collaborationBoundary(snapshot, audits)}<div class="workspace-grid-two">${workspaceCard('云端审查通道状态', modelStatus)}${workspaceCard('审查审计记录', auditTable)}</div>${workspaceCard('结构化状态问答', `<div class="workspace-chat" id="workspace-ai-messages"><div class="workspace-chat-message assistant"><b>状态</b><span>默认只根据当前快照回答任务、证据和限制。</span></div></div><form class="workspace-ask-form" data-ai-form><input name="question" maxlength="2000" placeholder="询问当前任务、证据或限制" required><button type="submit">查询</button></form>`)}<div class="workspace-record-note">云端审查完成数只使用报告中的明确记录；没有记录时显示“未记录”。历史审查记录不会自动转换成云端结论。</div>` });
 }
 
 function wireWorkspaceForms() {
@@ -1342,10 +2087,12 @@ function wireWorkspaceForms() {
       const path = `/api/v1/corpus/tasks/${encodeURIComponent(laneId)}/${encodeURIComponent(action)}`;
       const body = action === 'start' ? { category: $('#workspace-view [data-corpus-category]')?.value || undefined } : {};
       await apiJSON(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-      if (result) { result.textContent = `已提交「${button.textContent}」`; result.dataset.state = 'ready'; }
+      // 反馈写进模块级状态：轮询重绘后仍然可见（重绘会清空 DOM 里的 span）。
+      corpusViewState.feedback.action = { laneId, state: 'ready', text: `已提交「${button.textContent}」` };
       await refreshCorpusWorkspace();
     } catch (error) {
-      if (result) { result.textContent = `操作失败：${error.message}`; result.dataset.state = 'error'; }
+      corpusViewState.feedback.action = { laneId, state: 'error', text: `操作失败：${error.message}` };
+      if (result) { result.textContent = corpusViewState.feedback.action.text; result.dataset.state = 'error'; }
       button.disabled = false;
     }
   });
@@ -1353,6 +2100,7 @@ function wireWorkspaceForms() {
     const result = $('#workspace-view [data-corpus-filter-result]');
     const laneId = $('#workspace-view [data-corpus-filter-lane]')?.value || 'static';
     const category = $('#workspace-view [data-corpus-category]')?.value || '';
+    captureCorpusSelection();
     button.disabled = true;
     if (result) { result.textContent = '正在创建任务…'; result.dataset.state = 'loading'; }
     try {
@@ -1360,10 +2108,11 @@ function wireWorkspaceForms() {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify(category ? { laneId, category } : { laneId }),
       });
-      if (result) { result.textContent = '已按过滤条件创建任务'; result.dataset.state = 'ready'; }
+      corpusViewState.feedback.filter = { state: 'ready', text: '已按过滤条件创建任务' };
       await refreshCorpusWorkspace();
     } catch (error) {
-      if (result) { result.textContent = `创建失败：${error.message}`; result.dataset.state = 'error'; }
+      corpusViewState.feedback.filter = { state: 'error', text: `创建失败：${error.message}` };
+      if (result) { result.textContent = corpusViewState.feedback.filter.text; result.dataset.state = 'error'; }
     } finally { button.disabled = false; }
   });
   for (const button of document.querySelectorAll('#workspace-view [data-task-action]')) button.addEventListener('click', async () => {
@@ -1465,7 +2214,12 @@ function wireWorkspaceForms() {
       const response = await apiJSON(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       resultNode.textContent = `已创建任务 ${response.data?.taskId || response.data?.id || '未提供 ID'}`; resultNode.dataset.state = 'ready';
       form.reset();
-    } catch (error) { resultNode.textContent = `提交失败：${error.message}`; resultNode.dataset.state = 'error'; }
+    } catch (error) {
+      const offline = workspaceOfflineMessage(error);
+      resultNode.textContent = offline || `提交失败：${error.message}`;
+      resultNode.dataset.state = 'error';
+      if (offline) resultNode.insertAdjacentHTML('beforeend', `<span class="ws-inline-error-detail">${escapeHTML(error.message || '')}</span>`);
+    }
     finally { form.querySelector('button[type="submit"]').disabled = false; }
   });
   const aiForm = $('#workspace-view form[data-ai-form]');
@@ -1476,10 +2230,18 @@ function wireWorkspaceForms() {
 
 function parseWorkspaceRoute() {
   let raw;
-  try { raw = decodeURIComponent(location.hash.replace(/^#/, '') || 'map'); }
+  try { raw = decodeURIComponent(location.hash.replace(/^#/, '') || 'home'); }
   catch { return { name: 'overview', anchor: 'overview' }; }
-  const [name, id] = raw.split('/');
-  if (['map', 'protocols', 'discoveries', 'execution', 'projects', 'collection', 'scan', 'tasks', 'findings-view', 'finding', 'dynamic', 'reverse', 'permissions', 'replay', 'ai', 'task', 'corpus'].includes(name)) return { name, id: id || null };
+  // 深链接可能带名字（#protocols/Flare）或只带 ID（#finding/<id>）。
+  // 名字里可能自带斜杠，所以这里最多切两段，其余原样留在 id 里。
+  const [name, ...rest] = raw.split('/');
+  const id = rest.length ? rest.join('/') : null;
+  if (['map', 'home', 'protocols', 'discoveries', 'execution', 'projects', 'collection', 'scan', 'tasks', 'findings-view', 'finding', 'dynamic', 'reverse', 'permissions', 'replay', 'ai', 'task', 'corpus'].includes(name)) {
+    // #protocols/<链名> 是协议页的深链接：除了 id，再把链名单独放进 protocol，
+    // 让协议页能定位并高亮到那张链卡片（否则 route.protocol 永远是 undefined）。
+    if (name === 'protocols' && id) return { name, id, protocol: id };
+    return { name, id: id || null };
+  }
   return { name: 'overview', anchor: name };
 }
 async function renderAuditRoute(route) {
@@ -1501,20 +2263,158 @@ async function renderAuditRoute(route) {
     dynamicResults: (snapshot.campaign?.recent || []).filter((item) => item.dynamicAnalysis).map((item) => ({ ...item.dynamicAnalysis, name: `${item.protocol || '未知协议'} · ${item.chain || '未知链'}` })),
   };
   const view = auditViews[route.name];
-  audit.innerHTML = view.render(data);
+  // 首页要额外的链上采集控制面状态：链卡片开关和链状态都来自它。
+  // 读失败时传 null，首页如实显示「开关不可用」，不会用默认值假装成功。
+  let homeControl = null;
+  if (route.name === 'home') {
+    try {
+      // 后端 GET /api/v1/chain-collection/status 把状态对象直接放在顶层，
+      // 这里归一化成 { status, availableChains, selectedChainIds }，
+      // 避免首页去猜接口形状（猜错会把「读到 200」显示成「读不到」）。
+      homeControl = homeView.normalizeControl(await apiJSON('/api/v1/chain-collection/status'));
+      state.homeControl = homeControl;
+    } catch {
+      homeControl = state.homeControl || null;
+    }
+  }
+  if (route.name === 'home') audit.innerHTML = view.render(data, Date.now(), homeControl);
+  else audit.innerHTML = view.render(data);
   appendAuditGuidance(audit, route.name);
-  view.bind(audit);
+  if (route.name === 'home') view.bind(audit, await homeHandlers());
+  else view.bind(audit);
   if (requestId !== state.workspaceRequest) return;
-  if (route.protocol) audit.querySelector('[data-protocol-detail]')?.scrollIntoView({ block: 'center' });
+  if (route.protocol) {
+    // 深链接定位：按名称找对应的那张链卡片，找不到就如实说明，不随便高亮第一张。
+    const wanted = String(route.protocol);
+    const cards = [...audit.querySelectorAll('[data-protocol-detail]')];
+    const target = cards.find((card) => card.dataset.protocolDetail === wanted) || null;
+    for (const card of cards) card.classList.toggle('is-targeted', card === target);
+    if (target) target.scrollIntoView({ block: 'center' });
+    else audit.querySelector('[data-protocol-missing]')?.removeAttribute('hidden');
+  }
+}
+
+/* ------------------------------------------------------------------
+ * 首页交互（总开关 + 链开关）。
+ *
+ * 诚实性约束：
+ *   - 总开关只发送 { enabled: boolean }；后端禁止 enabled 与 chainIds 同时出现。
+ *   - 链开关只发送 { chainIds: [...] }；它只改「下一轮要扫的链」范围，
+ *     不中断正在跑的一轮采集。
+ *   - 后端返回 startFailed / stopFailed 时如实显示错误，不假装成功。
+ *   - 读取失败时保留上一次显示，不清空成误导性的默认状态。
+ * ------------------------------------------------------------------ */
+function homeMessage(text, tone = '') {
+  const node = document.querySelector('#audit-view [data-home-message]');
+  if (!node) return;
+  node.textContent = text || '';
+  node.dataset.tone = tone;
+}
+
+async function homeHandlers() {
+  return {
+    onMasterToggle: async ({ enabled }) => {
+      const next = enabled === true;
+      const result = await apiJSON('/api/v1/chain-collection/switch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        // 请求体只能是 { enabled }：后端明确禁止与 chainIds 同时出现。
+        body: JSON.stringify({ enabled: next }),
+      });
+      // 后端把状态对象放在响应顶层，这里统一归一化后再存，
+      // 免得后面按 availableChainIds 取链时读的是错误层级。
+      const normalized = homeView.normalizeControl(result);
+      state.homeControl = normalized;
+      await refreshHomeView();
+      if (result?.startFailed) homeMessage(`开启失败：${result.startError || '未知原因'}`, 'error');
+      else if (result?.stopFailed) homeMessage(`停止失败：${result.stopError || '未知原因'}`, 'error');
+      else homeMessage(next ? '链上采集已开启。' : '链上采集已关闭。', 'success');
+    },
+    onToggle: async ({ chainId, enabled }) => {
+      const current = state.homeControl && typeof state.homeControl === 'object' ? state.homeControl : null;
+      if (!current) throw new Error('采集控制面状态未就绪，开关暂不可用');
+      const allIds = Array.isArray(current.availableChainIds) ? current.availableChainIds.map(String) : [];
+      // 后端语义：未选任何链 = 覆盖全部链。所以空范围要当成「全部链」解读。
+      const selected = Array.isArray(current.selectedChainIds) && current.selectedChainIds.length
+        ? current.selectedChainIds.map(String)
+        : allIds;
+      const nextScope = scopeAfterToggle(selected, chainId, enabled);
+      // 后端把「空范围」读成「全部链」。用户关掉最后一条链时，
+      // 如果照直发空数组，这条链反而会被重新打开——而且是静默反转。
+      // 所以这里保留最后一条链，并如实告诉用户为什么它没有关掉。
+      if (!nextScope.length) {
+        homeMessage(
+          `无法只关掉这一条链：后端把「一条都不选」理解成「全部链都选」。`
+          + `「${chainId}」仍留在下一轮采集范围里。想只跑部分链，请先打开另一条再关掉这一条。`,
+          'warn',
+        );
+        return;
+      }
+      const result = await apiJSON('/api/v1/chain-collection/switch', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chainIds: nextScope }),
+      });
+      state.homeControl = homeView.normalizeControl(result);
+      await refreshHomeView();
+      homeMessage(enabled ? '已把这条链加入下一轮采集。' : '已把这条链移出下一轮采集。', 'success');
+    },
+    onError: (error) => {
+      const message = `操作失败：${error?.message || error}`;
+      homeMessage(message, 'error');
+      return message;
+    },
+  };
+}
+
+async function refreshHomeView({ reloadSnapshot = false } = {}) {
+  const audit = $('#audit-view');
+  if (!audit || audit.hidden) return;
+  const failures = [];
+  let snapshot = state.snapshot;
+  if (reloadSnapshot) {
+    // 刷新按钮必须重新拉取 /api/status，不能继续用首次读到的缓存。
+    try {
+      await loadStatus();
+      snapshot = state.snapshot;
+    } catch (error) {
+      failures.push(`读取状态快照失败：${error?.message || error}`);
+      snapshot = state.snapshot;
+    }
+  } else if (!snapshot) {
+    snapshot = await getJSON('/api/status');
+    state.snapshot = snapshot;
+  }
+  let control = state.homeControl;
+  try {
+    control = homeView.normalizeControl(await apiJSON('/api/v1/chain-collection/status'));
+    state.homeControl = control;
+  } catch (error) {
+    failures.push(`读取采集控制面失败：${error?.message || error}`);
+    control = state.homeControl;
+  }
+  // 快照可能整个读不到（首屏就没读到、刷新也失败）。
+  // 这时不能去读 snapshot.findings —— 那会抛 TypeError，把「读取失败」
+  // 变成「页面整个崩掉」。渲染层对空快照有兜底：数字显示「未记录」。
+  const safeSnapshot = snapshot && typeof snapshot === 'object' ? snapshot : {};
+  const findings = Array.isArray(safeSnapshot.findings)
+    ? safeSnapshot.findings
+    : (Array.isArray(safeSnapshot.highPriorityFindings) ? safeSnapshot.highPriorityFindings : []);
+  const scrollTop = window.scrollY;
+  audit.innerHTML = homeView.render({ ...safeSnapshot, findings }, Date.now(), control);
+  homeView.bind(audit, await homeHandlers());
+  window.scrollTo({ top: scrollTop });
+  if (failures.length) homeMessage(failures.join('；'), 'error');
 }
 
 function appendAuditGuidance(root, viewName) {
   if (root.querySelector('.audit-next-step')) return;
+  // 「下一步」条的链接必须指向真实存在的路由，否则点了只会停在原地。
   const guidance = {
-    map: { text: '先确认重点协议，再查看合约和不变量。', links: [['protocols', '查看协议证据'], ['discoveries', '查看待核验发现']] },
-    protocols: { text: '确认不变量状态后，再进入证据链和本地复现。', links: [['discoveries', '查看发现'], ['execution', '查看执行结果']] },
-    discoveries: { text: '先确认来源和证据，再运行本地复现。', links: [['execution', '进入执行与复现'], ['protocols', '回到协议上下文']] },
-    execution: { text: '没有结果时，先从发现列表选择一条线索。', links: [['discoveries', '返回发现列表'], ['protocols', '查看不变量状态']] },
+    map: { text: '先在地图上挑一条值得先看的链，点开它，再去看这条链的合约和安全规则。', links: [['protocols', '去「协议」看链和合约'], ['discoveries', '去「发现」看全部线索']] },
+    protocols: { text: '确认安全规则的状态后，再进入完整证据和本地复现。', links: [['discoveries', '去「发现」挑一条线索'], ['execution', '去「执行」看运行结果']] },
+    discoveries: { text: '先确认一条线索的来源和证据，再去「执行」看它有没有跑过。', links: [['execution', '去「执行」看复现结果'], ['protocols', '回「协议」看这条线索属于哪条链']] },
+    execution: { text: '这里没有结果时，先回「发现」挑一条线索，再回到本页看它跑没跑过。', links: [['discoveries', '回「发现」挑一条线索'], ['protocols', '去「协议」看安全规则状态']] },
   }[viewName];
   if (!guidance) return;
   const nav = document.createElement('nav');
@@ -1545,7 +2445,8 @@ async function routeWorkspace() {
   hideOverview(true);
   const requestId = ++state.workspaceRequest;
   const workspace = $('#workspace-view');
-  workspace.innerHTML = workspaceFrame({ kicker: '实时资源', title: '正在读取…', description: '正在读取持久化接口。', body: workspaceStatus('请求进行中…') });
+  // 读取中用骨架 + 一句说明：只有一行「正在读取…」时，页面看起来像坏了。
+  workspace.innerHTML = workspaceFrame({ kicker: '实时资源', title: '正在读取…', description: '正在读取持久化接口。', body: `<div class="ws-loading" aria-busy="true" aria-live="polite"><div class="ws-skeleton"></div><div class="ws-skeleton"></div><div class="ws-skeleton"></div><div class="ws-skeleton"></div><p class="ws-loading-note">正在读取本机持久化数据…</p></div>` });
   let html;
   try {
     if (route.name === 'projects') html = await renderProjectsWorkspace();
@@ -1570,7 +2471,22 @@ async function routeWorkspace() {
 }
 
 document.addEventListener('audit:navigate', (event) => {
-  const { route, id } = event.detail || {};
-  if (route === 'protocol') location.hash = '#protocols';
+  const { route, id, protocol } = event.detail || {};
+  // 协议页的深链接带上链名，页面才能定位到那一张卡片。
+  if (route === 'protocol') location.hash = protocol ? `#protocols/${encodeURIComponent(protocol)}` : '#protocols';
   if (route === 'finding' && id) location.hash = `#finding/${encodeURIComponent(id)}`;
 });
+
+/* ------------------------------------------------------------------
+ * 启动段（放在文件末尾）。
+ *
+ * 顺序很重要：模块级常量（WORKSPACE_FLAG_* / WORKSPACE_STATE_KIND 等）
+ * 必须先完成初始化，再触发首次路由渲染，否则 workspaceFrame() 会撞上
+ * 暂时性死区（ReferenceError），模块求值中止，页面只剩静态 HTML，
+ * 而后端接口与单元测试全绿，看起来一切正常。
+ * ------------------------------------------------------------------ */
+addEventListener('hashchange', routeWorkspace);
+// 地址栏没有 hash 时默认就是首页：补成 #home，复制链接、刷新、前进后退才与页面一致。
+// 用 replaceState 而不是改 location.hash，避免多一条历史记录让「后退」退不出首页。
+if (!location.hash) history.replaceState(null, '', `${location.pathname}${location.search}#home`);
+routeWorkspace();

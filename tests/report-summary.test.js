@@ -41,3 +41,16 @@ test('untrusted archived report text is escaped before rendering', () => {
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
 });
+
+test('task detail only requests an archived report for analysis task types', () => {
+  // 后端只为 analysis / local-source-analysis 提供 /api/v1/reports/{id}。
+  // 对采集等任务无条件请求必然 404，会在每次打开任务详情时留下控制台错误。
+  // 这里钉住「按任务类型决定是否请求」，避免退化成无条件请求。
+  const detailSource = appSource.match(/async function renderTaskDetailWorkspace\(id\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(detailSource, '应当有 renderTaskDetailWorkspace 函数');
+  assert.match(detailSource, /reportCapable/, '任务详情应当按任务类型判断是否请求归档报告');
+  assert.match(detailSource, /\['analysis', 'local-source-analysis'\]\.includes\(String\(item\.type \|\| ''\)\)/,
+    '应当只对 analysis / local-source-analysis 任务请求归档报告');
+  assert.match(detailSource, /reportCapable\s*\?\s*optionalResource\(`\/api\/v1\/reports\//,
+    '报告请求必须受 reportCapable 保护，不能无条件发出');
+});

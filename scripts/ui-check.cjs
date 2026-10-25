@@ -6,6 +6,29 @@ catch { playwright = require('/Users/d288/.cache/codex-runtimes/codex-primary-ru
 const output = resolve(process.env.UI_OUTPUT_DIR || 'work/ui');
 const baseUrl = process.env.UI_BASE_URL || 'http://127.0.0.1:8788';
 const assert = (ok, message) => { if (!ok) throw Error(message); };
+// 窄屏外壳测量。侧边栏在 <=900px 是收起的抽屉（position: fixed，高度等于视口），
+// 所以旧的「侧边栏高度 < 160」不再有意义——它量的是一个屏幕外的抽屉。
+// 新口径：抽屉收起时必须完全在屏幕外且不可聚焦；汉堡按钮可见、可点（>=44px）、aria-expanded=false；
+// 顶栏高度不能吞掉首屏。此函数在浏览器里执行，不能引用 Node 作用域的变量。
+function measureMobileShell() {
+  const sidebar = document.querySelector('.sidebar').getBoundingClientRect();
+  const sidebarStyle = getComputedStyle(document.querySelector('.sidebar'));
+  const toggle = document.querySelector('.nav-toggle');
+  const toggleBox = toggle.getBoundingClientRect();
+  return {
+    route: location.hash, viewport: innerWidth, width: document.documentElement.scrollWidth,
+    sidebarRight: Math.round(sidebar.right), sidebarVisibility: sidebarStyle.visibility,
+    toggleWidth: Math.round(toggleBox.width), toggleHeight: Math.round(toggleBox.height),
+    toggleExpanded: toggle.getAttribute('aria-expanded'),
+    topbarHeight: Math.round(document.querySelector('.topbar').getBoundingClientRect().height),
+  };
+}
+function assertMobileShell(layout, where) {
+  assert(layout.sidebarRight <= 0 && layout.sidebarVisibility === 'hidden', `mobile drawer must be closed and off-screen at ${where}`);
+  assert(layout.toggleWidth >= 44 && layout.toggleHeight >= 44, `mobile menu button must be at least 44px at ${where} (actual ${layout.toggleWidth}x${layout.toggleHeight})`);
+  assert(layout.toggleExpanded === 'false', `menu button aria-expanded must be false while closed at ${where}`);
+  assert(layout.topbarHeight <= 120, `mobile top bar too tall at ${where} (${layout.topbarHeight}px)`);
+}
 async function waitForService(url = `${baseUrl}/api/health`) {
   const deadline = Date.now() + 15000;
   let lastError = 'service unavailable';
@@ -97,15 +120,19 @@ async function waitForService(url = `${baseUrl}/api/health`) {
       await route.continue();
     });
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => document.querySelector('#audit-view h1')?.textContent === '协议风险作战地图');
-    for (const [hash, title] of [['#map', '协议风险作战地图'], ['#protocols', '协议清单与关系'], ['#discoveries', '发现与证据链'], ['#execution', '执行与复现']]) {
+    // 默认落地页是首页（#home），不再是风险地图。
+    await page.waitForFunction(() => document.querySelector('#audit-view h1')?.textContent === '先看状态，再看线索，最后看证据');
+    assert(await page.locator('.nav-item.active').first().getAttribute('href') === '#home', 'landing page highlights the home nav item');
+    assert(!(await page.locator('#workspace-view').isVisible()), 'workspace container must be hidden on audit routes');
+    for (const [hash, title] of [['#map', '风险地图'], ['#protocols', '协议与链'], ['#discoveries', '发现的线索'], ['#execution', '执行与复现']]) {
       await page.locator(`.nav-list > .nav-item[href="${hash}"]`).click();
       await page.waitForFunction((expected) => document.querySelector('#audit-view h1')?.textContent === expected, title);
       assert(await page.locator('#audit-view').isVisible(), `${hash} audit view visibility`);
       if (hash === '#protocols') await page.waitForSelector('#audit-view .mermaid svg', { timeout: 10000 });
       if (hash === '#discoveries') {
         assert(await page.locator('#audit-view .audit-finding').count() > 0, 'findings view must render campaign-backed evidence');
-        assert((await page.locator('#audit-view .finding-toolbar').innerText()).includes('campaign 证据'), 'findings view shows campaign source count');
+        const findingSummary = await page.locator('#audit-view .finding-summary').innerText();
+        assert(/\d+\s*条来自采集记录/.test(findingSummary), `findings view shows campaign source count (actual: ${JSON.stringify(findingSummary)})`);
       }
     }
     report.checks.push('four audit views switch and findings include campaign evidence');
@@ -300,10 +327,10 @@ async function waitForService(url = `${baseUrl}/api/health`) {
       await page.evaluate((hash) => { location.hash = hash; }, workspace.hash);
       await page.waitForFunction((expected) => document.querySelector('#workspace-view h1')?.textContent === expected, workspace.title);
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      const layout = await page.evaluate(() => ({ route: location.hash, viewport: innerWidth, width: document.documentElement.scrollWidth, navHeight: document.querySelector('.sidebar').getBoundingClientRect().height }));
+      const layout = await page.evaluate(measureMobileShell);
       report.viewports.push(layout);
       assert(layout.width <= layout.viewport, `workspace overflow at 390: ${workspace.hash}`);
-      assert(layout.navHeight < 160, `mobile navigation too tall at ${workspace.hash}`);
+      assertMobileShell(layout, workspace.hash);
     }
     report.checks.push('all data workspaces fit the narrow mobile viewport');
     await page.evaluate(() => { location.hash = '#overview'; });
@@ -312,10 +339,10 @@ async function waitForService(url = `${baseUrl}/api/health`) {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 1100 });
       await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      const layout = await page.evaluate(() => ({ viewport: innerWidth, width: document.documentElement.scrollWidth, navHeight: document.querySelector('.sidebar').getBoundingClientRect().height }));
+      const layout = await page.evaluate(measureMobileShell);
       report.viewports.push(layout);
       assert(layout.width <= layout.viewport, `page overflow at ${width}`);
-      if (width === 390) assert(layout.navHeight < 160, 'mobile navigation too tall');
+      if (width === 390) assertMobileShell(layout, 'overview');
       assert(await page.locator('.nav-item.active').getAttribute('href') === '#overview', 'navigation must match visible overview');
       if (width === 390) {
         const summary = await page.locator('#stage-summary').boundingBox();

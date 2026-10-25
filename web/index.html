@@ -5,44 +5,82 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#0b1117">
     <title>区块链安全 · 多链研究台</title>
+    <!-- 内联 SVG 图标：避免 /favicon.ico 404（服务端不会提供该文件）。
+         CSP 的 img-src 允许 data:，所以 data:image/svg+xml 可以直接用。 -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1117'/%3E%3Cpath d='M16 4.6l9.2 3.7v6.4c0 5.6-3.7 10.8-9.2 12.7-5.5-1.9-9.2-7.1-9.2-12.7V8.3L16 4.6z' fill='none' stroke='%2354d3bd' stroke-width='2'/%3E%3Cpath d='M11.5 16.1l3.1 3.1 6-6.6' fill='none' stroke='%2354d3bd' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/home.css">
+    <link rel="stylesheet" href="/audit.css">
+    <link rel="stylesheet" href="/workspace.css">
+    <!-- 模块依赖链 app.js → views/* → lib/* 原本逐层串行加载，经公网隧道每层约 1 秒。
+         声明预加载后浏览器在解析 HTML 时并行拉取全部模块。新增模块文件时需同步补充。
+         完整性由 tests/web-runtime.test.js 守住：web/ 下每个模块、每条 import 依赖、
+         每条 modulepreload 都必须能被服务端提供（否则模块图加载直接失败，页面无脚本）。 -->
+    <link rel="modulepreload" href="/app.js">
+    <link rel="modulepreload" href="/views/overview.js">
+    <link rel="modulepreload" href="/views/protocol.js">
+    <link rel="modulepreload" href="/views/finding.js">
+    <link rel="modulepreload" href="/views/execution.js">
+    <link rel="modulepreload" href="/views/corpus.js">
+    <link rel="modulepreload" href="/views/home.js">
+    <link rel="modulepreload" href="/lib/api.js">
+    <link rel="modulepreload" href="/lib/format.js">
+    <link rel="modulepreload" href="/lib/severity.js">
+    <link rel="modulepreload" href="/lib/confidence.js">
+    <link rel="modulepreload" href="/lib/badges.js">
+    <link rel="modulepreload" href="/lib/home-model.js">
   </head>
   <body>
+    <a class="skip-link" href="#main-region">跳到主要内容</a>
     <div class="app-shell">
-      <aside class="sidebar" aria-label="主导航">
+      <aside class="sidebar" id="app-sidebar" aria-label="主导航">
         <div class="brand-lockup">
           <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
           <div>
-            <div class="brand-name">区块链安全</div>
-            <div class="brand-subtitle">安全作战台</div>
+            <div class="brand-name">区块链安全研究台</div>
+            <div class="brand-subtitle">本地只读研究工作区</div>
           </div>
         </div>
-        <div class="side-status"><span class="status-dot live"></span><span>只读侦察模式</span><span class="status-lock">只读</span></div>
-        <nav class="nav-list">
-          <a class="nav-item active" href="#map"><span class="nav-index">01</span><span>作战地图</span></a>
-          <a class="nav-item" href="#protocols"><span class="nav-index">02</span><span>协议</span></a>
-          <a class="nav-item" href="#discoveries"><span class="nav-index">03</span><span>发现</span><span class="nav-count alert" id="nav-findings-view">--</span></a>
-          <a class="nav-item" href="#execution"><span class="nav-index">04</span><span>执行与复现</span></a>
+        <div class="side-status" title="本工具只读取公开链上信息与本地文件：不授权、不签名、不广播，也不操作任何资产。"><span class="status-dot live"></span><span>只读模式：不授权、不签名、不广播</span><span class="status-lock">只读</span></div>
+        <nav class="nav-list" aria-label="主要功能">
+          <a class="nav-item active" href="#home" title="首页：一屏看清当前金额、链状态和候选目标"><span class="nav-icon" aria-hidden="true">◎</span><span>首页</span></a>
+          <a class="nav-item" href="#discoveries" title="发现：查看自动检查出来的待核验线索"><span class="nav-icon" aria-hidden="true">◇</span><span>发现</span><span class="nav-count alert" id="nav-findings-view">--</span></a>
+          <a class="nav-item" href="#map" title="风险地图：按协议看哪些地方值得优先看"><span class="nav-icon" aria-hidden="true">▦</span><span>风险地图</span></a>
+          <a class="nav-item" href="#protocols" title="协议：查看协议清单、合约和不变量状态"><span class="nav-icon" aria-hidden="true">◈</span><span>协议</span></a>
+          <a class="nav-item" href="#execution" title="执行与复现：查看本地模拟测试跑出来的结果"><span class="nav-icon" aria-hidden="true">▷</span><span>执行与复现</span></a>
         </nav>
         <details class="operations-nav">
-          <summary>运维</summary>
-          <nav class="nav-list" aria-label="运维导航">
-          <a class="nav-item" href="#overview"><span class="nav-index">00</span><span>旧版总览</span></a>
-          <a class="nav-item" href="#analysis-tasks"><span class="nav-index">01</span><span>分析队列</span></a>
-          <a class="nav-item nav-view-item" href="#projects"><span class="nav-index">03</span><span>项目管理</span></a>
-          <a class="nav-item nav-view-item" href="#collection"><span class="nav-index">04</span><span>创建采集</span></a>
-          <a class="nav-item nav-view-item" href="#scan"><span class="nav-index">05</span><span>创建扫描</span></a>
-          <a class="nav-item nav-view-item" href="#tasks"><span class="nav-index">06</span><span>任务中心</span><span class="nav-count" id="nav-tasks">--</span></a>
-          <a class="nav-item nav-view-item" href="#findings-view"><span class="nav-index">07</span><span>漏洞中心</span></a>
-          <a class="nav-item nav-view-item" href="#finding"><span class="nav-index">08</span><span>漏洞详情</span></a>
-          <a class="nav-item nav-view-item" href="#dynamic"><span class="nav-index">09</span><span>动态检查</span></a>
-          <a class="nav-item nav-view-item" href="#reverse"><span class="nav-index">10</span><span>代码查看</span></a>
-          <a class="nav-item nav-view-item" href="#permissions"><span class="nav-index">11</span><span>权限与业务</span></a>
-          <a class="nav-item nav-view-item" href="#replay"><span class="nav-index">12</span><span>调用重放</span></a>
-          <a class="nav-item nav-view-item" href="#ai"><span class="nav-index">13</span><span>状态问答</span></a>
-          <a class="nav-item" href="#sync"><span class="nav-index">14</span><span>模型与同步</span></a>
-          <a class="nav-item nav-view-item" href="#corpus"><span class="nav-index">15</span><span>离线语料控制台</span></a>
-          </nav>
+          <summary title="展开后可以进入运维与工具的各个页面"><span>运维</span><span class="operations-hint">共 15 个入口</span></summary>
+          <div class="nav-group">
+            <div class="nav-group-title" id="nav-group-create">创建</div>
+            <nav class="nav-list" aria-labelledby="nav-group-create">
+              <a class="nav-item nav-view-item" href="#collection" title="创建采集任务：只读读取链上代码和已验证源码"><span class="nav-icon" aria-hidden="true">＋</span><span>创建采集</span></a>
+              <a class="nav-item nav-view-item" href="#scan" title="创建扫描任务：对已验证的源码跑自动检查"><span class="nav-icon" aria-hidden="true">＋</span><span>创建扫描</span></a>
+              <a class="nav-item nav-view-item" href="#projects" title="项目管理：查看已导入的项目和合约记录"><span class="nav-icon" aria-hidden="true">＋</span><span>项目管理</span></a>
+            </nav>
+          </div>
+          <div class="nav-group">
+            <div class="nav-group-title" id="nav-group-view">查看</div>
+            <nav class="nav-list" aria-labelledby="nav-group-view">
+              <a class="nav-item nav-view-item" href="#tasks" title="任务中心：查看所有任务的状态和归档报告"><span class="nav-icon" aria-hidden="true">▤</span><span>任务中心</span><span class="nav-count" id="nav-tasks">--</span></a>
+              <a class="nav-item nav-view-item" href="#findings-view" title="漏洞中心：查看全部漏洞记录并做人工分级"><span class="nav-icon" aria-hidden="true">◇</span><span>漏洞中心</span></a>
+              <a class="nav-item nav-view-item" href="#finding" title="漏洞详情：打开某一条漏洞的证据与复核记录"><span class="nav-icon" aria-hidden="true">◇</span><span>漏洞详情</span></a>
+              <a class="nav-item nav-view-item" href="#reverse" title="代码查看：查看链上代码的还原结果"><span class="nav-icon" aria-hidden="true">⌘</span><span>代码查看</span></a>
+            </nav>
+          </div>
+          <div class="nav-group">
+            <div class="nav-group-title" id="nav-group-advanced">高级</div>
+            <nav class="nav-list" aria-labelledby="nav-group-advanced">
+              <a class="nav-item nav-view-item" href="#dynamic" title="动态检查：查看本地隔离测试的执行结果"><span class="nav-icon" aria-hidden="true">▷</span><span>动态检查</span></a>
+              <a class="nav-item nav-view-item" href="#replay" title="调用重放：查看历史只读调用的记录"><span class="nav-icon" aria-hidden="true">↻</span><span>调用重放</span></a>
+              <a class="nav-item nav-view-item" href="#permissions" title="权限与业务：查看权限门槛和业务约束"><span class="nav-icon" aria-hidden="true">⚿</span><span>权限与业务</span></a>
+              <a class="nav-item nav-view-item" href="#ai" title="状态问答：用当前快照里的事实提问"><span class="nav-icon" aria-hidden="true">?</span><span>状态问答</span></a>
+              <a class="nav-item" href="#sync" title="模型与同步：查看云端审查配置和共享状态文件"><span class="nav-icon" aria-hidden="true">⇄</span><span>模型与同步</span></a>
+              <a class="nav-item nav-view-item" href="#corpus" title="离线语料控制台：管理离线语料的四条泳道"><span class="nav-icon" aria-hidden="true">▦</span><span>离线语料控制台</span></a>
+              <a class="nav-item" href="#overview" title="旧版总览：技术视图，含全部指标、链状态和证据表"><span class="nav-icon" aria-hidden="true">≡</span><span>旧版总览</span></a>
+              <a class="nav-item" href="#analysis-tasks" title="分析队列：查看本地的分析任务队列"><span class="nav-icon" aria-hidden="true">≣</span><span>分析队列</span></a>
+            </nav>
+          </div>
         </details>
         <div class="sidebar-foot">
           <div class="foot-label">工作区</div>
@@ -53,16 +91,50 @@
 
       <main class="main-content" id="overview">
         <header class="topbar">
-          <div class="breadcrumb"><span>安全研究</span><span class="crumb-separator">/</span><strong>多链作战台</strong></div>
+          <div class="topbar-leading">
+            <button class="icon-button nav-toggle" id="nav-toggle" type="button" aria-expanded="false" aria-controls="app-sidebar" aria-label="打开导航菜单" title="打开导航菜单">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+            <nav class="breadcrumb" aria-label="当前位置"><span>安全研究</span><span class="crumb-separator" aria-hidden="true">/</span><strong id="breadcrumb-current">首页</strong></nav>
+          </div>
           <div class="topbar-actions">
-            <div class="health-chip"><span class="status-dot live"></span><span>本地服务</span><b id="service-health">在线</b></div>
-            <div class="health-chip"><span class="status-dot" id="model-dot"></span><span>云端审查通道</span><b id="model-health">检查中</b></div>
-            <button class="icon-button" id="refresh-button" type="button" title="刷新状态" aria-label="刷新状态"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-4M4 5v4h4M4 13a8 8 0 0 0 14.9 4M20 19v-4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <div class="health-chip" title="本机服务是否正常响应。离线时页面上的数字会是上一次读到的记录，不是实时值。">
+              <span class="status-dot live" id="service-dot" aria-hidden="true"></span>
+              <span class="health-chip-label">本地服务</span>
+              <b id="service-health">在线</b>
+            </div>
+            <div class="health-chip" title="云端审查通道的配置状态。未配置时只影响云端复核，网页其余功能照常可用。">
+              <span class="status-dot" id="model-dot" aria-hidden="true"></span>
+              <span class="health-chip-label">云端审查通道</span>
+              <b id="model-health">检查中</b>
+            </div>
+            <span class="refresh-status" id="refresh-status" role="status" aria-live="polite" hidden>正在刷新…</span>
+            <button class="icon-button" id="refresh-button" type="button" title="重新读取当前状态" aria-label="重新读取当前状态">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-4M4 5v4h4M4 13a8 8 0 0 0 14.9 4M20 19v-4h-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
           </div>
         </header>
 
+        <div id="main-region" class="skip-target" tabindex="-1"></div>
+
+        <div class="global-banner" id="global-banner" role="alert" hidden>
+          <span class="global-banner-icon" aria-hidden="true">!</span>
+          <span class="global-banner-text" id="global-banner-text">读取失败：未知原因</span>
+          <button class="text-button" id="global-banner-retry" type="button">点此重试</button>
+          <button class="icon-button global-banner-close" id="global-banner-close" type="button" aria-label="关闭提示" title="关闭提示"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+        </div>
+
         <section id="workspace-view" class="workspace-view" hidden aria-live="polite"></section>
         <section id="audit-view" class="audit-view" hidden aria-live="polite"></section>
+
+        <nav class="overview-anchor-nav" aria-label="旧版总览页内导航">
+          <span class="overview-anchor-title">本页目录</span>
+          <a href="#stage-summary">采集进度</a>
+          <a href="#chains">链状态</a>
+          <a href="#routes">跨链路径</a>
+          <a href="#vulnerability-chains">漏洞链路</a>
+          <a href="#findings">风险信号</a>
+        </nav>
 
         <section class="stage-summary" id="stage-summary" aria-labelledby="stage-summary-title">
           <div class="stage-summary-head"><div><span class="eyebrow">工作进展</span><h3 id="stage-summary-title">采集 → 处理 → 分析 → 结果</h3></div><span class="stage-summary-note" id="stage-summary-updated">读取状态快照…</span></div>
@@ -89,6 +161,29 @@
           <article class="metric-cell"><div class="metric-label">历史报价证据</div><div class="metric-value" id="metric-quotes">--</div><div class="metric-note teal-text">报价采集时刻有效</div></article>
           <article class="metric-cell"><div class="metric-label">高优先告警</div><div class="metric-value risk-value" id="metric-high">--</div><div class="metric-note red-text">人工复核前置</div></article>
           <article class="metric-cell metric-wide"><div class="metric-label">最近静态报告汇总</div><div class="progress-value"><span id="metric-targets">--</span><span class="progress-unit"> 个目标</span></div><div class="progress-track"><span id="static-progress"></span></div><div class="metric-note" id="metric-static-note">等待报告</div></article>
+        </section>
+
+        <section class="collection-switch" id="collection-switch" aria-labelledby="collection-switch-title">
+          <div class="collection-switch-head">
+            <div class="collection-switch-copy">
+              <span class="eyebrow">链上采集</span>
+              <h3 id="collection-switch-title">一键开启合约采集</h3>
+              <p>开启后自动启动一轮只读采集：读取链上合约代码与已验证源码，做静态分析与本地复现。全程不授权、不签名、不广播，不涉及任何资产操作。</p>
+            </div>
+            <div class="collection-switch-action">
+              <button class="switch-button" id="collection-switch-toggle" type="button" aria-pressed="false">
+                <span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span>
+                <span class="switch-label" id="collection-switch-label">开启链上采集</span>
+              </button>
+              <span class="switch-status" id="collection-switch-status" role="status" aria-live="polite">读取开关状态…</span>
+            </div>
+          </div>
+          <div class="collection-switch-scope">
+            <label class="scope-label" for="collection-chain-scope">采集范围</label>
+            <select id="collection-chain-scope" aria-label="选择要采集的链"><option value="all">全部链</option></select>
+            <span class="scope-note" id="collection-scope-note">默认采集全部已配置链。</span>
+          </div>
+          <p class="collection-switch-message" id="collection-switch-message" role="status" aria-live="polite"></p>
         </section>
 
         <section class="runtime-strip" aria-label="采集窗口记录">
@@ -121,7 +216,7 @@
           </div>
           <div class="panel-foot task-panel-foot"><span id="task-list-status" role="status" aria-live="polite">正在读取任务…</span><div class="task-pagination"><button class="task-page-button" id="task-prev" type="button" disabled>上一页</button><span id="task-page-count">第 1 页</span><button class="task-page-button" id="task-next" type="button" disabled>下一页</button></div></div>
         </section>
-        <div class="section-heading" id="chains"><div><div class="eyebrow">01 / 优先队列</div><h2>优先深挖链</h2></div><div class="section-tools"><span class="table-note">按优先级排序 · 数据来自筛选快照</span><button class="text-button" id="show-all-chains" type="button">查看队列 <span>→</span></button></div></div>
+        <div class="section-heading" id="chains"><div><div class="eyebrow">第 1 步 · 优先队列</div><h2>先看这些链</h2></div><div class="section-tools"><span class="table-note">按优先级排序 · 数据来自筛选快照</span><button class="text-button" id="show-all-chains" type="button">查看队列 <span>→</span></button></div></div>
         <section class="content-grid primary-grid">
           <article class="panel chain-panel">
             <div class="panel-head"><div><h3>链状态矩阵</h3><p>历史活跃度与当前资产价值同时过线后，才进入跨链及链节点复核。</p></div><div class="panel-key"><span class="legend-key teal"></span>可深挖 <span class="legend-key amber"></span>候选</div></div>
@@ -138,20 +233,20 @@
           </aside>
         </section>
 
-        <div class="section-heading" id="routes"><div><div class="eyebrow">02 / 跨链可执行性</div><h2>跨链价值路径</h2></div><div class="section-tools"><span class="table-note">只读报价 · 不授权、不签名、不广播</span></div></div>
+        <div class="section-heading" id="routes"><div><div class="eyebrow">第 2 步 · 跨链可执行性</div><h2>钱能不能跨链走</h2></div><div class="section-tools"><span class="table-note">只读报价 · 不授权、不签名、不广播</span></div></div>
         <section class="content-grid route-grid">
           <article class="panel route-panel"><div class="panel-head"><div><h3>可执行性分层</h3><p>把兼容性连接、报价和安全边界拆开显示。</p></div><span class="read-only-badge">只读</span></div><div id="route-list" class="route-list"></div><div class="panel-foot"><span>来源：LI.FI 报价</span><span id="route-foot">--</span></div></article>
           <article class="panel value-panel"><div class="panel-head"><div><h3>历史热度 → 当前价值</h3><p>当前锁定资产估值只用于衡量规模，不代表资产一定可以取回。</p></div><span class="chart-unit">美元</span></div><div class="bar-chart" id="value-chart" aria-label="链历史峰值与当前锁定资产估值对比"></div><div class="chart-axis"><span>历史峰值</span><span>当前锁定资产估值</span></div><div class="panel-foot"><span>峰值日期取历史序列最大值</span><span id="value-foot">--</span></div></article>
         </section>
 
-        <div class="section-heading" id="vulnerability-chains"><div><div class="eyebrow">03 / 漏洞链路</div><h2>漏洞链路证据</h2></div><div class="section-tools"><span class="table-note">路径建模 · 权限门槛 · 本地复现</span></div></div>
+        <div class="section-heading" id="vulnerability-chains"><div><div class="eyebrow">第 3 步 · 漏洞链路</div><h2>一条风险是怎么走通的</h2></div><div class="section-tools"><span class="table-note">路径建模 · 权限门槛 · 本地复现</span></div></div>
         <section class="panel vulnerability-panel">
           <div class="panel-head"><div><h3>从静态线索到可复现路径</h3><p>逐阶段追溯权限、状态、资金流。回归结果绑定源码指纹，可展开检查依据。</p></div><div class="chain-summary" id="vulnerability-summary">--</div></div>
           <div id="vulnerability-tabs" class="lab-tabs" role="tablist" aria-label="选择风险链路"></div><div id="vulnerability-list" class="lab-layout" role="tabpanel"></div>
           <div class="panel-foot"><span>本地回归结果与漏洞确认分开展示</span><span id="security-tests-note">读取测试报告…</span></div>
         </section>
 
-        <div class="section-heading" id="findings"><div><div class="eyebrow">04 / 静态分析</div><h2>风险信号</h2></div><div class="section-tools"><span class="table-note">自动检查线索 · 需复核和本地测试确认</span><button class="text-button" id="show-all-findings" type="button">展开分析 <span>→</span></button></div></div>
+        <div class="section-heading" id="findings"><div><div class="eyebrow">第 4 步 · 自动静态分析</div><h2>机器先挑出来的可疑点</h2></div><div class="section-tools"><span class="table-note">自动检查线索 · 需复核和本地测试确认</span><button class="text-button" id="show-all-findings" type="button">展开分析 <span>→</span></button></div></div>
         <section class="content-grid analysis-grid">
           <article class="panel finding-panel"><div class="panel-head"><div><h3>高优先级待核验</h3><p>按影响等级与置信度排序，优先处理资产流出路径。</p></div><span class="finding-count" id="finding-count">--</span></div><div id="finding-list" class="finding-list"></div><div class="panel-foot"><span>自动检测结果不是已确认漏洞</span><span>源码映射可追溯</span></div></article>
           <article class="panel workflow-panel" id="sync"><div class="panel-head"><div><h3>DSH / DHLsh 同步</h3><p>共享状态文件让两个入口读取同一份证据。</p></div><span class="sync-version" id="sync-version">同步版本 --</span></div><div class="sync-board"><div class="sync-row"><span class="sync-label">状态文件</span><code>work/dsh-sync.json</code><span class="sync-ok" id="file-sync-state">读取中</span></div><div class="sync-row"><span class="sync-label">云端通道</span><code id="web-model">--</code><span class="sync-ok" id="web-model-state">--</span></div><div class="sync-row"><span class="sync-label">审查角色</span><code id="desktop-model">--</code><span class="sync-ok" id="desktop-model-state">--</span></div><div class="sync-row"><span class="sync-label">审查模型</span><code id="sync-model">--</code><span class="sync-ok" id="sync-model-state">--</span></div></div><div class="workflow-steps"><div class="workflow-step done"><span>01</span><b>筛选</b><small>资产规模 / 历史热度</small></div><div class="workflow-step done"><span>02</span><b>验证</b><small>连接状态</small></div><div class="workflow-step active"><span>03</span><b>分析</b><small>代码 / 权限 / 资金</small></div><div class="workflow-step"><span>04</span><b>复核</b><small>本地测试 / 证据</small></div></div><div class="panel-foot"><span id="last-report">最近报告 --</span><span>只读工作流</span></div></article>

@@ -1,26 +1,130 @@
 import { escapeHTML, formatDate, value } from '../lib/format.js';
+import { riskBand } from './overview.js';
+
+const CHAIN_STATUS = {
+  ready: { label: '可深挖', tone: 'ok', icon: '✓', hint: '链节点身份核对通过，可以看合约代码。' },
+  candidate: { label: '候选', tone: 'info', icon: 'i', hint: '资产规模过线，等采集轮到这个链。' },
+  queued: { label: '排队中', tone: 'muted', icon: '–', hint: '排在队列里，还没轮到。' },
+};
+
+const INVARIANT_STATE = {
+  passed: { label: '通过', tone: 'ok', icon: '✓' },
+  violated: { label: '被违反', tone: 'danger', icon: '!' },
+  failed: { label: '被违反', tone: 'danger', icon: '!' },
+  adapter_required: { label: '需要补充适配', tone: 'warn', icon: '·' },
+  unverified: { label: '未验证', tone: 'muted', icon: '–' },
+};
+
+function badge(tone, icon, label, title = '') {
+  return `<span class="status-badge tone-${tone}"${title ? ` title="${escapeHTML(title)}"` : ''}>`
+    + `<span class="status-badge-icon" aria-hidden="true">${icon}</span>`
+    + `<span class="status-badge-text">${escapeHTML(label)}</span></span>`;
+}
+
+function chainCard(chain) {
+  const name = chain.name || '未知链';
+  const status = CHAIN_STATUS[String(chain.status || '').toLowerCase()]
+    || { label: String(chain.status || '未记录'), tone: 'muted', icon: '–', hint: '' };
+  const band = riskBand(chain.priorityScore);
+  const rpcOk = chain.rpc?.ok === true;
+  const riskLabel = `风险指数 ${band.score === null ? '未记录' : band.score}`;
+  // 链节点核对失败时如实写「待复核」，不把它显示成已验证。
+  const rpcHint = rpcOk
+    ? '链节点身份核对通过。'
+    : (chain.rpc?.error ? `链节点待复核：${chain.rpc.error}` : '链节点待复核：还没有核验记录。');
+  return `<article class="protocol-card" data-protocol-detail="${escapeHTML(name)}">`
+    + `<div class="protocol-card-head">`
+    + `<a class="protocol-card-name" href="#protocols/${encodeURIComponent(name)}" title="定位到 ${escapeHTML(name)}">${escapeHTML(name)}</a>`
+    + `<span class="protocol-card-id">#${escapeHTML(String(chain.chainId || '--'))}</span></div>`
+    + `<div class="protocol-card-badges">${badge(status.tone, status.icon, status.label, status.hint)}`
+    + `${badge(rpcOk ? 'ok' : 'warn', rpcOk ? '✓' : '·', rpcOk ? '链节点已核对' : '链节点待复核', rpcHint)}`
+    + `${badge(band.tone === 'danger' ? 'danger' : band.tone === 'warn' ? 'warn' : 'muted', '◆', riskLabel, band.hint)}</div>`
+    + `<p class="protocol-card-scale">当前资产规模 ${escapeHTML(value(chain.currentTvlLabel || chain.peakTvlLabel))}</p>`
+    + `<p class="protocol-card-hint">${escapeHTML(status.hint || band.hint)}</p>`
+    + `<a class="protocol-card-link" href="#discoveries">看这条链的线索 →</a>`
+    + `</article>`;
+}
+
+function contractRow(item) {
+  return `<li class="protocol-contract"><div><strong>${escapeHTML(value(item.protocol || item.name || item.input?.protocolId))}</strong>`
+    + `<small>${escapeHTML(value(item.chain || item.chainId || item.input?.chainId))}</small></div>`
+    + `<code>${escapeHTML(value(item.address || item.input?.address))}</code>`
+    + `<span class="protocol-contract-proxy">代理实现：${escapeHTML(value(item.originProxy || item.proxy?.implementation || item.implementationAddress))}</span></li>`;
+}
+
+function invariantRow(item) {
+  const state = String(item.status || item.state || 'unverified').toLowerCase();
+  const info = INVARIANT_STATE[state] || { label: state || '未验证', tone: 'muted', icon: '–' };
+  const assertion = item.assertion || item.code || item.generatedCode;
+  return `<li class="invariant-row"><div><strong>${escapeHTML(value(item.name || item.template || item.invariantId || item.id))}</strong>`
+    + `<p>${escapeHTML(value(item.description || item.template || '未提供说明'))}</p></div>`
+    + `${badge(info.tone, info.icon, info.label, state)}`
+    + (assertion ? `<details class="invariant-code"><summary>展开规则代码</summary><pre><code>${escapeHTML(assertion)}</code></pre></details>` : '')
+    + (state === 'adapter_required'
+      ? `<small class="adapter-hint">${escapeHTML(value(item.reason || item.adapterReason || '缺少协议适配器，这条规则暂时没法本地执行。'))}</small>` : '')
+    + `</li>`;
+}
 
 export function render(data = {}) {
   const chains = Array.isArray(data.chains) ? data.chains : [];
   const contracts = [...(data.contracts || []), ...(data.campaignContracts || [])];
-  const seenContracts = new Set();
+  const seen = new Set();
   const uniqueContracts = contracts.filter((item) => {
     const key = `${item.chainId || item.chain}:${item.address || item.input?.address}`.toLowerCase();
-    if (!item.address && !item.input?.address || seenContracts.has(key)) return false;
-    seenContracts.add(key);
+    if (!item.address && !item.input?.address || seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
   const invariants = Array.isArray(data.invariants) ? data.invariants : [];
   const findings = (data.findings || []).slice(0, 8);
-  const rows = chains.map((chain) => `<tr><td><strong>${escapeHTML(chain.name || '未知链')}</strong><small>#${escapeHTML(chain.chainId || '--')}</small></td><td>${escapeHTML(value(chain.currentTvlLabel || chain.peakTvlLabel))}</td><td>${escapeHTML(value(chain.status || chain.transferability))}</td><td>${escapeHTML(value(chain.rpc?.ok ? '已验证' : '待复核'))}</td><td><button class="audit-link" type="button" data-protocol-detail="${escapeHTML(chain.name || chain.chainId)}">查看协议</button></td></tr>`).join('');
-  const contractRows = uniqueContracts.map((item) => `<tr><td><strong>${escapeHTML(value(item.protocol || item.name || item.input?.protocolId))}</strong><small>${escapeHTML(value(item.chain || item.chainId || item.input?.chainId))}</small></td><td><code>${escapeHTML(value(item.address || item.input?.address))}</code></td><td>${escapeHTML(value(item.originProxy || item.proxy?.implementation || item.implementationAddress))}</td></tr>`).join('');
-  const invariantRows = invariants.map((item) => { const state = String(item.status || item.state || 'unverified').toLowerCase(); const label = state === 'passed' ? '通过' : state === 'violated' || state === 'failed' ? '违反' : state === 'adapter_required' ? '需适配' : '未验证'; const cls = state === 'passed' ? 'state-passed' : state === 'violated' || state === 'failed' ? 'state-violated' : state === 'adapter_required' ? 'state-adapter' : 'state-unverified'; const assertion = item.assertion || item.code || item.generatedCode; return `<li class="invariant-row"><div><strong>${escapeHTML(value(item.name || item.template || item.invariantId || item.id))}</strong><p>${escapeHTML(value(item.description || item.template || '未提供说明'))}</p></div><span class="state-badge ${cls}">${label}</span>${assertion ? `<details class="invariant-code"><summary>查看断言代码</summary><pre><code>${escapeHTML(assertion)}</code></pre></details>` : ''}${state === 'adapter_required' ? `<small class="adapter-hint">${escapeHTML(value(item.reason || item.adapterReason || '缺少协议适配器，暂不执行。'))}</small>` : ''}</li>`; }).join('');
-  const findingRows = findings.map((item) => `<li><a href="#finding/${encodeURIComponent(item.id || item.findingId || '')}">${escapeHTML(value(item.title || item.check))}</a><span>${escapeHTML(value(item.status || item.state))}</span></li>`).join('');
-  return `<div class="audit-head"><div><span class="eyebrow">02 / 协议</span><h1>协议清单与关系</h1><p>先看合约和代理关系，再展开不变量状态。未验证和需适配会明确显示。</p></div><span class="audit-updated">数据更新时间 ${escapeHTML(formatDate(data.generatedAt))}</span></div><div class="protocol-summary"><span><b>${uniqueContracts.length}</b> 个合约</span><span><b>${invariants.length}</b> 条不变量</span><span><b>${findings.length}</b> 条发现</span></div><div class="protocol-layout"><section class="audit-panel"><div class="audit-panel-head"><div><h2>协议 / 链清单</h2><p>点击详情定位协议。</p></div><span>${chains.length} 条记录</span></div><div class="audit-table-wrap"><table class="audit-table"><thead><tr><th>协议</th><th>资产规模</th><th>状态</th><th>链节点</th><th>详情</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="audit-empty">暂无协议记录。</td></tr>'}</tbody></table></div></section><section class="audit-panel"><div class="audit-panel-head"><div><h2>代理关系图</h2><p>只展示已记录的关系。</p></div><span>只读</span></div><pre class="mermaid">graph LR\n  Protocol[协议] --> Implementation[实现合约]\n  Protocol --> Evidence[证据记录]\n  Implementation --> Runtime[链上代码]</pre><p class="audit-note">没有证据的实现关系不会被推测。</p></section></div><div class="protocol-layout protocol-lower"><section class="audit-panel"><div class="audit-panel-head"><div><h2>合约清单</h2><p>地址、代理实现和来源。</p></div><span>${uniqueContracts.length} 条记录</span></div><div class="audit-table-wrap"><table class="audit-table"><thead><tr><th>协议 / 链</th><th>地址</th><th>代理实现</th></tr></thead><tbody>${contractRows || '<tr><td colspan="3" class="audit-empty">当前没有合约或代理记录。</td></tr>'}</tbody></table></div></section><section class="audit-panel"><div class="audit-panel-head"><div><h2>业务不变量</h2><p>展开可查看断言和适配限制。</p></div><span>${invariants.length} 条记录</span></div><ul class="protocol-list">${invariantRows || '<li class="audit-empty">当前没有已保存的不变量。</li>'}</ul></section></div><section class="audit-panel protocol-related-findings"><div class="audit-panel-head"><div><h2>关联发现</h2><p>进入证据链查看详情。</p></div><span>最近 ${findings.length} 条</span></div><ul class="protocol-list">${findingRows || '<li class="audit-empty">当前没有关联发现。</li>'}</ul></section>`;
+
+  const chainCards = chains.length
+    ? chains.map(chainCard).join('')
+    : '<div class="audit-empty audit-empty-wide"><strong>还没有链记录</strong><span>采集一轮之后，这里会列出每条链并标明它现在的状态。</span></div>';
+  const contractList = uniqueContracts.length
+    ? uniqueContracts.map(contractRow).join('')
+    : '<div class="audit-empty audit-empty-wide"><strong>还没有合约记录</strong><span>采集到合约地址后，这里会显示协议、地址和代理实现。</span></div>';
+  const invariantList = invariants.length
+    ? invariants.map(invariantRow).join('')
+    : '<div class="audit-empty audit-empty-wide"><strong>还没有安全规则</strong>'
+      + '<span>安全规则（也写作「不变量」）是「这条合约必须一直成立」的一句话。<br>规则生成后，这里会显示每条规则的状态。</span></div>';
+  const findingList = findings.length
+    ? findings.map((item) => `<li><a href="#finding/${encodeURIComponent(item.id || item.findingId || '')}">${escapeHTML(value(item.title || item.check))}</a>`
+      + `<span>${escapeHTML(value(item.status || item.state))}</span></li>`).join('')
+    : '<li class="audit-empty">当前没有关联线索。</li>';
+
+  return `<div class="audit-head"><div><span class="eyebrow">02 / 协议</span><h1>协议与链</h1>`
+    + `<p>这里按链整理合约、安全规则和线索。每条链都写清现在能做什么、还差什么。</p></div>`
+    + `<span class="audit-updated">数据更新时间 ${escapeHTML(formatDate(data.generatedAt))}</span></div>`
+    + `<div class="audit-guide"><strong>这一页在看什么</strong><ol>`
+    + `<li><b>链卡片</b>：每条链现在能不能看代码、风险指数多少、资产规模多大。</li>`
+    + `<li><b>合约清单</b>：抓到了哪些合约地址，以及它们的代理实现指向哪里。</li>`
+    + `<li><b>安全规则</b>（也写作「不变量」）：一条「必须一直成立」的话。没验证过就如实写没验证过。</li>`
+    + `</ol></div>`
+    + `<div class="protocol-summary"><span><b>${chains.length}</b> 条链</span>`
+    + `<span><b>${uniqueContracts.length}</b> 个合约</span>`
+    + `<span><b>${invariants.length}</b> 条安全规则</span>`
+    + `<span><b>${findings.length}</b> 条关联线索</span></div>`
+    + `<section class="audit-panel"><div class="audit-panel-head"><div><h2>链清单</h2>`
+    + `<p>点链名可以定位到这条链；点「看这条链的线索」会跳到发现页。</p></div><span>${chains.length} 条记录</span></div>`
+    + `<div class="protocol-card-grid">${chainCards}</div></section>`
+    + `<div class="protocol-layout protocol-lower">`
+    + `<section class="audit-panel"><div class="audit-panel-head"><div><h2>合约清单</h2>`
+    + `<p>地址、所属链和代理实现。</p></div><span>${uniqueContracts.length} 条记录</span></div>`
+    + `<ul class="protocol-list protocol-contract-list">${contractList}</ul></section>`
+    + `<section class="audit-panel"><div class="audit-panel-head"><div><h2>安全规则</h2>`
+    + `<p>展开可以看规则代码和适配限制。</p></div><span>${invariants.length} 条记录</span></div>`
+    + `<ul class="protocol-list">${invariantList}</ul></section></div>`
+    + `<section class="audit-panel protocol-related-findings"><div class="audit-panel-head"><div><h2>关联线索</h2>`
+    + `<p>点进去看完整证据。</p></div><span>最近 ${findings.length} 条</span></div>`
+    + `<ul class="protocol-list">${findingList}</ul></section>`
+    + `<section class="audit-panel"><div class="audit-panel-head"><div><h2>关系示意</h2>`
+    + `<p>只画已经记录下来的关系，没记录的不推测。</p></div><span>只读</span></div>`
+    + `<pre class="mermaid">graph LR\n  Protocol[链 / 协议] --> Contract[合约地址]\n  Protocol --> Rule[安全规则]\n  Contract --> Evidence[证据记录]\n  Rule --> Execution[本地运行结果]</pre>`
+    + `<p class="audit-note">这条关系图只说明「记录之间的关联」，不代表任何漏洞成立。</p></section>`;
 }
 
 export async function bind(root = document) {
-  root.querySelectorAll('[data-protocol-detail]').forEach((button) => button.addEventListener('click', () => root.dispatchEvent(new CustomEvent('audit:navigate', { bubbles: true, detail: { route: 'protocol', protocol: button.dataset.protocol } }))));
   const diagram = root.querySelector('pre.mermaid');
   if (diagram) {
     try {
@@ -28,6 +132,7 @@ export async function bind(root = document) {
       mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'strict' });
       await mermaid.run({ nodes: [diagram] });
     } catch {
+      // CDN 取不到时保留文字版关系，不假装图已经画出来。
       diagram.dataset.renderState = 'text-fallback';
     }
   }

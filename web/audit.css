@@ -1,0 +1,1064 @@
+/* ==================================================================
+ * 审计四视图（#map 风险地图 / #protocols 协议 / #discoveries 发现 /
+ * #execution 执行与复现）的专属样式。
+ *
+ * 归属：Task B（审计视图）。只允许改这个文件，不要动 styles.css。
+ *
+ * 作用域规则：本文件的所有新规则都挂在 #audit-view 下面。
+ * 原因：audit.css 是全局加载的，而首页（views/home.js）也渲染进
+ * #audit-view，所以 #audit-view 既是这四个视图的公共父级，也不会
+ * 污染侧边栏、运维工作区（#workspace-view）和旧版总览。
+ *
+ * 设计约定：
+ *   - 只使用 styles.css :root 里已有的设计令牌，不新增变量名。
+ *   - 状态徽章用「图标 + 文字 + 颜色」三重编码，灰度/色盲下也能分辨。
+ *   - 芯片与按钮的可点高度不小于 36px。
+ *   - prefers-reduced-motion 下不保留动画。
+ * ================================================================== */
+
+/* ---------- 1. 页面骨架：标题、说明、下一步 ---------- */
+
+#audit-view .audit-head {
+  align-items: flex-end;
+  gap: 20px;
+}
+
+#audit-view .audit-head h1 {
+  font-size: var(--fs-xl);
+  letter-spacing: -.02em;
+}
+
+#audit-view .audit-head p {
+  font-size: var(--fs-sm);
+  line-height: 1.8;
+}
+
+#audit-view .audit-kicker {
+  color: var(--faint);
+  font: 11px var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* 「怎么看这一页」导读块：给小白的三句话说明。 */
+#audit-view .audit-guide {
+  margin: 20px 0 0;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--teal-deep);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-card);
+}
+
+#audit-view .audit-guide > strong {
+  display: block;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+#audit-view .audit-guide ol {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.75;
+}
+
+#audit-view .audit-guide li::marker { color: var(--teal); }
+
+#audit-view .audit-guide b { color: var(--text); font-weight: 600; }
+#audit-view .audit-guide em { color: var(--teal); font-style: normal; }
+
+/* 「静态线索不是已确认漏洞」告警条：必须显眼，但不用刺眼的红色。 */
+#audit-view .audit-caution {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--line));
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.75;
+}
+
+#audit-view .audit-caution-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  font: 700 12px var(--mono);
+}
+
+#audit-view .audit-caution b { color: var(--amber); }
+
+/* 「下一步」条：比普通说明更醒目，点击区域够大。 */
+#audit-view .audit-next-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 20px;
+  padding: 14px 18px;
+  border: 1px solid var(--teal-deep);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
+  box-shadow: var(--shadow-card);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+#audit-view .audit-next-step strong {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--teal-deep);
+  color: #06121a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+
+#audit-view .audit-next-step span { flex: 1 1 220px; line-height: 1.7; }
+
+#audit-view .audit-next-step a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  color: var(--teal);
+  font-size: var(--fs-xs);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color .16s ease, color .16s ease, background .16s ease;
+}
+
+#audit-view .audit-next-step a:hover {
+  border-color: var(--teal);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+#audit-view .audit-note {
+  font-size: var(--fs-xs);
+  line-height: 1.8;
+}
+
+#audit-view .audit-empty {
+  border-radius: var(--radius);
+  font-size: var(--fs-xs);
+}
+
+#audit-view .audit-empty-wide { gap: 7px; }
+#audit-view .audit-empty-wide strong { font-size: var(--fs-sm); }
+#audit-view .audit-empty-wide span { line-height: 1.8; }
+
+/* ---------- 2. 状态徽章：图标 + 文字 + 颜色 ---------- */
+
+#audit-view .status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: start;
+  min-height: 26px;
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font: 11px var(--mono);
+  white-space: nowrap;
+}
+
+#audit-view .status-badge-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: currentColor;
+  color: var(--bg);
+  font: 700 10px/1 var(--mono);
+  flex: 0 0 auto;
+}
+
+#audit-view .status-badge.tone-ok { color: var(--ok); }
+#audit-view .status-badge.tone-warn { color: var(--warn); }
+#audit-view .status-badge.tone-danger { color: var(--danger); }
+#audit-view .status-badge.tone-info { color: var(--info); }
+#audit-view .status-badge.tone-muted { color: var(--faint); }
+
+#audit-view .status-badge.tone-warn .status-badge-icon { color: var(--bg); }
+#audit-view .status-badge.tone-muted .status-badge-icon { color: var(--bg); }
+
+/* ---------- 3. 严重度 / 置信度 并排信号条（lib/badges.js 产出） ---------- */
+
+#audit-view .signal-pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-bottom: 8px;
+}
+
+#audit-view .signal-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+#audit-view .signal-caption {
+  color: var(--faint);
+  font: 10px var(--mono);
+}
+
+#audit-view .conf-badge { border-radius: 999px; }
+#audit-view .sev-meter { font-size: 10px var(--mono); }
+
+/* ---------- 4. #map 风险地图 ---------- */
+
+#audit-view .audit-kpis {
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+#audit-view .audit-kpis b { font-size: var(--fs-xl); }
+
+#audit-view .protocol-map {
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 12px;
+}
+
+#audit-view .map-protocol {
+  position: relative;
+  min-height: 148px;
+  display: grid;
+  align-content: end;
+  gap: 8px;
+  padding: 16px;
+  text-align: left;
+  border: 1px solid color-mix(in srgb, var(--teal) calc(var(--heat) * 70%), var(--line));
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--teal) calc(var(--heat) * 20%), transparent),
+      transparent 62%),
+    var(--surface-1);
+  color: var(--text);
+  box-shadow: var(--shadow-card);
+  transition: border-color .18s ease, background .18s ease, transform .18s ease;
+}
+
+#audit-view .map-protocol:hover,
+#audit-view .map-protocol:focus-visible {
+  border-color: var(--teal);
+  transform: translateY(-2px);
+}
+
+#audit-view .map-protocol-index {
+  position: absolute;
+  top: 12px;
+  right: 13px;
+  color: var(--faint);
+  font: 10px var(--mono);
+}
+
+#audit-view .map-protocol strong {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+#audit-view .map-protocol-scale {
+  color: var(--muted);
+  font: 11px var(--mono);
+  overflow-wrap: anywhere;
+}
+
+#audit-view .map-protocol-risk {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+#audit-view .map-protocol-risk b {
+  color: var(--text);
+  font: 600 12px var(--mono);
+}
+
+#audit-view .map-protocol-band {
+  padding: 2px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font: 10px var(--mono);
+  font-style: normal;
+}
+
+#audit-view .map-protocol-band.band-high { color: var(--danger); }
+#audit-view .map-protocol-band.band-mid { color: var(--warn); }
+#audit-view .map-protocol-band.band-low { color: var(--faint); }
+#audit-view .map-protocol-band.band-none { color: var(--faint); }
+
+#audit-view .map-protocol-hint {
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+#audit-view .audit-legend {
+  gap: 10px 18px;
+  margin-top: 14px;
+  padding: 12px 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  font: 11px var(--mono);
+}
+
+#audit-view .audit-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---------- 5. #protocols 协议与链 ---------- */
+
+#audit-view .protocol-summary {
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+#audit-view .protocol-summary span {
+  padding: 13px 16px;
+  font-size: 11px var(--mono);
+}
+
+#audit-view .protocol-summary b { font-size: var(--fs-lg); }
+
+#audit-view .audit-panel {
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+#audit-view .audit-panel-head {
+  align-items: flex-start;
+  padding: 16px 18px;
+  background: var(--surface-2);
+}
+
+#audit-view .audit-panel-head h2 { font-size: var(--fs-sm); font-weight: 600; }
+#audit-view .audit-panel-head p { font-size: 11px; line-height: 1.7; }
+
+#audit-view .protocol-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  padding: 16px 18px 18px;
+}
+
+#audit-view .protocol-card {
+  display: grid;
+  gap: 9px;
+  align-content: start;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  transition: border-color .16s ease, background .16s ease;
+}
+
+#audit-view .protocol-card:hover { border-color: var(--line-bright); }
+
+#audit-view .protocol-card.is-targeted {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 8%, var(--surface-2));
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+#audit-view .protocol-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#audit-view .protocol-card-head strong { font-size: var(--fs-sm); font-weight: 600; }
+
+#audit-view .protocol-card-id {
+  color: var(--faint);
+  font: 10px var(--mono);
+}
+
+#audit-view .protocol-card-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#audit-view .protocol-card-scale {
+  margin: 0;
+  color: var(--muted);
+  font: 11px var(--mono);
+}
+
+#audit-view .protocol-card-hint {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+#audit-view .protocol-card-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  justify-self: start;
+  padding: 0 12px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  color: var(--teal);
+  font-size: 11px;
+  text-decoration: none;
+  transition: border-color .16s ease, color .16s ease, background .16s ease;
+}
+
+#audit-view .protocol-card-link:hover {
+  border-color: var(--teal);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+#audit-view .protocol-list li {
+  padding: 15px 18px;
+  gap: 9px 14px;
+}
+
+#audit-view .protocol-list strong { font-size: var(--fs-xs); }
+#audit-view .protocol-list p { font-size: 11px; line-height: 1.75; }
+
+#audit-view .protocol-contract {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  align-items: start;
+}
+
+#audit-view .protocol-contract > div { min-width: 0; }
+
+#audit-view .protocol-contract code {
+  min-width: 0;
+  color: var(--teal);
+  font: 10px var(--mono);
+  overflow-wrap: anywhere;
+}
+
+#audit-view .protocol-contract-proxy {
+  grid-column: 1 / -1;
+  color: var(--faint);
+  font: 10px var(--mono);
+  overflow-wrap: anywhere;
+}
+
+#audit-view .invariant-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+#audit-view .invariant-row > div { min-width: 0; }
+#audit-view .invariant-row strong { font-size: var(--fs-xs); }
+
+#audit-view .invariant-code summary {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--teal);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+#audit-view .adapter-hint { font-size: 11px; line-height: 1.7; }
+
+/* 关系示意：纯 HTML，不依赖外部 CDN。 */
+#audit-view .protocol-graph {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+#audit-view .protocol-graph-node {
+  display: grid;
+  gap: 4px;
+  padding: 12px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+#audit-view .protocol-graph-node b {
+  color: var(--text);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+#audit-view .protocol-graph-node span {
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+#audit-view .protocol-graph-arrow {
+  color: var(--teal);
+  font: 11px var(--mono);
+  text-align: center;
+}
+
+/* ---------- 6. #discoveries 发现的线索 ---------- */
+
+#audit-view .finding-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  margin: 18px 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--line);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+#audit-view .finding-summary span {
+  padding: 12px 15px;
+  background: var(--surface-1);
+  color: var(--faint);
+  font: 10px var(--mono);
+}
+
+#audit-view .finding-summary b {
+  margin-right: 5px;
+  color: var(--teal);
+  font-size: var(--fs-md);
+}
+
+#audit-view .finding-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+}
+
+#audit-view .finding-severity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#audit-view .finding-chip {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line-bright);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  transition: border-color .16s ease, color .16s ease, background .16s ease;
+}
+
+#audit-view .finding-chip:hover { border-color: var(--teal); color: var(--text); }
+
+#audit-view .finding-chip.is-active {
+  border-color: var(--teal);
+  background: var(--teal-deep);
+  color: #06121a;
+  font-weight: 600;
+}
+
+#audit-view .finding-status-field,
+#audit-view .finding-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+#audit-view .finding-status-field select,
+#audit-view .finding-filter input {
+  min-height: 36px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: 0 11px;
+  font-size: var(--fs-xs);
+  outline: none;
+}
+
+#audit-view .finding-filter input { width: min(260px, 46vw); }
+#audit-view .finding-status-field select:focus,
+#audit-view .finding-filter input:focus { border-color: var(--teal); }
+
+#audit-view .finding-range {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font: 11px var(--mono);
+}
+
+#audit-view .audit-findings {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+#audit-view .audit-finding {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 16px;
+  align-items: start;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--faint);
+  border-radius: var(--radius);
+  background: var(--surface-1);
+  box-shadow: var(--shadow-card);
+}
+
+#audit-view .audit-finding.severity-critical,
+#audit-view .audit-finding.severity-high { border-left-color: var(--red); }
+#audit-view .audit-finding.severity-medium { border-left-color: var(--amber); }
+#audit-view .audit-finding.severity-low,
+#audit-view .audit-finding.severity-info { border-left-color: var(--blue); }
+
+#audit-view .audit-finding-main { min-width: 0; }
+
+#audit-view .audit-finding-main h2 {
+  margin: 8px 0 6px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+#audit-view .finding-where {
+  margin: 0;
+  color: var(--muted);
+  font: 10px var(--mono);
+  overflow-wrap: anywhere;
+}
+
+#audit-view .finding-check {
+  margin: 6px 0 0;
+  color: var(--faint);
+  font: 10px var(--mono);
+}
+
+#audit-view .finding-check code { color: var(--teal); }
+
+/* 三步进度：规则检查 -> 本地运行 -> 复现验证 */
+#audit-view .finding-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+#audit-view .finding-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "mark label" "mark state" "note note";
+  align-items: center;
+  gap: 2px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+#audit-view .finding-step-mark {
+  grid-area: mark;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  font: 700 11px/1 var(--mono);
+}
+
+#audit-view .finding-step-label {
+  grid-area: label;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#audit-view .finding-step-state {
+  grid-area: state;
+  color: var(--faint);
+  font: 10px var(--mono);
+}
+
+#audit-view .finding-step-note {
+  grid-area: note;
+  margin-top: 4px;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+#audit-view .finding-step.step-done { border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+#audit-view .finding-step.step-done .finding-step-mark { color: var(--ok); }
+#audit-view .finding-step.step-done .finding-step-state { color: var(--ok); }
+#audit-view .finding-step.step-failed { border-color: color-mix(in srgb, var(--danger) 40%, var(--line)); }
+#audit-view .finding-step.step-failed .finding-step-mark { color: var(--danger); }
+#audit-view .finding-step.step-failed .finding-step-state { color: var(--danger); }
+#audit-view .finding-step.step-none .finding-step-mark { color: var(--faint); }
+
+#audit-view .finding-conditions {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+#audit-view .finding-conditions b { color: var(--amber); }
+#audit-view .finding-conditions ul { margin: 5px 0 0; padding-left: 18px; line-height: 1.7; }
+
+#audit-view .finding-test-plan {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+#audit-view .finding-test-plan b {
+  display: block;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+
+#audit-view .finding-evidence { margin: 10px 0 0; }
+
+#audit-view .finding-evidence > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  color: var(--teal);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+#audit-view .finding-evidence-empty {
+  margin: 10px 0 0;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+#audit-view .audit-finding-evidence details {
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+}
+
+#audit-view .audit-evidence {
+  margin-top: 9px;
+  padding-left: 11px;
+  border-left: 2px solid var(--line-bright);
+}
+
+#audit-view .audit-evidence code { color: var(--faint); font: 10px var(--mono); overflow-wrap: anywhere; }
+#audit-view .audit-evidence blockquote {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font: 11px/1.65 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#audit-view .evidence-hash {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font: 10px var(--mono);
+}
+
+#audit-view .evidence-hash code { min-width: 0; color: var(--teal); overflow-wrap: anywhere; }
+
+#audit-view .copy-hash,
+#audit-view .execution-command button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--teal);
+  font-size: 11px;
+  white-space: nowrap;
+  transition: border-color .16s ease, color .16s ease;
+}
+
+#audit-view .copy-hash:hover,
+#audit-view .execution-command button:hover { border-color: var(--teal); color: var(--text); }
+
+#audit-view .finding-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: end;
+  justify-self: start;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--teal);
+  font-size: var(--fs-xs);
+  text-decoration: none;
+  transition: border-color .16s ease, color .16s ease, background .16s ease;
+}
+
+#audit-view .finding-open:hover:not(:disabled) {
+  border-color: var(--teal);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+#audit-view .finding-open:disabled {
+  border-style: dashed;
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+#audit-view .finding-more-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+#audit-view .finding-more {
+  min-height: 40px;
+  padding: 0 22px;
+  border: 1px solid var(--teal-deep);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--teal);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  transition: border-color .16s ease, color .16s ease, background .16s ease;
+}
+
+#audit-view .finding-more:hover:not(:disabled) {
+  border-color: var(--teal);
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+#audit-view .finding-more:disabled { opacity: .45; cursor: not-allowed; }
+
+#audit-view .finding-clear {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+#audit-view .finding-clear:hover { border-color: var(--teal); color: var(--text); }
+
+/* ---------- 7. #execution 执行与复现 ---------- */
+
+#audit-view .execution-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+  margin: 20px 0 0;
+  padding: 13px 16px;
+  border: 1px solid color-mix(in srgb, var(--amber) 35%, var(--line));
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.7;
+}
+
+#audit-view .execution-banner strong { color: var(--amber); font-size: var(--fs-xs); }
+
+#audit-view .execution-grid { align-items: start; }
+
+#audit-view .execution-result-list,
+#audit-view .execution-pending-list { display: grid; }
+
+#audit-view .execution-result {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+#audit-view .execution-result:last-child { border-bottom: 0; }
+
+#audit-view .execution-result-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#audit-view .execution-result-head > div { min-width: 0; }
+
+#audit-view .execution-result h2 {
+  margin: 4px 0 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+#audit-view .execution-result-hint {
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+#audit-view .execution-result p { margin: 0; color: var(--muted); font-size: 11px; }
+#audit-view .execution-result small { color: var(--faint); font-size: 10px; font-family: var(--mono); }
+#audit-view .execution-result code { color: var(--faint); font: 10px var(--mono); overflow-wrap: anywhere; }
+
+#audit-view .execution-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-top: 4px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+#audit-view .execution-command code {
+  min-width: 0;
+  color: var(--teal);
+  font: 10px var(--mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+#audit-view .execution-finding {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+#audit-view .execution-finding:last-child { border-bottom: 0; }
+
+#audit-view .execution-finding strong {
+  grid-column: 1 / -1;
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+#audit-view .execution-finding .status-badge { justify-self: start; }
+
+#audit-view .execution-finding a,
+#audit-view .execution-no-detail {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  justify-self: end;
+  color: var(--teal);
+  font-size: 11px;
+}
+
+#audit-view .execution-no-detail { color: var(--faint); }
+
+/* ---------- 8. 窄屏：390px 单列，无横向溢出 ---------- */
+
+@media (max-width: 780px) {
+  #audit-view .protocol-map,
+  #audit-view .protocol-card-grid { grid-template-columns: minmax(0, 1fr); }
+
+  #audit-view .finding-steps { grid-template-columns: minmax(0, 1fr); }
+
+  #audit-view .audit-finding { grid-template-columns: minmax(0, 1fr); }
+  #audit-view .audit-finding > .status-badge { justify-self: start; }
+  #audit-view .audit-finding > .finding-open { justify-self: start; }
+
+  #audit-view .protocol-contract,
+  #audit-view .invariant-row,
+  #audit-view .execution-finding { grid-template-columns: minmax(0, 1fr); }
+  #audit-view .execution-finding a,
+  #audit-view .execution-no-detail { justify-self: start; }
+
+  #audit-view .finding-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  #audit-view .finding-toolbar { align-items: stretch; flex-direction: column; }
+  #audit-view .finding-filter { width: 100%; }
+  #audit-view .finding-filter input { flex: 1 1 auto; width: auto; min-width: 0; }
+  #audit-view .finding-status-field { width: 100%; }
+  #audit-view .finding-status-field select { flex: 1 1 auto; min-width: 0; }
+
+  #audit-view .evidence-hash { grid-template-columns: minmax(0, 1fr) auto; }
+  #audit-view .evidence-hash code { grid-column: 1 / -1; grid-row: 2; }
+
+  #audit-view .execution-command { grid-template-columns: minmax(0, 1fr); }
+
+  #audit-view .audit-next-step { align-items: stretch; flex-direction: column; }
+  #audit-view .audit-next-step strong { justify-content: center; }
+  #audit-view .audit-next-step a { justify-content: center; }
+}
+
+@media (max-width: 430px) {
+  #audit-view .finding-summary { grid-template-columns: minmax(0, 1fr); }
+  #audit-view .finding-chip { flex: 1 1 auto; text-align: center; }
+  #audit-view .audit-head { flex-direction: column; align-items: flex-start; }
+  #audit-view .map-protocol { min-height: 128px; }
+}
+
+/* ---------- 9. 动效降级 ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  #audit-view *,
+  #audit-view *::before,
+  #audit-view *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
