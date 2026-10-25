@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Public read-only RPC discovery, verification, bounded rotation and failover."""
 import argparse
+import collections
 import concurrent.futures
 import ipaddress
 import json
@@ -36,6 +37,85 @@ def _probe_failure(error):
     if 'RPC error -32601' in message or 'RPC error -32602' in message:
         return 'unsupported'
     return 'unavailable'
+
+
+def is_transient(error):
+    """Report whether a failure is a passing condition rather than a verdict.
+
+    A snapshot is a point-in-time observation.  A provider that throttled one
+    request, timed out, or answered with a gateway error at that moment is
+    not disqualified; a provider that served the wrong chain, an old block,
+    or a block the peers disagree with is.  Conflating the two let a transient
+    429 remove a node from the pool for as long as the snapshot lived, and
+    the pool then reported the chain as unavailable even though the node
+    answered every request minutes later.
+    """
+    if isinstance(error, urllib.error.HTTPError):
+        # 4xx other than throttling means the endpoint does not serve this
+        # request; 5xx and 408/429 are conditions that may clear on their own.
+        return error.code in (408, 425, 429) or error.code >= 500
+    if isinstance(error, (TimeoutError, socket.timeout, ConnectionError, OSError)):
+        return True
+    if isinstance(error, urllib.error.URLError):
+        return True
+    message = str(error)
+    if 'timed out' in message or 'timeout' in message.lower() or 'EOF occurred' in message:
+        return True
+    return False
+
+
+def endpoint_failure_kind(item):
+    """Classify a recorded endpoint failure as a passing condition or a verdict.
+
+    Snapshots written before this distinction existed carry only an error
+    string, so the older format is read back with the same rules applied to
+    the text.  A legacy snapshot must not be trusted to mean something
+    different from a current one.
+    """
+    kind = item.get('failureKind')
+    if kind in ('transient', 'verdict', 'capability', 'none'):
+        return kind
+    if item.get('healthy'):
+        return 'none'
+    error = str(item.get('error') or '')
+    if not error:
+        return 'verdict'
+    # A node that answered the live view but refused a block-height read is
+    # limited, not broken: it still serves the chain's current state.
+    if 'common block probe failed' in error and any(
+            code in error for code in ('HTTP Error 400', 'HTTP Error 404', 'HTTP Error 501')):
+        return 'capability'
+    transient_markers = (
+        'HTTP Error 429', 'HTTP Error 408', 'HTTP Error 425', 'HTTP Error 500',
+        'HTTP Error 502', 'HTTP Error 503', 'HTTP Error 504',
+        'provider cooldown after HTTP 403/429', 'URLError', 'timed out',
+        'timeout', 'EOF occurred', 'SSLV3_ALERT', 'CERTIFICATE_VERIFY_FAILED',
+    )
+    if any(marker in error for marker in transient_markers):
+        return 'transient'
+    return 'verdict'
+
+
+HISTORICAL_METHODS = {
+    'eth_getBlockByNumber', 'eth_getStorageAt', 'eth_getCode', 'eth_call',
+    'eth_getBalance', 'eth_getBlockReceipts', 'eth_getLogs',
+}
+BLOCK_TAGS = ('latest', 'pending', 'earliest')
+
+
+def needs_historical(method, params):
+    """Report whether a read asks for a block height rather than a live view."""
+    if method not in HISTORICAL_METHODS:
+        return False
+    for value in params or []:
+        if isinstance(value, str) and value.startswith('0x') and value not in BLOCK_TAGS:
+            return True
+        if isinstance(value, dict):
+            for key in ('blockNumber', 'fromBlock', 'toBlock', 'blockHash'):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate not in BLOCK_TAGS:
+                    return True
+    return False
 
 
 def _capability_probe(url, chain_id, name, method, params, timeout, raw_sink=None,
@@ -240,7 +320,13 @@ def probe(chain_id, url, timeout=6, raw_sink=None):
         item.update(healthy=True, height=height, blockHash=block['hash'], blockTime=stamp,
                     blockAgeSec=round(age), latencyMs=round((time.monotonic()-started)*1000), error=None)
         item['capabilities'] = probe_capabilities(chain_id, url, height, timeout, raw_sink, tx_hash)
-    except Exception as e: item['error'] = f'{type(e).__name__}: {str(e)[:150]}'
+    except Exception as e:
+        item['error'] = f'{type(e).__name__}: {str(e)[:150]}'
+        # A transient failure is not a verdict about the endpoint.  Recording
+        # that separately keeps a throttled or timed-out node out of the
+        # healthy set without treating it as permanently disqualified.
+        item['failureKind'] = 'transient' if is_transient(e) else 'verdict'
+    item['failureKind'] = item.get('failureKind', 'none')
     return item
 
 def discover(chains, max_per_chain=8, timeout=6):
@@ -273,7 +359,14 @@ def discover(chains, max_per_chain=8, timeout=6):
     def bounded_probe(chain_id,url):
         host=urllib.parse.urlsplit(url).hostname
         with gate:
-            if host in blocked_hosts:return {'url':url,'host':host,'chainId':chain_id,'observedAt':now(),'healthy':False,'error':'provider cooldown after HTTP 403/429'}
+            if host in blocked_hosts:
+                # The host answered the previous probe with a throttle.  Do not
+                # spend more requests on it during this sweep, but record the
+                # reason as a passing condition so the pool may retry it later
+                # instead of treating the host as disqualified for good.
+                return {'url':url,'host':host,'chainId':chain_id,'observedAt':now(),
+                        'healthy':False,'failureKind':'transient',
+                        'error':'provider cooldown after HTTP 403/429'}
         result=probe(chain_id,url,timeout)
         if any(x in str(result.get('error')) for x in ['HTTP Error 403','HTTP Error 429']):
             with gate:blocked_hosts.add(host)
@@ -289,7 +382,7 @@ def discover(chains, max_per_chain=8, timeout=6):
         if live:
             median=statistics.median(e['height'] for e in live)
             for e in live:
-                if abs(e['height']-median)>120: e.update(healthy=False,error='height deviates from peer median by >120 blocks')
+                if abs(e['height']-median)>120: e.update(healthy=False,error='height deviates from peer median by >120 blocks',failureKind='verdict')
             live=[e for e in live if e['healthy']]
         if len(live)>1:
             height=min(e['height'] for e in live)-2
@@ -301,31 +394,207 @@ def discover(chains, max_per_chain=8, timeout=6):
                         b=f.result()
                         if int(b['number'],16)!=height: raise ValueError('common block number mismatch')
                         e['commonBlockHash']=b['hash'];e['commonBlockNumber']=height
-                    except Exception as ex: e.update(healthy=False,error='common block probe failed: '+str(ex)[:100])
-            hashes=[e.get('commonBlockHash') for e in live if e['healthy']]
-            if hashes:
+                    except Exception as ex:
+                        # A node that cannot serve one historical block is not
+                        # disqualified for the live view: most public providers
+                        # serve only the head and reject archive reads.  The
+                        # limit is recorded so height-specific reads skip it,
+                        # and the node keeps answering live requests.
+                        if is_transient(ex):
+                            e.update(error='common block probe failed: '+str(ex)[:100],failureKind='transient')
+                        else:
+                            e.update(error='common block probe failed: '+str(ex)[:100],failureKind='capability')
+                        e['historicalUnavailable']=True
+            witnesses=[e for e in live if e.get('commonBlockHash')]
+            if witnesses:
+                hashes=[e['commonBlockHash'] for e in witnesses]
                 consensus=max(set(hashes),key=hashes.count)
                 votes=hashes.count(consensus)
-                for e in live:
-                    if e['healthy'] and (votes < 2 or votes <= len(hashes)/2 or e.get('commonBlockHash')!=consensus):
-                        e.update(healthy=False,error='no majority agreement at common block')
+                for e in witnesses:
+                    # A node that disagrees with the majority is on a
+                    # different fork.  That is a verdict, not a passing
+                    # condition.
+                    if e['commonBlockHash']!=consensus:
+                        e.update(healthy=False,error='no majority agreement at common block',failureKind='verdict')
+                row['witnessCount']=len(witnesses); row['consensusVotes']=votes
+            else:
+                row['witnessCount']=0; row['consensusVotes']=0
+        else:
+            row['witnessCount']=len([e for e in live if e.get('commonBlockHash')]); row['consensusVotes']=row['witnessCount']
         row['healthyCount']=sum(e['healthy'] for e in row['endpoints'])
         row['redundant']=row['healthyCount']>=2
-        row['assurance']='multiple endpoint block agreement' if row['redundant'] else 'single endpoint only' if row['healthyCount'] else 'unavailable'
+        # "Multiple endpoint block agreement" is a claim about independent
+        # witnesses, so it needs at least two votes.  A chain with one
+        # archive-capable node is served, but it is served by a single
+        # endpoint and must not be described as agreed by several.
+        row['assurance']=('multiple endpoint block agreement'
+                          if (row['redundant'] and row.get('consensusVotes',0)>=2)
+                          else 'single endpoint only' if row['healthyCount'] else 'unavailable')
         row['endpoints'].sort(key=lambda e:(not e['healthy'],e.get('latencyMs',1e9)))
     return {'schemaVersion':1,'generatedAt':now(),'sources':[u for u,_ in catalogs],'sourceErrors':errors,'chains':list(rows.values()),'policy':{'publicHttpsOnly':True,'maxPerChain':max_per_chain,'probeConcurrency':8,'maxBlockAgeSec':600,'maxHeightDeviation':120,'readOnly':True,'caveat':'不同主机名不保证不同运营商；节点验证不证明合约安全。'}}
 
 class RpcPool:
     def __init__(self, report, raw_sink=None):
         self.rows={c['chainId']:c for c in report['chains']}; self.lock=threading.Lock(); self.stats={}; self.failovers=0;self.host_cooldown={};self.host_next={};self.raw_sink=raw_sink
+        self.recovered=collections.Counter(); self.revalidation_failures=collections.Counter()
+        self._revalidating={}
+        # Endpoints the snapshot rejected for a passing condition (throttle,
+        # timeout, gateway error) are not disqualified: they are candidates
+        # for revalidation.  Endpoints rejected on a verdict (wrong chain,
+        # stale block, peer disagreement) stay out.
+        self.candidates={}
+        for chain_id,row in self.rows.items():
+            for endpoint in row.get('endpoints',[]):
+                if endpoint.get('healthy'): continue
+                if endpoint_failure_kind(endpoint)=='transient':
+                    self.candidates.setdefault(chain_id,[]).append(endpoint)
+            # Recompute the chain's counts from the endpoints rather than
+            # trusting the snapshot's summary.  The summary is a number the
+            # pool then reports as the chain's availability, so a stale or
+            # hand-edited count would be a value that looks authoritative
+            # and describes nothing.
+            row['healthyCount']=sum(1 for e in row.get('endpoints',[]) if e.get('healthy'))
+            row['redundant']=row['healthyCount']>=2
+            row['assurance']=self._assurance(row)
     def snapshot(self):
         with self.lock:
-            return {'failovers':self.failovers,'nodes':{url:{**s,'coolingDown':s.get('cooldownUntil',0)>time.monotonic()} for url,s in self.stats.items()}}
+            return {'failovers':self.failovers,'nodes':{url:{**s,'coolingDown':s.get('cooldownUntil',0)>time.monotonic()} for url,s in self.stats.items()},
+                    'recovered':{str(k):v for k,v in self.recovered.items()},
+                    'revalidationFailures':{str(k):v for k,v in self.revalidation_failures.items()}}
+    def _assurance(self,row):
+        """Describe what the chain's endpoints actually prove.
+
+        "Multiple endpoint block agreement" is a claim about independent
+        witnesses agreeing on a block, so it needs at least two votes.  A
+        chain served by a single endpoint is served, but it is not agreed by
+        several, and saying otherwise would overstate the evidence.
+
+        A snapshot written before the vote count existed does not carry it.
+        For that case the witness hashes themselves are counted, because
+        they are the votes; a chain with two endpoints that both recorded a
+        common block hash did agree, and dropping that to "single endpoint
+        only" would understate evidence that was actually collected.
+        """
+        healthy=sum(1 for e in row.get('endpoints',[]) if e.get('healthy'))
+        votes=row.get('consensusVotes')
+        if votes is None:
+            witnesses=[e.get('commonBlockHash') for e in row.get('endpoints',[]) if e.get('commonBlockHash')]
+            votes=len([h for h in witnesses if h==max(set(witnesses),key=witnesses.count)]) if witnesses else 0
+        if not healthy: return 'unavailable'
+        if healthy>=2 and votes>=2: return 'multiple endpoint block agreement'
+        return 'single endpoint only'
+    def _revive(self,chain_id,endpoint):
+        """Put a revalidated endpoint back into the chain's healthy set."""
+        row=self.rows.get(chain_id)
+        if row is None: return
+        for candidate in row.get('endpoints',[]):
+            if candidate.get('url')==endpoint.get('url'):
+                candidate.update(endpoint); candidate['healthy']=True; candidate['error']=None
+                candidate['failureKind']='none'; candidate['recoveredAt']=now()
+                break
+        else:
+            row.setdefault('endpoints',[]).append(dict(endpoint,healthy=True,error=None,failureKind='none',recoveredAt=now()))
+        row['healthyCount']=sum(1 for e in row.get('endpoints',[]) if e.get('healthy'))
+        row['redundant']=row['healthyCount']>=2
+        row['assurance']=self._assurance(row)
+    def _drop(self,chain_id,endpoint):
+        """Retire an endpoint that failed revalidation on a verdict."""
+        row=self.rows.get(chain_id)
+        if row is None: return
+        kept=[]
+        for candidate in row.get('endpoints',[]):
+            if candidate.get('url')==endpoint.get('url'):
+                candidate.update(healthy=False,error=endpoint.get('error'),failureKind=endpoint.get('failureKind','verdict'))
+                candidate['revokedAt']=now()
+            kept.append(candidate)
+        row['endpoints']=kept
+        row['healthyCount']=sum(1 for e in row.get('endpoints',[]) if e.get('healthy'))
+        row['redundant']=row['healthyCount']>=2
+        row['assurance']=self._assurance(row)
+    def revalidate(self,chain_id,timeout=6):
+        """Re-probe endpoints the snapshot rejected for a passing condition.
+
+        A snapshot records one moment.  A provider throttled at that moment
+        is usable again minutes later, and a pool that never looks again
+        reports the chain as unavailable while healthy nodes sit idle in the
+        file.  This brings those candidates back after checking them.
+        """
+        # Several campaign workers can reach the same chain at once.  One
+        # worker probes it; the others wait for that result instead of
+        # sending the same requests to the same providers again.
+        with self.lock:
+            entry=self._revalidating.get(chain_id)
+            if entry is None:
+                entry=threading.Event()
+                self._revalidating[chain_id]=entry
+                owner=True
+            else:
+                owner=False
+        if not owner:
+            entry.wait(timeout=timeout+30)
+            return []
+        try:
+            return self._revalidate(chain_id,timeout)
+        finally:
+            with self.lock:
+                self._revalidating.pop(chain_id,None)
+            entry.set()
+    def _revalidate(self,chain_id,timeout):
+        pending=list(self.candidates.get(chain_id,[]))
+        if not pending: return []
+        revived=[]
+        for endpoint in pending:
+            url=endpoint.get('url')
+            if not url: continue
+            health=probe(chain_id,url,timeout,raw_sink=self.raw_sink)
+            if health.get('healthy'):
+                with self.lock:
+                    self._revive(chain_id,health); self.recovered[chain_id]+=1
+                    # The node answered; it is no longer a candidate, so it is
+                    # not probed again on the next refresh.
+                    self.candidates[chain_id]=[e for e in self.candidates.get(chain_id,[]) if e.get('url')!=url]
+                    self.stats.setdefault(url,{'calls':0,'errors':0,'nextAt':0,'cooldownUntil':0})['lastValidatedAt']=time.time()
+                revived.append(url)
+            else:
+                # A verdict here means the endpoint really does not serve this
+                # chain; keep it out of the candidate set so it is not probed
+                # on every refresh.  A repeated passing condition keeps it in
+                # the set, because the condition may still clear.
+                kind=endpoint_failure_kind(health)
+                if kind!='transient':
+                    with self.lock:
+                        self.revalidation_failures[chain_id]+=1
+                        self.candidates[chain_id]=[e for e in self.candidates.get(chain_id,[]) if e.get('url')!=url]
+                        self._drop(chain_id,health)
+        return revived
     def call(self, chain_id, method, params, timeout=7):
         if method not in READ_METHODS: raise ValueError('read-only RPC method required')
         nodes=[e for e in self.rows.get(chain_id,{}).get('endpoints',[]) if e['healthy']]
         errors=[]; tried=set()
-        for _ in range(min(3,len(nodes))):
+        if not nodes and self.candidates.get(chain_id):
+            # The chain looks dead because the snapshot rejected its nodes for
+            # a passing condition.  Re-check them before reporting the chain
+            # as unusable: the throttling that excluded them has usually
+            # cleared by now, and reporting "no verified RPC" here is what
+            # silently drops whole chains from the corpus.
+            try:
+                self.revalidate(chain_id,timeout=min(timeout,8))
+            except Exception as error:
+                errors.append(f'revalidation: {type(error).__name__}')
+            nodes=[e for e in self.rows.get(chain_id,{}).get('endpoints',[]) if e['healthy']]
+        historical=needs_historical(method,params)
+        if historical:
+            # A node that has already shown it cannot serve a block-height
+            # read is skipped for height-specific reads instead of consuming
+            # the attempt budget on a request it cannot answer.
+            nodes=[e for e in nodes if not e.get('historicalUnavailable')]
+        # The budget counts endpoints, not attempts: a provider that answers a
+        # query it does not serve with a null result should not consume the
+        # whole allowance for a read the next endpoint can answer.  The bound
+        # stays small so a broken chain fails fast rather than trying every
+        # endpoint in the pool.
+        budget=min(len(nodes),max(3,min(6,len(nodes))))
+        for _ in range(budget):
             with self.lock:
                 available=[e for e in nodes if e['url'] not in tried and self.stats.get(e['url'],{}).get('cooldownUntil',0)<=time.monotonic() and self.host_cooldown.get(e['host'],0)<=time.monotonic()]
                 if not available: break
@@ -343,6 +612,16 @@ class RpcPool:
                     with self.lock:s['lastValidatedAt']=time.time()
                 started=time.monotonic()
                 value=_rpc_observed(url,method,params,timeout,self.raw_sink,chain_id)
+                if value is None:
+                    # Some providers answer a query they do not serve with a
+                    # JSON-RPC `null` result instead of an error.  Returning
+                    # that null made the caller read the absence of the answer
+                    # as the absence of the thing it asked about: a creation
+                    # transaction that exists came back as "carries no input",
+                    # and the contract was dropped from the corpus on some
+                    # attempts and kept on others.  A null result is a failed
+                    # read here, so the pool moves on to the next endpoint.
+                    raise ValueError('endpoint returned a null result')
                 elapsed=round((time.monotonic()-started)*1000)
                 with self.lock:
                     s['lastSuccessAt']=now();s['ewmaMs']=round(.8*s.get('ewmaMs',elapsed)+.2*elapsed);s['lastError']=None
@@ -353,6 +632,12 @@ class RpcPool:
                     s['errors']+=1;s['cooldownUntil']=time.monotonic()+(300 if isinstance(ex,urllib.error.HTTPError) and ex.code in (403,429) else 60)
                     s['lastError']=f'{type(ex).__name__}: {str(ex)[:120]}';s['lastErrorAt']=now()
                     if isinstance(ex,urllib.error.HTTPError) and ex.code in (403,429):self.host_cooldown[e['host']]=s['cooldownUntil']
+                    # A node that answers the live view but refuses a
+                    # block-height read is still useful for live reads.  Record
+                    # the limit instead of treating it as a broken node.
+                    if historical and isinstance(ex,urllib.error.HTTPError) and ex.code in (400,404,500,501):
+                        e['historicalUnavailable']=True
+                        s['historicalUnavailable']=True
                 errors.append(f'{e["host"]}: {type(ex).__name__}')
         raise RuntimeError('No usable verified RPC: '+('; '.join(errors) or str(chain_id)))
 

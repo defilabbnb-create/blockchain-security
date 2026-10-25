@@ -74,6 +74,17 @@ def _contract_name(source: str) -> str:
 
 
 def _call(signature: str, *args: object) -> str:
+    """The gate's own action, carrying the values the fixture was written for.
+
+    This is deliberately not the production spelling.  `invariant_adapters`
+    fills placeholders and skips the test when the contract declines the call,
+    because there the arguments are guesses and a rejected call is a failed
+    measurement.  Here the arguments come from the fixture, which is a contract
+    written to accept them, so a rejected call is a broken fixture or a broken
+    template rather than an unusable measurement -- and the gate wants to say so
+    loudly instead of counting the fixture as skipped.  `require` aborts the test
+    and forge reports FAIL, which is the signal this gate reads.
+    """
     encoded = ", ".join(str(value) for value in args)
     return f"{{ (bool ok,) = target.call(abi.encodeWithSignature(\"{signature}\", {encoded})); require(ok, \"fixture adapter call failed\"); }}"
 
@@ -103,10 +114,18 @@ def _render_assertion(fixture: str, template: str, params: dict) -> tuple[str, s
     renderer = renderers.get(template)
     if renderer is None:
         raise ValueError(f"no registered renderer for {template}")
-    body = renderer(params, {"contract_name": "Target", "target_addr_expr": "target"})
+    setup, action = _adapter(fixture, template)
+    # A renderer that compares state across a transition refuses to produce a
+    # body until it is told which action performs that transition.  The gate
+    # knows the action, so it passes it in; the renderer then emits the body
+    # with the marker in place, and the substitution below replaces the marker
+    # with the action.  The renderer declining without an adapter is the
+    # intended behaviour, not a failure -- the gate is what supplies one.
+    context = {"contract_name": "Target", "target_addr_expr": "target",
+               "adapters": {template: action} if action else {}}
+    body = renderer(params, context)
     if not isinstance(body, str) or not body.strip():
         raise ValueError(f"renderer returned adapter_required for {fixture}/{template}")
-    setup, action = _adapter(fixture, template)
     marker = "// The adapter"
     if action:
         positions = [match.start() for match in re.finditer(re.escape(marker), body)]
@@ -122,7 +141,11 @@ def _poc_source(import_name: str) -> tuple[str, str]:
         (bool ok,) = address(attacker).call(abi.encodeWithSignature(\"attack()\"));
         require(!ok, \"reentrant withdrawal succeeded\");"""
     test_source = """import \"../src/%s\";
-interface Vm { function deal(address who, uint256 amount) external; }
+// `skip` is declared here for the same reason it is declared in the harness the
+// helpers are lifted from: the adapter's emitted call reaches it when the
+// low-level call did not succeed, and an undeclared call is a compile error
+// that reads as a broken fixture rather than as an action the contract declined.
+interface Vm { function deal(address who, uint256 amount) external; function skip(bool skipTest) external; }
 contract Reentrant {
     EtherStore immutable store;
     bool entered;
@@ -137,6 +160,11 @@ contract Reentrant {
 }
 contract Gate {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256(\"hevm cheat code\")))));
+    // `_skipUnavailable`, lifted from the harness with the rest of the helpers,
+    // reaches the cheat code through `_vm`.  The gate holds the handle as a
+    // constant and the harness template reads the address instead, so both
+    // define this and the helper itself needs only one spelling.
+    function _vm() private returns (Vm) { return vm; }
     function testInvariant_reentrancy() public {
 %s
     }
@@ -155,9 +183,14 @@ def _test_source(contract: str, import_name: str, tests: list[tuple[str, str]]) 
     source = """// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 import \"../src/%s\";
-interface Vm { function deal(address who, uint256 amount) external; }
+// `skip` is declared here for the same reason it is declared in the harness the
+// helpers are lifted from: the adapter's emitted call reaches it when the
+// low-level call did not succeed, and an undeclared call is a compile error
+// that reads as a broken fixture rather than as an action the contract declined.
+interface Vm { function deal(address who, uint256 amount) external; function skip(bool skipTest) external; }
 contract Gate {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256(\"hevm cheat code\")))));
+    function _vm() private returns (Vm) { return vm; }
 %s
 %s
 }

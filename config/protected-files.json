@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "notes": "scripts/file_guard.py 读取的受保护文件清单。路径相对仓库根目录，支持 glob（含 **）。要保护新文件，加一行即可。",
+  "protected": [
+    "scripts/invariant_gen.py",
+    "scripts/defi-campaign.py"
+  ]
+}

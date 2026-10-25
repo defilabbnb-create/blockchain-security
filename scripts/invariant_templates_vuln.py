@@ -35,13 +35,20 @@ TEMPLATES = {
             'name': '特权入口需要授权',
             'description': '修改特权状态的入口在执行前应校验调用者身份，'
                            '未授权调用者不得改变该状态。',
-            'params': {'guardedField': '$guardedField', 'entrypoint': '$entrypoint',
-                       'toleranceBps': 0},
+            # This template asks only whether the entry point rejects an
+            # unauthenticated caller.  It does not read the guarded state, so
+            # it does not need a field to be resolved -- requiring one made the
+            # assertion disappear on every contract whose privilege field is
+            # not a readable getter.
+            'params': {'entrypoint': '$entrypoint', 'toleranceBps': 0},
         },
         {
             'template': 'unauthorized_caller_cannot_mutate_state',
             'name': '未授权调用者不得改变状态',
             'description': '任意调用者直接调用特权入口不应改变被保护状态变量。',
+            # This one does read the protected state, so it needs a field that
+            # can hold a privilege.  It is a different question from the one
+            # above and the two must not share one binding.
             'params': {'guardedField': '$guardedField', 'entrypoint': '$entrypoint',
                        'toleranceBps': 0},
         },
@@ -64,14 +71,19 @@ TEMPLATES = {
             'name': '随机来源不可被操纵',
             'description': '用于决定结果的随机或区块派生值不应是已过时区块、'
                            '可预测调用者输入或可被公开观测的确定量。',
-            'params': {'valueField': '$valueField', 'toleranceBps': 0},
+            # This template reads the field twice within one block and requires
+            # the two reads to differ, so the field has to be one that changes.
+            # The other template in this role reads it across two callers and
+            # requires those to differ -- a different question, needing a
+            # different field, and one value cannot answer both.
+            'params': {'valueField': '$randomnessField', 'toleranceBps': 0},
         },
         {
             'template': 'outcome_not_determined_by_caller_supplied_value',
             'name': '结果不由调用者输入决定',
             'description': '在同一区块同一状态下，相同调用者输入不应使判定结果'
                            '可被提前计算并利用。',
-            'params': {'valueField': '$valueField', 'toleranceBps': 0},
+            'params': {'valueField': '$outcomeField', 'toleranceBps': 0},
         },
     ),
     # Arithmetic that can wrap or truncate silently.

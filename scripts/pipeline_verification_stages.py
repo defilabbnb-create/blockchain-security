@@ -24,6 +24,7 @@ FORGE = ROOT / "work" / "tools" / "forge"
 from decompiler_semantics import write_semantics
 from dynamic_runner import run_harness
 from harness_gen import _source_digest, generate_harness
+from invariant_adapters import resolve_adapters
 from invariant_gen import generate_invariants
 from poc_generator import generate_poc
 from deploy_adapter import generate_deployment, run_deployment
@@ -222,6 +223,95 @@ def _deploy(target: dict[str, Any], stage_dir: Path, mode: str) -> dict[str, Any
                 "deployedTarget": None, "invariantAssertionsExecuted": 0, "adapterRequiredCount": 0}
 
 
+def _bundle_source_text(bundle: dict[str, Any]) -> str:
+    """The verified source of a bundle, joined for the source-level observers.
+
+    `invariant_gen` reasons over one Solidity text and has no notion of a
+    file boundary, so the units are joined with a blank line -- the same
+    separator the source-level observers split on, which is what lets a
+    conjunctive fact be re-decided inside a single file rather than across the
+    whole bundle.
+    """
+    sources = bundle.get("sources")
+    if not isinstance(sources, dict):
+        return ""
+    return "\n\n".join(
+        entry["content"]
+        for entry in sources.values()
+        if isinstance(entry, dict) and isinstance(entry.get("content"), str)
+    )
+
+
+def _bundle_abi_getters(bundle: dict[str, Any]) -> list[str] | None:
+    """The getter signatures the compiler reported for this deployment.
+
+    The IR's function list comes from Slither's call graph, which walks
+    user-written functions and never records the getters solc synthesises for
+    a `public` state variable -- so a contract whose ledger is a plainly
+    readable `uint256 public fee` looks like it exposes no readable state and
+    every role assertion resolves to nothing.  Reading them out of the
+    deployment's own ABI keeps the names compiler-reported rather than
+    guessed; a bundle that reports no ABI yields None and the generator stays
+    silent rather than inventing a getter that may not exist.
+    """
+    abi = bundle.get("abi")
+    if not isinstance(abi, list):
+        return None
+    getters = sorted({
+        "%s(%s)" % (entry["name"], ",".join(str(argument.get("type", "")) for argument in entry.get("inputs") or []))
+        for entry in abi
+        if isinstance(entry, dict) and entry.get("type") == "function"
+        and isinstance(entry.get("name"), str) and entry.get("name")
+    })
+    return getters or None
+
+
+def _bundle_abi_getter_outputs(bundle: dict[str, Any]) -> dict[str, list[str]] | None:
+    """The return types of the compiler-reported getters.
+
+    A getter's signature says what it takes; only its outputs say what it
+    holds.  That distinction decides whether a field can carry a privilege:
+    `owner()` returns an address and `totalSupply()` returns a number, and an
+    assertion about who holds control can only be asked of the first.  Reading
+    the return types out of the deployment's own ABI keeps the decision on
+    compiler-reported ground rather than on the name alone.
+    """
+    abi = bundle.get("abi")
+    if not isinstance(abi, list):
+        return None
+    outputs: dict[str, list[str]] = {}
+    for entry in abi:
+        if not isinstance(entry, dict) or entry.get("type") != "function":
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        results = entry.get("outputs")
+        if not isinstance(results, list):
+            continue
+        types = [str(item.get("type") or "") for item in results if isinstance(item, dict)]
+        if types:
+            outputs[name] = types
+    return outputs or None
+
+
+def _bundle_abi_functions(bundle: dict[str, Any]) -> list[dict[str, Any]]:
+    """The ABI's function entries, in the shape the adapter resolver reads."""
+    abi = bundle.get("abi")
+    if not isinstance(abi, list):
+        return []
+    rows = []
+    for entry in abi:
+        if not isinstance(entry, dict) or entry.get("type") != "function":
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        parameters = ",".join(str(argument.get("type", "")) for argument in entry.get("inputs") or [])
+        rows.append({"name": f"{name}({parameters})"})
+    return rows
+
+
 def _dynamic_from_ir(target: dict[str, Any], stage_dir: Path, mode: str) -> dict[str, Any]:
     ir_value, bundle_value = target.get("unifiedIR"), target.get("sourceBundle")
     if ir_value is None or bundle_value is None:
@@ -234,13 +324,33 @@ def _dynamic_from_ir(target: dict[str, Any], stage_dir: Path, mode: str) -> dict
     if not isinstance(sources, dict) or not sources:
         return {"state": "unavailable", "reason": "verified_source_bundle_sources_missing"}
     source_sha256 = _source_digest(sources)
-    invariants = generate_invariants(ir, source_sha256=source_sha256)
+    # Role recognition needs the verified source and the deployment's own ABI.
+    # Six vulnerability anchors read `ctx['source']`, and the source facts are
+    # only collected when `source_text` is passed, so without it every real
+    # contract in this stage had an empty `detectedRoles` and the result
+    # `template_unavailable` could not be told apart from "this contract has no
+    # defects".  Both inputs are already in the same bundle that produced the
+    # IR, so they are read here rather than by widening any detection
+    # threshold -- narrowing a match to buy zero false positives is exactly
+    # what this stage must not do.
+    invariants = generate_invariants(ir, source_sha256=source_sha256,
+                                     source_text=_bundle_source_text(bundle),
+                                     abi_getters=_bundle_abi_getters(bundle),
+                                     abi_getter_outputs=_bundle_abi_getter_outputs(bundle))
     _atomic_json(stage_dir / "invariants.json", invariants)
     if invariants.get("state") != "available":
         return {"state": "unavailable", "reason": "invariant_templates_unavailable",
                 "invariantsPath": "invariants.json"}
+    # A transition property needs the protocol action between its two
+    # readings.  The action is a call into the contract under test, so it is
+    # resolved from the interface the compilation reported.  Without it the
+    # two readings are two reads of an unchanged contract and the comparison
+    # is decided before any action happened.
+    adapters = resolve_adapters(
+        [row.get("template") for row in invariants.get("invariants", []) if isinstance(row, dict)],
+        list(ir.get("functions") or []) + _bundle_abi_functions(bundle))
     harness_dir = stage_dir / "harness"
-    manifest = generate_harness(invariants, bundle, harness_dir)
+    manifest = generate_harness(invariants, bundle, harness_dir, adapters=adapters or None)
     _atomic_json(stage_dir / "harness.json", manifest)
     run_mode = mode if mode in {"local", "fixed_block_fork", "replay"} else "local"
     rows = run_harness(harness_dir, mode=run_mode, forge=FORGE,

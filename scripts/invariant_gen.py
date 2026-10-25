@@ -128,12 +128,46 @@ def _function_matches(function, required):
     base = _function_base(function)
     if not base:
         return False
+    # A modifier is not a getter.  `onlyWithdrawalManager` is a guard that
+    # runs before a function body, and its name ends with `manager`, so a
+    # suffix match read it as a state variable called `manager` -- a field the
+    # contract does not have.  The access-control assertion was then bound to
+    # it, read a value that was not there, and reported a violated privilege
+    # check on a contract whose privilege check was correct.  A modifier's
+    # name is prefixed `only`, `when`, `unless`, `requires` or `reverts`, and
+    # the IR records it as a function that is not an entry point.
+    #
+    # The check comes before the exact match too: a modifier called `owner`
+    # is not a getter called `owner`.
+    if _is_modifier(function, base):
+        return False
     if base == required:
         return True
     # Accept protocol prefixes such as vaultDeposit while avoiding arbitrary
     # substring matches such as depositToken or totalAssetsSnapshot.
     return bool(re.search(rf'(?:^|[_$]){re.escape(required)}$', base, re.I) or
                 base.lower().endswith(required.lower()))
+
+
+# The names a modifier conventionally carries.  Solidity has no keyword for
+# one, so the convention is what tells a guard apart from a getter.
+_MODIFIER_PREFIXES = ('only', 'when', 'unless', 'requires', 'reverts', 'check')
+
+
+def _is_modifier(function, base):
+    """Whether this IR entry is a modifier rather than a callable function.
+
+    A modifier is a guard: it runs before the body of every function that
+    names it, and it is not callable from outside the contract.  The IR
+    records one as a function that is not an entry point, and its name carries
+    the convention Solidity's own tooling uses.
+    """
+    name = base.lower()
+    if not name.startswith(_MODIFIER_PREFIXES):
+        return False
+    if function.get('entrypoint'):
+        return False
+    return True
 
 
 def _return_types(function):
@@ -716,7 +750,24 @@ def _is_zero_argument(function):
     return match.group(1).strip() == ''
 
 
-def _first_getter(functions, *candidates):
+def _is_callable_from_outside(function):
+    """Whether an IR function entry can be called from the assertion.
+
+    The IR records every function Slither saw, including `internal` ones that
+    no external caller can reach.  `getBlockNumber()` in a Compound-style
+    token is `internal view`, and the rendered assertion's `staticcall`
+    against it reverts -- so the assertion measured nothing while reporting
+    a property.  The visibility is recorded on the entry; an entry that does
+    not record one is treated as public, because the IR's own functions are
+    user-written and reachable unless they say otherwise.
+    """
+    visibility = function.get('visibility')
+    if visibility is None:
+        return True
+    return str(visibility).strip().lower() in ('public', 'external', 'default')
+
+
+def _first_getter(functions, *candidates, reachable=None):
     """Return the base name of the first *zero-argument* getter in the IR.
 
     The renderer emits a ``staticcall`` against ``name()``, so the entrypoint must
@@ -725,13 +776,26 @@ def _first_getter(functions, *candidates):
     Returning None when nothing matches is deliberate -- the renderer then refuses
     to emit and the harness records the invariant as ``adapter_required`` instead
     of probing a field that may not exist.
+
+    ``reachable`` is the set of names the compiler reported as callable.  The
+    IR records every function Slither saw, including `internal` ones that no
+    external caller can reach -- `getBlockNumber()` in a Compound-style token
+    is `internal view`, and the assertion's `staticcall` against it reverts,
+    so the assertion measured nothing while reporting a property.  When the
+    compiler's list is available it decides; otherwise the recorded
+    visibility does.
     """
     for candidate in candidates:
         for function in functions:
             if not _function_matches(function, candidate):
                 continue
-            if _is_zero_argument(function):
-                return candidate
+            if not _is_zero_argument(function):
+                continue
+            if reachable is not None and candidate not in reachable:
+                continue
+            if not _is_callable_from_outside(function):
+                continue
+            return candidate
     return None
 
 
@@ -820,12 +884,21 @@ def _source_facts_for_units(source_text):
     return merged
 
 
-def _vulnerability_substitutions(document, role, source_text=None, abi_getters=None):
+def _vulnerability_substitutions(document, role, source_text=None, abi_getters=None,
+                                abi_getter_outputs=None):
     """Resolve template parameters from the IR for one vulnerability class.
 
     Every value here names something the IR actually recorded.  An unresolvable
     parameter stays None, which makes the renderer decline rather than render an
     assertion against a field that may not exist.
+
+    Each vulnerability class resolves its own field.  A single shared candidate
+    pool used across classes bound every one of them to whichever numeric field
+    the contract happened to expose first, so an assertion about a predictable
+    random source was asked of `totalSupply` and an assertion about who holds
+    control was asked of a balance.  The assertion then ran, passed or failed,
+    and reported on a property it was never measuring -- a result that looks
+    like a finding and is not one.
     """
     functions = [item for item in document.get('functions', []) if isinstance(item, dict)]
     state_names, _, _ = _state_details(document)
@@ -865,6 +938,14 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
         if match:
             abi_parameters.setdefault(match.group(1), match.group(2))
 
+    # The return types, keyed the same way.  A getter's signature says what it
+    # takes; only its outputs say what it holds, and that is what decides
+    # whether it can carry a privilege or a price.
+    abi_outputs = {}
+    for name,types in (abi_getter_outputs or {}).items():
+        if isinstance(name,str) and isinstance(types,list) and types:
+            abi_outputs[name]=[str(item) for item in types]
+
     def confirmed_getter(candidates):
         """First candidate the compiler reports as a zero-argument getter.
 
@@ -885,10 +966,25 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
                     return name
         return None
 
+    def reachable_getter(*candidates):
+        """A getter the compiler reported as callable, or None.
+
+        The IR's function list is the union of everything Slither saw, which
+        includes functions no external caller can reach.  The compiler's ABI
+        is the list of what a caller can actually call, so it decides: a name
+        the ABI does not report is not a getter the assertion can read.
+
+        A bundle that reports no ABI leaves the IR as the only evidence, and
+        the recorded visibility decides there.
+        """
+        if confirmed:
+            return _first_getter(functions, *candidates, reachable=confirmed)
+        return _first_getter(functions, *candidates)
+
     def value_getter():
         for candidate in ('totalAssets', 'totalSupply', 'amount', 'balance',
                           'total', 'value', 'price', 'supply'):
-            resolved = _first_getter(functions, candidate) or confirmed_getter([candidate])
+            resolved = reachable_getter(candidate) or confirmed_getter([candidate])
             if resolved:
                 return resolved
         if observed_field:
@@ -899,7 +995,7 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
             # field can also answer to an argument-taking form, so that is tried
             # too before giving up on the name the source observer identified.
             guess = observed_field[0].upper() + observed_field[1:]
-            resolved = (_first_getter(functions, guess) or confirmed_getter([guess])
+            resolved = (reachable_getter(guess) or confirmed_getter([guess])
                         or _mapping_getter(guess) or _mapping_getter(observed_field))
             if resolved:
                 return resolved
@@ -939,6 +1035,126 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
     def ledger_getter():
         return value_getter()
 
+    def privilege_getter():
+        """A getter for the state that holds the privilege.
+
+        The access-control and caller-authorisation assertions read this to
+        decide whether an entry point changed something it should not have.
+        The value has to be the privilege itself -- an owner, an admin, a
+        pending administrator -- because the question those assertions ask is
+        about who holds control, not about how much of something exists.
+
+        A numeric field cannot answer it.  `totalSupply` was previously
+        accepted here through the shared numeric candidate pool, which made
+        the assertion read the token supply before and after an unauthorised
+        call and report a violation of access control when the supply had not
+        changed at all.  Only an address-typed or boolean-typed privilege field
+        is accepted here.
+        """
+        for candidate in ('owner', 'admin', 'governance', 'governor', 'guardian',
+                          'operator', 'authority', 'controller', 'manager',
+                          'pendingAdmin', 'pendingOwner', 'proxyAdmin',
+                          'paused', 'frozen', 'locked'):
+            resolved = reachable_getter(candidate) or confirmed_getter([candidate])
+            if resolved and _is_privilege_typed(resolved):
+                return resolved
+        if observed_field:
+            guess = observed_field[0].upper() + observed_field[1:]
+            resolved = (reachable_getter(guess) or confirmed_getter([guess])
+                        or _mapping_getter(guess))
+            if resolved and _is_privilege_typed(resolved):
+                return resolved
+        return None
+
+    def _is_privilege_typed(getter):
+        """Whether this getter returns something a privilege can be held in."""
+        name = getter.split('(')[0]
+        parameters = abi_parameters.get(name)
+        outputs = abi_outputs.get(name)
+        if outputs:
+            normalised = ' '.join(str(output).lower() for output in outputs)
+            return 'address' in normalised or 'bool' in normalised
+        # The ABI did not record an output type, so the name has to carry it.
+        lowered = name.lower()
+        return any(token in lowered for token in
+                   ('owner', 'admin', 'governance', 'governor', 'guardian',
+                    'operator', 'authority', 'controller', 'manager', 'paused',
+                    'frozen', 'locked'))
+
+    def randomness_getter():
+        """A getter for the value that decides a random outcome.
+
+        The randomness assertion reads this twice within one block and requires
+        the two reads to differ.  That is a question about a source that
+        changes between reads -- a block hash, a nonce, a draw.  A supply
+        counter does not change and a pause flag does not change, so binding
+        either of them here made the assertion fail on every run and be
+        reported as a violated randomness property for a contract that has no
+        randomness in it at all.
+
+        Only a field whose name says it carries a per-draw or per-block value
+        is accepted.  When there is none, the role yields no field and the
+        assertion is not generated, which is the honest outcome.
+        """
+        for candidate in ('randomSeed', 'seed', 'randomness', 'nonce', 'lotterySeed',
+                          'drawSeed', 'blockHash', 'blockNumber', 'blockhash',
+                          'randomWord', 'randomValue', 'random'):
+            resolved = reachable_getter(candidate) or confirmed_getter([candidate])
+            if resolved:
+                return resolved
+        return None
+
+    def outcome_getter():
+        """A getter for the value a caller must not be able to choose.
+
+        The front-running assertion reads this twice, once with one caller and
+        once with another, and requires the two to differ.  The value has to be
+        something the outcome is computed from -- a price, a rate, an index,
+        a share price -- and not a balance, which is the caller's own and
+        differs for any two callers regardless of the protocol.
+        """
+        for candidate in ('price', 'exchangeRate', 'rate', 'index', 'sharePrice',
+                          'pricePerShare', 'exchangePrice', 'getPrice', 'getRate',
+                          'latestAnswer', 'latestRoundData', 'amountOut', 'amountIn',
+                          'expectedPrice', 'fairPrice', 'oraclePrice'):
+            resolved = reachable_getter(candidate) or confirmed_getter([candidate])
+            if resolved:
+                return resolved
+        return None
+
+    def time_getter():
+        """A getter for a value that changes with time.
+
+        The time-manipulation assertion reads the field as two different blocks
+        and requires the two reads to differ, so the field has to be one that a
+        block boundary moves.  A pause flag does not move, so binding one
+        here made the assertion fail on every run.
+        """
+        for candidate in ('lastUpdateTimestamp', 'lastUpdated', 'lastUpdate',
+                          'lastAccrualTimestamp', 'lastAccrual', 'lastHarvest',
+                          'lastInterestAccrual', 'timestamp', 'startTime',
+                          'unlockTime', 'lastSnapshotTimestamp', 'periodFinish',
+                          'rewardPeriodFinish', 'lastRateSnapshotTimestamp'):
+            resolved = reachable_getter(candidate) or confirmed_getter([candidate])
+            if resolved:
+                return resolved
+        return None
+
+    def upgrade_getter():
+        """A getter for the implementation pointer an upgrade would replace.
+
+        The upgrade assertion reads this to see whether the pointer moved, so
+        the field has to be the pointer itself.  It is an address, so a numeric
+        field is never accepted here.
+        """
+        for candidate in ('implementation', 'impl', 'target', 'logic',
+                          'singleton', 'masterCopy', 'beaconImplementation',
+                          'proxyImplementation'):
+            resolved = reachable_getter(candidate) or confirmed_getter([candidate])
+            if resolved and _is_privilege_typed(resolved):
+                return resolved
+        return None
+
     def observed_or(name, *candidates):
         """A getter for ``name`` if the contract exposes one, else the observed
         field's public getter when a compilation confirms it.
@@ -947,14 +1163,14 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
         the IR's bare field name has to be resolved against the ABI's parameter
         list rather than accepted on the strength of appearing in the document.
         """
-        resolved = _first_getter(functions, name) or confirmed_getter([name])
+        resolved = reachable_getter(name) or confirmed_getter([name])
         if resolved:
             return resolved
         resolved = confirmed_getter(list(candidates))
         if resolved:
             return resolved
         for candidate in candidates:
-            resolved = _first_getter(functions, candidate)
+            resolved = reachable_getter(candidate)
             if resolved:
                 return resolved
         if observed_field:
@@ -964,7 +1180,7 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
             # so a bare name here would compile into a call the contract rejects.
             # The zero-argument form is therefore taken from the ABI rather than
             # from the field name, and the mapping form is the fallback.
-            resolved = (_first_getter(functions, guess) or confirmed_getter(
+            resolved = (reachable_getter(guess) or confirmed_getter(
                 [guess, observed_field]) or _mapping_getter(guess)
                 or _mapping_getter(observed_field))
             if resolved:
@@ -1030,7 +1246,16 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
         return {'guardField': observed_or('balanceOf', 'balances', 'balance'),
                 'valueField': value_getter()}
     if role == 'access_control':
-        guarded = value_getter() or confirmed_getter(['owner', 'totalSupply'])
+        # The guarded field is the state a privileged entry point is supposed to
+        # protect.  A balance or a supply counter is not that: binding the
+        # access-control assertion to `totalSupply` made it assert that a
+        # caller cannot change the token supply, which is a different property,
+        # and the assertion was reported as a violated access control when it
+        # was not testing one.  The candidates here are the privilege-bearing
+        # state, in the order that says most about who is in control.
+        guarded = privilege_getter() or confirmed_getter(
+            ['owner', 'admin', 'governance', 'governor', 'guardian', 'operator',
+             'authority', 'controller', 'manager', 'pendingAdmin', 'pendingOwner'])
         entry = _first_entrypoint(functions, 'withdraw', 'transferOwnership',
                                   'setOwner', 'mint', 'burn', 'selfdestruct') \
             or confirmed_entrypoint(['withdraw', 'withdrawFees', 'transferOwnership',
@@ -1049,7 +1274,19 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
     if role == 'unchecked_low_level_call':
         return {'ledgerField': ledger_getter()}
     if role in ('bad_randomness',):
-        return {'valueField': value_getter()}
+        # The randomness assertion reads the field twice within one block and
+        # requires the two reads to differ.  `totalSupply` does not change
+        # between two reads, so binding it here made every one of these
+        # assertions fail and be reported as a violated randomness property on
+        # contracts that have no randomness at all.  Only a field that can
+        # carry a per-draw value is accepted; when there is none the
+        # assertion is not generated.
+        #
+        # The second template in this role asks a different question -- the
+        # same field read by two different callers -- so it resolves its own
+        # field.  One value cannot answer both.
+        return {'randomnessField': randomness_getter(),
+                'outcomeField': outcome_getter()}
     if role == 'arithmetic':
         return {'valueField': value_getter(), 'ledgerField': ledger_getter()}
     if role == 'denial_of_service':
@@ -1059,14 +1296,39 @@ def _vulnerability_substitutions(document, role, source_text=None, abi_getters=N
         # asserting on it, so the getter has to be one the target actually
         # implements.  It is resolved from the ABI rather than assumed, because
         # the name follows what the collection holds.
+        #
+        # `totalSupply` was in this list as a last resort.  It is a count of
+        # tokens, not of the collection the loop walks, so the unbounded-work
+        # assertion was measuring the wrong size.  The size of a collection is
+        # a count of its members, and a member count says nothing about how
+        # much work a loop does unless it is the loop's own collection.
         size = (confirmed_getter(['collectionSize', 'numberCreditors', 'count',
-                                  'length', 'size', 'totalSupply',
-                                  'numberOfRequests', 'requestCount'])
+                                  'length', 'size', 'numberOfRequests',
+                                  'requestCount', 'participantCount',
+                                  'depositorCount', 'borrowerCount',
+                                  'loanCount', 'positionCount'])
                 or _mapping_getter('collectionSize'))
         return {'entrypoint': entry, 'collectionSize': size}
-    if role in ('front_running', 'time_manipulation',
-                'unprotected_upgrade', 'unchecked_cross_contract_assumption'):
-        return {'valueField': value_getter()}
+    if role in ('front_running',):
+        # The front-running assertion reads the field as two different callers
+        # and requires the two reads to differ.  A balance is the caller's own
+        # and differs for any two callers whatever the protocol does, so
+        # binding one here made the assertion ask about the caller rather than
+        # about the outcome.
+        return {'valueField': outcome_getter()}
+    if role in ('time_manipulation',):
+        # The time assertion reads the field as two different blocks and
+        # requires the two reads to differ, so the field has to be one that
+        # changes with time.
+        return {'valueField': time_getter()}
+    if role in ('unprotected_upgrade',):
+        # The upgrade assertion reads the implementation pointer, so the field
+        # has to be the pointer and not a number that happens to be readable.
+        return {'valueField': upgrade_getter()}
+    if role in ('unchecked_cross_contract_assumption',):
+        # The cross-contract assertion reads the value an external dependency
+        # returned.
+        return {'valueField': outcome_getter()}
     return {}
 
 
@@ -1217,11 +1479,12 @@ def detect_roles(document, source_text=None):
     return roles, details
 
 
-def generate_invariants(document, *, source_sha256=None, source_text=None, abi_getters=None):
+def generate_invariants(document, *, source_sha256=None, source_text=None, abi_getters=None,
+                        abi_getter_outputs=None):
     """Generate role-aware invariants for one unified IR document.
 
     ``abi_getters`` is the set of getters the *compiler* reports for the target,
-each as its full signature (``fee()`` or ``balances(address)``).  It is needed
+    each as its full signature (``fee()`` or ``balances(address)``).  It is needed
     because the IR's function list comes from the Slither call graph, which walks
     user-written functions and never records the getters solc synthesises for a
     `public` state variable.  Without it every contract whose ledger is a public
@@ -1229,6 +1492,13 @@ each as its full signature (``fee()`` or ``balances(address)``).  It is needed
     state, and the renderer, correctly refusing to invent a field name, declines
     to emit anything.  The names still come from a compilation of the verified
     source, so nothing here is guessed from naming alone.
+
+    ``abi_getter_outputs`` maps a getter's name to its return types.  The
+    signature says a getter exists and what it takes; the return type says what
+    it holds, which is what decides whether it can carry a privilege.  A field
+    that returns a number cannot answer "who holds control", and binding one to
+    an access-control assertion made that assertion ask a question about the
+    wrong quantity -- and report it as a violation.
     """
     roles, role_features = detect_roles(document, source_text=source_text)
     digest = _canonical_hash(document)
@@ -1306,7 +1576,8 @@ each as its full signature (``fee()`` or ``balances(address)``).  It is needed
             vulnerability_key = _VULNERABILITY_TEMPLATE_ALIASES.get(role)
             if vulnerability_key is not None:
                 substitutions = _vulnerability_substitutions(document, role, source_text,
-                                                             abi_getters=abi_getters)
+                                                             abi_getters=abi_getters,
+                                                             abi_getter_outputs=abi_getter_outputs)
                 templates = VULNERABILITY_TEMPLATES.get(vulnerability_key, ())
             else:
                 substitutions = {}

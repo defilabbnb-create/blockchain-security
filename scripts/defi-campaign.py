@@ -27,7 +27,7 @@ try:
 except ImportError:
     pass
 
-from rpc_pool import ROOT, RpcPool, atomic, json_http, now, rpc
+from rpc_pool import ROOT, RpcPool, atomic, discover, json_http, now, rpc
 from data_provenance import archive_bytes
 from bytecode_analysis import analyze_runtime_bytecode
 from decompiler_crosscheck import attach_opcode_cross_validation
@@ -35,6 +35,9 @@ from decompiler_adapter import run_heimdall
 from unified_ir import from_bytecode_report
 from ir_reconcile import reconcile as reconcile_ir
 from invariant_gen import generate_invariants
+from abi_decode import AbiDecodeError, decode_constructor_arguments
+import harness_gen
+import dynamic_runner
 from cloud_review import CloudReviewError, run_staged_review
 from proxy_history import resolve_proxy_at_block, proxy_history
 
@@ -288,6 +291,83 @@ def resolve_source_import(importer,spec,remappings,sources):
     if len(matches)==1:return matches[0]
     return candidate
 
+def normalize_source_unit_names(data):
+    """Rewrite source unit paths that a provider delivered as absolute.
+
+    Sourcify returns whatever path the contract was originally built under, and
+    for some chains that is a path on the build machine -- one collected bundle
+    carried `/Users/cocmb/celo-monorepo/packages/protocol/contracts/...`.  Three
+    consumers refuse such a name: `harness_gen._safe_source_path` (correctly --
+    an absolute or `..` path would place a source unit outside the harness
+    directory), and the import resolver, which would look for a sibling under a
+    directory named `/Users/cocmb`.
+
+    The rename has to move four things together or the bundle silently stops
+    resolving: the `sources` keys, the `compilationTarget` keys, the
+    `compilationTarget` values, and the remapping prefixes.  A partial rename is
+    worse than the original problem, because it produces a bundle that imports
+    nothing and looks merely empty.
+
+    Names are mapped to a single flat relative path per basename when they are
+    unique, and disambiguated by a short digest when two units share a basename,
+    so two contracts in one bundle cannot be collapsed onto one file.
+    """
+    sources=data.get('sources')
+    if not isinstance(sources,dict) or not sources:return data
+    def unsafe(name):
+        return (not isinstance(name,str) or not name or name.startswith('/')
+            or '\\' in name or any(part in ('','.','..') for part in name.split('/')))
+    if not any(unsafe(name) for name in sources):return data
+    rewritten={}
+    rename={}
+    basenames=collections.Counter()
+    for name in sorted(sources):
+        if unsafe(name):
+            base=posixpath.basename(name) or 'Source.sol'
+            basenames[base]+=1
+            rename[name]=base
+        else:
+            rewrite_path=posixpath.normpath(name)
+            rename[name]=rewrite_path
+    # Two units with the same basename would overwrite each other on disk.
+    for base,count in basenames.items():
+        if count<2:continue
+        for name,target in list(rename.items()):
+            if target==base:
+                stem,_,extension=base.rpartition('.')
+                rename[name]='%s_%s.%s'%(stem,hashlib.sha256(
+                    name.encode('utf-8')).hexdigest()[:8],extension or 'sol')
+    def apply(text):
+        if not isinstance(text,str) or not text:return text
+        # Longest prefix first, so `/a/b/c.sol` is not rewritten as `/a/b` + rest.
+        for name in sorted(rename,key=len,reverse=True):
+            if text==name:text=rename[name];break
+            if text.startswith(name+'/'):text=rename[name]+text[len(name):];break
+        return text
+    normalized=dict(data)
+    normalized['sources']={rename.get(name,name):entry for name,entry in sources.items()}
+    targets=((data.get('metadata') or {}).get('settings') or {}).get('compilationTarget')
+    if isinstance(targets,dict):
+        normalized['metadata']=json.loads(json.dumps(data.get('metadata') or {}))
+        normalized['metadata']['settings']['compilationTarget']={
+            apply(key):apply(value) for key,value in targets.items()}
+    std=data.get('stdJsonInput')
+    if isinstance(std,dict) and isinstance(std.get('settings'),dict):
+        normalized['stdJsonInput']=json.loads(json.dumps(std))
+        rules=normalized['stdJsonInput']['settings'].get('remappings')
+        if isinstance(rules,list):
+            updated=[]
+            for rule in rules:
+                if isinstance(rule,str) and '=' in rule:
+                    context,_,rest=rule.rpartition('=')
+                    prefix,colon,target=rest.partition(':')
+                    updated.append('%s=%s%s%s'%(apply(context),prefix,colon,apply(target)))
+                else:updated.append(rule)
+            normalized['stdJsonInput']['settings']['remappings']=updated
+    normalized['sourceUnitNameNormalizations']=[
+        {'from':name,'to':rename[name]} for name in sorted(rename) if rename[name]!=name]
+    return normalized
+
 def reachable_sources(data):
     sources={k:v['content'] for k,v in data.get('sources',{}).items() if isinstance(v,dict) and isinstance(v.get('content'),str)}
     targets=list(((data.get('metadata') or {}).get('settings') or {}).get('compilationTarget',{}))
@@ -345,6 +425,310 @@ def invariant_abi_getters(data):
         if isinstance(entry,dict) and entry.get('type')=='function' and isinstance(entry.get('name'),str) and entry.get('name')})
     return getters or None
 
+def invariant_abi_getter_outputs(data):
+    """Return the return types of the compiler-reported getters.
+
+    The signature alone says a getter exists and what it takes; it does not say
+    what it returns.  That distinction decides whether a field can carry a
+    privilege: `owner()` returns an address and `totalSupply()` returns a
+    number, and an assertion about who holds control can only be asked of the
+    first.  Reading the return types out of the deployment's own ABI keeps the
+    decision on compiler-reported ground rather than on the name alone.
+    """
+    abi=data.get('abi')
+    if not isinstance(abi,list):return None
+    outputs={}
+    for entry in abi:
+        if not isinstance(entry,dict) or entry.get('type')!='function':continue
+        name=entry.get('name')
+        if not isinstance(name,str) or not name:continue
+        results=entry.get('outputs')
+        if not isinstance(results,list):continue
+        types=[str(item.get('type') or '') for item in results if isinstance(item,dict)]
+        if types:outputs[name]=types
+    return outputs or None
+
+# ABI kinds the recovery below refuses outright.  `abi_decode` already refuses
+# them, but listing them here keeps the refusal readable at the point where the
+# decision is made and lets the campaign record *why* a contract was skipped
+# rather than surfacing a decoder message as an opaque reason.
+UNRECOVERABLE_ARGUMENT_KINDS=('[]','(')
+
+# Reading a creation transaction back from a chain is a network read, and every
+# endpoint of a chain can fail at once.  A contract that is dropped on one run
+# and kept on the next makes two corpus runs incomparable, so a read that fails
+# against every endpoint is retried before the contract is given up on.  The
+# retries are bounded and the evidence records how many were made.
+CONSTRUCTOR_READ_RETRIES=2
+CONSTRUCTOR_READ_RETRY_DELAY_SECONDS=2.0
+
+def constructor_kind_declarations(abi):
+    """The constructor's declared parameters, or None when it takes none.
+
+    Distinguishing "takes no parameters" from "parameters are unknown" matters:
+    the first needs no evidence beyond the verified source, while the second
+    cannot be deployed at all without the values the chain used.
+    """
+    if not isinstance(abi,list):return None
+    for entry in abi:
+        if isinstance(entry,dict) and entry.get('type')=='constructor':
+            inputs=entry.get('inputs')
+            return inputs if isinstance(inputs,list) else []
+    return None
+
+# A dynamic type is encoded as a head word holding an offset plus a tail whose
+# length the type itself does not fix, so the encoded length of a constructor
+# argument list cannot be computed from the ABI alone.
+def _encoded_argument_length(declarations):
+    """The static head length of an argument list, in bytes.
+
+    A dynamic argument contributes its head word here; its tail is measured
+    from the payload, not from the declaration, so this is a lower bound on the
+    encoded length rather than the length itself.
+    """
+    head_words=0
+    for item in declarations:
+        kind=str(item.get('type') or '')
+        if kind in ('bytes','string'):
+            head_words+=1
+        elif kind.endswith(']'):
+            base=kind[:-1]
+            if base.endswith(']'):return None
+            head_words+=1
+        elif kind=='tuple':
+            return None
+        else:
+            head_words+=1
+    return 32*head_words
+
+def constructor_argument_byte_length(data,declarations):
+    """The encoded byte length of this contract's constructor arguments.
+
+    The authority is the difference in length between the deployed creation
+    code and the same contract recompiled without arguments: the deployed code
+    carries the arguments, the recompiled code does not.
+
+    The ABI is used as a cross-check, not as the source.  A declared parameter
+    list says how many parameters there are, but not how long their encoding
+    is -- a `bytes` argument's tail length is only known from the payload --
+    so the ABI cannot establish a length by itself.  Where the two disagree
+    the length is not used.
+
+    Returns None when no length can be established.  The caller then does not
+    trim the payload: a wrong trim decodes shifted bytes into values that
+    look plausible and are not the contract's.
+    """
+    if not declarations:return 0
+    creation=data.get('creationBytecode') or {}
+    onchain=creation.get('onchainBytecode') if isinstance(creation,dict) else None
+    recompiled=creation.get('recompiledBytecode') if isinstance(creation,dict) else None
+    if not (isinstance(onchain,str) and isinstance(recompiled,str)):return None
+    if not re.fullmatch(r'0x[0-9a-fA-F]*',onchain) or not re.fullmatch(r'0x[0-9a-fA-F]*',recompiled):
+        return None
+    difference=(len(onchain)-len(recompiled))//2
+    if difference<0 or difference%32:return None
+    if difference==0:
+        # Both bytecodes are the same length.  That is consistent with a
+        # constructor that takes no arguments, and inconsistent with one that
+        # takes any, so the declared list settles which case this is.
+        return 0
+    # A difference that is not zero has to be a length the declared parameters
+    # could occupy.
+    dynamic=[item for item in declarations if _is_dynamic_argument(item.get('type') or '')]
+    if not dynamic:
+        # All parameters are static, so the encoding is exactly one word each
+        # and the difference has to equal that.  A larger difference is not
+        # this constructor's arguments -- an embedded constant, a different
+        # compiler setting -- and trimming by it would cut the payload at the
+        # wrong place and decode the neighbouring words as the arguments.
+        head=_encoded_argument_length(declarations)
+        if head is None:return None
+        if difference!=head:return None
+        return difference
+    # A dynamic parameter contributes its offset word to the head and, at the
+    # least, a length word to the tail, but its full tail is only known from
+    # the payload.  The check is therefore a lower bound, not an equality.
+    head=_encoded_argument_length(declarations)
+    if head is None:return None
+    if difference<head+32*len(dynamic):return None
+    return difference
+
+def _is_dynamic_argument(kind):
+    return kind in ('bytes','string') or kind.endswith('[]')
+
+def recover_constructor_arguments(data,pool,chain_id):
+    """Recover the constructor values this contract was actually deployed with.
+
+    Returns `(arguments, evidence)`.  `arguments` is the mapping the harness
+    generator wants, or None when the values cannot be established.
+
+    A Sourcify bundle does not carry the constructor arguments, but the
+    `deployment` object it was issued with names the creation transaction and
+    the block it landed in -- and that object only exists once the provider has
+    matched the runtime bytecode against on-chain code.  Reading that one
+    transaction back and decoding its calldata yields the real values, bound to
+    a deployment already corroborated by the bytecode check the campaign ran
+    separately.
+
+    A contract whose constructor takes no parameters needs none of this: an
+    empty mapping fully describes how to build it, so it is returned without a
+    chain query.  Requiring `deployment` there would discard a path that is
+    self-sufficient, to buy no additional certainty.
+
+    A contract that does take parameters and whose creation transaction is not
+    recorded yields None.  Guessing a zero there would deploy a contract that is
+    not the one under review, and every property measured on it would be about
+    that other contract.
+    """
+    declarations=constructor_kind_declarations(data.get('abi'))
+    if declarations is None:return None,{'state':'unavailable','reason':'constructor_abi_missing'}
+    if not declarations:return {},{'state':'not_required','reason':'constructor_declares_no_parameters'}
+    unrecoverable=[item.get('name') or f'arg{index}' for index,item in enumerate(declarations)
+        if any(marker in str(item.get('type') or '') for marker in UNRECOVERABLE_ARGUMENT_KINDS)
+        or str(item.get('type') or '').startswith(('struct ','enum '))]
+    if unrecoverable:
+        return None,{'state':'unsupported','reason':'constructor_arguments_include_undecodable_kinds',
+                     'parameters':unrecoverable}
+    deployment=data.get('deployment')
+    if not isinstance(deployment,dict):return None,{'state':'unavailable','reason':'bundle_records_no_creation_transaction'}
+    transaction_hash=deployment.get('transactionHash')
+    if not isinstance(transaction_hash,str) or not re.fullmatch(r'0x[0-9a-fA-F]{64}',transaction_hash):
+        return None,{'state':'unavailable','reason':'bundle_records_no_creation_transaction'}
+    try:
+        transaction,transaction_rpc=pool.call(chain_id,'eth_getTransactionByHash',[transaction_hash])
+    except Exception as error:
+        # Every endpoint in the chain failed.  The read is a network read, and
+        # a transient failure of every endpoint at once is a network condition
+        # rather than a statement about the contract, so it is retried before
+        # the contract is dropped.  A contract that dropped on one run and
+        # stayed on the next makes the corpus measurement incomparable.
+        last_error=error
+        transaction=None
+        for attempt in range(CONSTRUCTOR_READ_RETRIES):
+            time.sleep(CONSTRUCTOR_READ_RETRY_DELAY_SECONDS*(attempt+1))
+            try:
+                transaction,transaction_rpc=pool.call(chain_id,'eth_getTransactionByHash',[transaction_hash])
+                last_error=None
+                break
+            except Exception as retry_error:
+                last_error=retry_error
+        if transaction is None:
+            return None,{'state':'unavailable',
+                        'reason':f'creation_transaction_unavailable:{type(last_error).__name__}',
+                        'attempts':CONSTRUCTOR_READ_RETRIES+1}
+    if transaction is None:
+        # A provider that does not serve the query answers with a null result
+        # rather than an error.  That is a failed read, not the absence of the
+        # transaction, so it is retried against the next endpoint instead of
+        # being recorded as "the creation transaction carries no input" -- a
+        # statement about the contract that was only ever about the provider.
+        return None,{'state':'unavailable','reason':'creation_transaction_read_returned_null'}
+    if not isinstance(transaction,dict) or not isinstance(transaction.get('input'),str):
+        return None,{'state':'unavailable','reason':'creation_transaction_carries_no_input'}
+    if transaction['input'] in ('0x',''):
+        return None,{'state':'unavailable','reason':'creation_transaction_carries_no_input'}
+    # The block the provider recorded has to be the block this transaction is
+    # actually in, or the arguments belong to a deployment other than the one
+    # whose bytecode the campaign verified.
+    recorded_block=deployment.get('blockNumber')
+    observed_block=transaction.get('blockNumber')
+    if isinstance(recorded_block,str) and re.fullmatch(r'0x[0-9a-fA-F]+',recorded_block):
+        if not isinstance(observed_block,str) or int(observed_block,16)!=int(recorded_block,16):
+            return None,{'state':'unavailable','reason':'creation_transaction_block_disagrees_with_bundle'}
+    payload=transaction['input']
+    creation=data.get('creationBytecode') or {}
+    prefix=creation.get('onchainBytecode') if isinstance(creation,dict) else None
+    stripped=False
+    argument_bytes=0
+    if isinstance(prefix,str) and re.fullmatch(r'0x[0-9a-fA-F]+',prefix):
+        head=prefix[2:].lower()
+        if payload[2:].lower().startswith(head) and len(payload)>2+len(head):
+            payload='0x'+payload[2+len(head):]
+            stripped=True
+        # When the prefix does not match the transaction input the payload is
+        # left as it is rather than trimmed to some assumed length.  The decode
+        # below then fails on a word count that is wrong, which is reported as
+        # undecodable; trimming anyway would risk dropping leading bytes of a
+        # real argument and decoding a shifted payload into plausible values.
+    #
+    # The prefix above is the deployed creation code, and the deployed creation
+    # code already contains the encoded arguments -- so the payload equals the
+    # prefix and the strip removes nothing.  The whole bytecode was then handed
+    # to the decoder, which refused it as not a whole number of words and the
+    # contract was reported as unrecoverable.  That accounted for 24 of the 63
+    # blocked contracts.
+    #
+    # The recompiled bytecode is the same contract compiled locally without
+    # arguments, so the difference in length is the encoded argument length.
+    # It is not always a byte-for-byte prefix -- immutable variables and
+    # constructor-inlined constants differ between the two -- but the length
+    # difference is a whole number of words for every contract measured, and it
+    # agrees with the ABI's declared parameter count once dynamic types are
+    # accounted for.  The arguments are therefore taken from the tail of the
+    # creation transaction, whose length is known from the ABI.
+    argument_bytes=constructor_argument_byte_length(data,declarations)
+    if argument_bytes is None:
+        # The encoded length cannot be established, so the payload is not
+        # trimmed.  A wrong trim would decode a shifted payload into values
+        # that look plausible and are not the contract's.
+        pass
+    elif argument_bytes==0:
+        payload='0x'
+        stripped=True
+    elif len(payload)>=2+2*argument_bytes:
+        # The arguments are the tail of the creation transaction; the hex
+        # string carries two characters per byte, so the tail is taken by
+        # character count.
+        payload='0x'+payload[len(payload)-2*argument_bytes:]
+        stripped=True
+    if not stripped and any(_is_dynamic_argument(str(item.get('type') or '')) for item in declarations):
+        # Neither the creation-code prefix nor a measured length located the
+        # arguments inside the transaction input, so what is left may be the
+        # whole input -- the creation code itself.  For all-static parameters
+        # the decoder refuses any payload that is not exactly one word per
+        # parameter, so an untrimmed input cannot pass as a reading.  A dynamic
+        # parameter has a tail the types do not size, so the decoder cannot
+        # tell a real tail from creation code; the refusal has to be made here,
+        # where it is known that nothing located the boundary.
+        return None,{'state':'unavailable',
+                     'reason':'constructor_arguments_undecodable:argument boundary not established',
+                     'creationBytecodePrefixStripped':False}
+    try:
+        values=decode_constructor_arguments(payload,declarations)
+    except AbiDecodeError as error:
+        return None,{'state':'unavailable','reason':f'constructor_arguments_undecodable:{str(error)[:120]}',
+                     'creationBytecodePrefixStripped':stripped}
+    arguments={}
+    for index,item in enumerate(declarations):
+        name=item.get('name') or f'arg{index}'
+        arguments[name]=values[index]
+    return arguments,{'state':'recovered','reason':'creation_transaction_calldata_decoded',
+                      'transactionHash':transaction_hash.lower(),
+                      'rpc':transaction_rpc,
+                      'blockNumber':observed_block,
+                      'creationBytecodePrefixStripped':stripped,
+                      'deploymentBlockCrossChecked':isinstance(recorded_block,str)}
+
+def filter_chains(chains, wanted):
+    """Restrict chains to the requested set.
+
+    Matching is case-insensitive on chainId, name and llamaName.  A requested
+    entry that matches nothing is returned as unmatched so the caller can fail
+    loudly instead of quietly collecting fewer chains than the operator asked
+    for.
+    """
+    keys={str(item).strip().lower() for item in (wanted or []) if str(item).strip()}
+    if not keys:
+        return list(chains or []),[]
+    selected=[];matched=set()
+    for chain in (chains or []):
+        if not isinstance(chain,dict):continue
+        names={str(chain.get('chainId','')).strip().lower(),str(chain.get('name','')).strip().lower(),str(chain.get('llamaName','')).strip().lower()}
+        hit=names & keys
+        if hit:
+            selected.append(chain);matched|=hit
+    return selected,sorted(keys-matched)
+
 def build_queue(protocols, chains, threshold=10000):
     buckets=collections.defaultdict(list)
     for p in protocols:
@@ -391,7 +775,7 @@ def validate_review(review, sources, submitted_lines=None):
     return {'summary':str(review.get('summary',''))[:3000],'role':str(review.get('role',''))[:500],'observations':accepted,'rejectedUnsupportedObservations':rejected,'limits':review.get('limits',[]),'confirmedVulnerabilities':0,'localReproduction':'not performed for newly collected contracts'}
 
 class Campaign:
-    def __init__(self,duration,output,workers=3,decompiler=None,decompiler_timeout=30,decompiler_hardfork='latest',review_budget_usd=None):
+    def __init__(self,duration,output,workers=3,decompiler=None,decompiler_timeout=30,decompiler_hardfork='latest',review_budget_usd=None,chain_filter=None):
         self.id=str(uuid.uuid4());self.start=time.monotonic();self.wall=time.time();self.duration=duration;self.output=Path(output)
         self.run=ROOT/'work/defi-campaign'/self.id;self.run.mkdir(parents=True)
         self.stop=threading.Event();self.lock=threading.RLock();self.net_lock=threading.Lock()
@@ -403,8 +787,10 @@ class Campaign:
         self.source_hash=subprocess.check_output(['node','--input-type=module','-e',"import {runtimeFingerprint} from './src/runtime-fingerprint.js'; console.log(await runtimeFingerprint())"],cwd=ROOT,text=True).strip()
         self.decompiler=decompiler;self.decompiler_timeout=decompiler_timeout;self.decompiler_hardfork=decompiler_hardfork
         self.review_budget_usd=review_budget_usd
+        self.chain_filter=list(chain_filter or [])
+        self.selected_chains=None
         cloud_configured=all(os.environ.get(key,'').strip() for key in ('DEFI_CLOUD_AI_BASE_URL','DEFI_CLOUD_AI_API_KEY','DEFI_CLOUD_AI_MODEL'))
-        self.config={'minimumProtocolChainTvlUsd':10000,'durationSec':duration,'workers':workers,'remoteHostIntervalSec':0.5,'rawArchiveByteBudget':MAX_RAW_ARCHIVE_BYTES,'runtimeBytecodeDecompiler':decompiler,'runtimeBytecodeDecompileTimeoutSec':decompiler_timeout,'runtimeBytecodeDecompileHardfork':decompiler_hardfork,'reviewBudgetUsd':review_budget_usd,'sourceReviewProvider':'external_cloud_ai','cloudReviewAdapter':'openai-compatible','cloudReviewConfiguration':'configured' if cloud_configured else 'unavailable','cloudReviewEvidence':'recorded_calls_only','scope':'public read-only collection, deterministic static analysis and optional external cloud review; no asset operations'}
+        self.config={'minimumProtocolChainTvlUsd':10000,'durationSec':duration,'workers':workers,'remoteHostIntervalSec':0.5,'rawArchiveByteBudget':MAX_RAW_ARCHIVE_BYTES,'runtimeBytecodeDecompiler':decompiler,'runtimeBytecodeDecompileTimeoutSec':decompiler_timeout,'runtimeBytecodeDecompileHardfork':decompiler_hardfork,'reviewBudgetUsd':review_budget_usd,'sourceReviewProvider':'external_cloud_ai','cloudReviewAdapter':'openai-compatible','cloudReviewConfiguration':'configured' if cloud_configured else 'unavailable','cloudReviewEvidence':'recorded_calls_only','chainFilter':self.chain_filter,'scope':'public read-only collection, deterministic static analysis and optional external cloud review; no asset operations'}
     def inc(self,key,amount=1):
         with self.lock:self.counts[key]+=amount
     def runtime_bytecode_analysis(self,code,item,address,height,block,folder,record):
@@ -573,6 +959,61 @@ class Campaign:
             self.validation_errors.append('source fingerprint changed during campaign');self.stop.set()
             self.event('integrity_failure',expected=self.source_hash,actual=current)
         self.last_fingerprint_check=time.monotonic()
+    def invariant_dynamic(self,data,record,folder,item,invariant_path):
+        """Compile and run the generated assertions for one deployment.
+
+        This is the step that turns an assertion *specification* into an
+        observed result.  Everything it records is scoped to this deployment:
+        a `violated` row means the contract built from this exact source, with
+        these exact constructor values, broke that assertion under this exact
+        action sequence -- and says nothing about the deployed contract, which
+        was never run.
+
+        The result is kept under `invariantDynamic` rather than folded into
+        `dynamicAnalysis`, because the latter records the isolated Hardhat EVM
+        suite.  Overwriting it would leave a reader unable to tell which of two
+        different execution boundaries produced the state they are reading.
+        """
+        invariants=json.loads(invariant_path.read_text(encoding='utf-8'))
+        if not invariants.get('invariants'):
+            return {'state':'unavailable','reason':'no_invariants_generated'}
+        arguments,recovery=recover_constructor_arguments(data,self.pool,item['chainId'])
+        self.inc('constructorArgumentRecoveries',int(recovery.get('state')=='recovered'))
+        if arguments is None:
+            self.inc('invariantDynamicAttempts');self.inc('invariantDynamicUnavailable')
+            return {'state':'unavailable','reason':'constructor_arguments_missing',
+                    'constructorRecovery':recovery,
+                    'meaning':'Assertions were generated but not executed: this deployment '
+                              'declares constructor parameters whose values are not recoverable '
+                              'from the verified source or its creation transaction. No '
+                              'assertion result is claimed for it.'}
+        harness_dir=folder/'harness'
+        deployment=harness_gen.generate_harness(invariants,data,harness_dir,
+            compiler_version=(data.get('compilation') or {}).get('compilerVersion'),
+            constructor_arguments=arguments)
+        started=time.monotonic()
+        outcome=dynamic_runner.run_harness(harness_dir,mode='local',timeout_seconds=120)
+        elapsed=time.monotonic()-started
+        atomic(folder/'invariant-dynamic.json',outcome)
+        rows=outcome if isinstance(outcome,list) else []
+        tally=collections.Counter(row.get('state') for row in rows)
+        self.inc('invariantDynamicAttempts')
+        for state in ('passed','violated','unavailable'):
+            if tally.get(state):self.inc(f'invariantDynamic{state.capitalize()}',tally[state])
+        self.inc('invariantDynamicMs',int(elapsed*1000))
+        return {'state':'completed','kind':'generated invariant harness executed with forge',
+                'harness':str(harness_dir.relative_to(ROOT)),
+                'report':str((folder/'invariant-dynamic.json').relative_to(ROOT)),
+                'constructorRecovery':recovery,
+                'deployment':deployment,
+                'durationMs':int(elapsed*1000),
+                'results':rows,
+                'tally':{'passed':tally.get('passed',0),'violated':tally.get('violated',0),
+                         'unavailable':tally.get('unavailable',0)},
+                'scope':'Assertions executed against a locally built copy of this source with '
+                        'these recovered constructor values. A violated row is a defect in that '
+                        'local construction, not proof the deployed contract is exploitable; '
+                        'a passed row is not proof the deployed contract is safe.'}
     def event(self,kind,**data):
         with self.lock:
             self.journal.write(json.dumps({'at':now(),'type':kind,**data},ensure_ascii=False)+'\n');self.journal.flush()
@@ -635,16 +1076,81 @@ class Campaign:
             row['validationErrors']=self.validation_errors[:]
             row['counts']['qualifiedProtocolChains']=len(self.queue)
             atomic(self.output,row);atomic(self.run/'summary.json',row);atomic(self.run/'lease.json',lease);self.event('checkpoint',counts=counts,durationMs=row['durationMs'],state=self.state,heartbeatAt=heartbeat,heartbeatSeq=self.heartbeat_seq)
+    def refresh_pool(self):
+        """Re-discover the RPC pool and persist it, or report why it failed.
+
+        The pool file is the campaign's only source of verified endpoints.
+        When it goes stale the campaign used to stop with a hard error, and
+        when it was stale-but-within-window the endpoints it had recorded as
+        dead stayed dead for the whole run.  Refreshing here keeps both
+        cases honest: the pool is re-verified against the chains, and a
+        refresh that cannot be completed is reported rather than papered
+        over with the stale file.
+        """
+        try:
+            # 共享的 RPC 池覆盖全部配置的链，不受本次 --chain 过滤影响。
+            # 池文件 work/rpc-pool.json 是全项目共用的：按链采集时把它截断，
+            # 会让下一次全链采集在其余链上全部找不到已验证端点。
+            # --chain 只过滤采集队列（见 configured_chains 的调用方）。
+            chains=json.loads((ROOT/'flare-scan/chains.json').read_text())['chains']
+            pool=discover(chains)
+            atomic(ROOT/'work/rpc-pool.json',pool)
+            atomic(self.run/'rpc-pool.refreshed.json',pool)
+            self.event('rpc_pool_refreshed',generatedAt=pool['generatedAt'],
+                       chains=len(pool['chains']),
+                       healthyChains=sum(c['healthyCount']>0 for c in pool['chains']))
+            return pool
+        except Exception as error:
+            self.event('rpc_pool_refresh_failed',error=f'{type(error).__name__}: {str(error)[:200]}')
+            return None
+    def load_pool(self):
+        """Return the RPC pool, refreshing it when the snapshot is unusable.
+
+        The snapshot is the campaign's only source of verified endpoints.
+        Three cases have to be told apart: a snapshot that is current, one
+        that has gone stale, and one that is missing.  The stale and missing
+        cases used to end the run with a hard error, and a snapshot that was
+        merely old kept the endpoints it had recorded as dead dead for the
+        whole run.  A refresh that cannot be completed is reported rather
+        than papered over with the unusable file.
+        """
+        pool_path=ROOT/'work/rpc-pool.json'
+        pool=None
+        if pool_path.exists():
+            try:
+                pool=json.loads(pool_path.read_text())
+            except Exception:
+                pool=None
+        age=None
+        if pool is not None:
+            try:
+                from datetime import datetime
+                age=time.time()-datetime.fromisoformat(pool['generatedAt'].replace('Z','+00:00')).timestamp()
+            except Exception:
+                pool=None; age=None
+        if pool is not None and age is not None and age<=1800:
+            return pool
+        refreshed=self.refresh_pool()
+        if refreshed is None:
+            raise RuntimeError('RPC pool is missing or older than 30 minutes and could not be refreshed')
+        return refreshed
+    def configured_chains(self):
+        """Chains this run is allowed to touch, after applying --chain."""
+        chains=json.loads((ROOT/'flare-scan/chains.json').read_text())['chains']
+        selected,unmatched=filter_chains(chains,self.chain_filter)
+        if unmatched:
+            raise RuntimeError('no chain matched the requested --chain filter: '+','.join(unmatched))
+        if self.chain_filter and not selected:
+            raise RuntimeError('the requested --chain filter matched no configured chain')
+        return selected
     def initialize(self):
         self.checkpoint()
         protocols=self.fetch('https://api.llama.fi/protocols',timeout=25);self.snapshot_at=now()
         atomic(self.run/'protocols.json',{'retrievedAt':self.snapshot_at,'source':'https://api.llama.fi/protocols','data':protocols})
-        chains=json.loads((ROOT/'flare-scan/chains.json').read_text())['chains'];self.queue=build_queue(protocols,chains)
+        chains=self.configured_chains();self.selected_chains=chains;self.queue=build_queue(protocols,chains)
         for q in self.queue:q['tvlObservedAt']=self.snapshot_at
         atomic(self.run/'queue.json',self.queue)
-        pool=json.loads((ROOT/'work/rpc-pool.json').read_text())
-        from datetime import datetime
-        if time.time()-datetime.fromisoformat(pool['generatedAt'].replace('Z','+00:00')).timestamp()>1800: raise RuntimeError('RPC validation older than 30 minutes; refresh pool first')
+        pool=self.load_pool()
         self.pool=RpcPool(pool, raw_sink=self.archive_rpc_response);atomic(self.run/'rpc-pool.initial.json',pool)
         self.tree=self.fetch('https://api.github.com/repos/DefiLlama/DefiLlama-Adapters/git/trees/main?recursive=1',cache=True)
         if self.tree.get('truncated'): raise RuntimeError('adapter tree truncated')
@@ -817,7 +1323,16 @@ class Campaign:
             stored=(data.get('runtimeBytecode') or {}).get('onchainBytecode','')
             if stored.lower()!=code.lower():raise ValueError('current deployed code does not match source provider onchain bytecode')
             if data.get('runtimeMatch') not in ('exact_match','match'):raise ValueError('source runtime match unavailable')
+            # Some providers return source unit paths as absolute paths on the
+            # machine the contract was built on.  Normalised here, once, at
+            # intake, so the harness generator and the import resolver see the
+            # same names and neither has to second-guess the bundle.
+            renames=(data.get('sourceUnitNameNormalizations') or [])
+            data=normalize_source_unit_names(data)
             atomic(folder/'verified-source.json',data)
+            if renames:
+                record['sourceUnitNameNormalizations']=renames
+                self.inc('sourceUnitNameNormalizations',len(renames))
             record['reviewCompleteness']=initial_proxy_review_completeness(record.get('proxy'))
             source_hash=source_identity(data);record['source']={'url':source_url,'retrievedAt':now(),'verifiedAt':data.get('verifiedAt'),'runtimeMatch':data['runtimeMatch'],'currentBytecodeMatchesProvider':True,'sha256':source_hash,'fileCount':len(data.get('sources',{})),'compiler':data.get('compilation',{}).get('compilerVersion')}
             dependency=None
@@ -890,7 +1405,33 @@ class Campaign:
                         if source_ir_path.is_file():
                             invariant_result=generate_invariants(json.loads(source_ir_path.read_text(encoding='utf-8')),
                                 source_sha256=source_hash,source_text=invariant_source_text(data),
-                                abi_getters=invariant_abi_getters(data))
+                                abi_getters=invariant_abi_getters(data),
+                                abi_getter_outputs=invariant_abi_getter_outputs(data))
+                            # `generate_harness` validates the invariants digest
+                            # against `_source_digest(sources)`, which covers the
+                            # source file contents alone.  The campaign's
+                            # `source_sha256` is `source_identity(data)` -- a
+                            # wider definition covering reachable sources, the
+                            # compilation target, the compiler version and the
+                            # compiler settings.  The two never agree, so the
+                            # generator rejected every real bundle with a
+                            # ValueError before any assertion reached forge.
+                            #
+                            # Widening the generator's check to accept the
+                            # campaign's value would change the meaning of a
+                            # field that feeds `invariantId`, `discovery_plan`,
+                            # `ir_reconcile` and the review output, with nothing
+                            # marking the change for downstream readers.  So the
+                            # narrow digest travels alongside instead, under its
+                            # own name, and the old field keeps its meaning.
+                            #
+                            # It is produced by calling the generator's own
+                            # function rather than by re-deriving the hash here.
+                            # A second implementation of the same definition is
+                            # exactly what produced the mismatch in the first
+                            # place; calling the function makes agreement
+                            # guaranteed instead of believed.
+                            invariant_result['sourceContentsSha256']=harness_gen._source_digest(data['sources'])
                             invariant_path=folder/'invariants.json'
                             atomic(invariant_path,invariant_result)
                             record['invariants']={'state':invariant_result['state'],'detectedRoles':invariant_result['detectedRoles'],
@@ -909,6 +1450,17 @@ class Campaign:
                                 'reason':'No source unified IR was produced for this deployment.'}
                     except Exception as invariant_error:
                         record['invariants']={'state':'unavailable','reason':f'{type(invariant_error).__name__}: {str(invariant_error)[:250]}'}
+                    # 动态验证走独立的 forge 路径，结果记在 `invariantDynamic`，
+                    # 不覆盖 `dynamicAnalysis`：后者是隔离 Hardhat EVM 套件的
+                    # 记录，两者的执行边界和证据强度不同，混在一处会让下游读到的
+                    # 断言结果无法追溯到具体是哪条路径跑出来的。
+                    if record.get('invariants',{}).get('state')=='generated' and not self.stop.is_set():
+                        try:
+                            record['invariantDynamic']=self.invariant_dynamic(
+                                data,record,folder,item,invariant_path)
+                        except Exception as dynamic_error:
+                            record['invariantDynamic']={'state':'unavailable',
+                                'reason':f'{type(dynamic_error).__name__}: {str(dynamic_error)[:250]}'}
                     try:
                         source_ir_document = json.loads(source_ir_path.read_text(encoding='utf-8')) if source_ir_path.is_file() else None
                         invariant_document = json.loads(invariant_path.read_text(encoding='utf-8')) if 'invariant_path' in locals() and invariant_path.is_file() else None
@@ -969,6 +1521,12 @@ class Campaign:
         try:
             if label not in self.address_cache:
                 self.inc('protocolChainsAttempted')
+                if not self.pool.rows.get(item['chainId'],{}).get('healthyCount'):
+                    # The chain has no verified endpoint in the snapshot.  Re-check
+                    # the ones that were rejected for a passing condition before
+                    # giving up on the chain: reporting it as unusable here is
+                    # what silently removes whole protocols from the corpus.
+                    self.pool.revalidate(item['chainId'],timeout=8)
                 if not self.pool.rows.get(item['chainId'],{}).get('healthyCount'):raise RuntimeError('no verified RPC for this chain')
                 addresses=self.addresses(item)
                 addresses=list({a['address'].lower():a for a in addresses}.values())
@@ -992,7 +1550,7 @@ class Campaign:
             self.timing('protocolBatch',started)
     def refresh_queue(self):
         protocols=self.fetch('https://api.llama.fi/protocols',timeout=25)
-        stamp=now();chains=json.loads((ROOT/'flare-scan/chains.json').read_text())['chains']
+        stamp=now();chains=self.configured_chains()
         fresh=build_queue(protocols,chains);known={f'{q["slug"]}:{q["chainId"]}' for q in self.queue}
         added=[dict(q,tvlObservedAt=stamp) for q in fresh if f'{q["slug"]}:{q["chainId"]}' not in known]
         self.queue.extend(added);self.inc('catalogRefreshes')
@@ -1042,18 +1600,26 @@ def main():
     parser.add_argument('--decompiler',choices=('heimdall',),help='run local heuristic pseudocode recovery on each deployed runtime')
     parser.add_argument('--decompiler-timeout',type=float,default=30,help='per-contract Heimdall wall-clock limit in seconds')
     parser.add_argument('--decompiler-hardfork',default='latest',help='EVM hardfork passed to Heimdall; select the target chain semantics')
+    parser.add_argument('--chain',action='append',default=None,help='只采集指定的链（chainId / name / llamaName）；可重复。不指定表示全部配置的链')
     args=parser.parse_args()
     if not 30<=args.duration<=86400 or not 1<=args.workers<=3:parser.error('duration 30..86400 seconds, workers 1..3')
     if not 1<=args.decompiler_timeout<=300:parser.error('--decompiler-timeout must be between 1 and 300 seconds')
     if args.review_budget_usd is not None and args.review_budget_usd<0:parser.error('--review-budget-usd must be nonnegative')
     if not args.decompiler_hardfork.strip():parser.error('--decompiler-hardfork must not be empty')
+    # 过滤条件必须先在这里校验：匹配不到任何链时要立刻失败，
+    # 不能先拿到 flock 再在采集线程里失败，那样会留下一个看起来像在跑的锁。
+    chain_filter=[str(item).strip() for item in (args.chain or []) if str(item).strip()]
+    if chain_filter:
+        configured=json.loads((ROOT/'flare-scan/chains.json').read_text())['chains']
+        _,unmatched=filter_chains(configured,chain_filter)
+        if unmatched:parser.error('no configured chain matched: '+','.join(unmatched))
     lock_path=ROOT/'work/defi-campaign.lock';lock_path.parent.mkdir(exist_ok=True);handle=lock_path.open('a+')
     try:fcntl.flock(handle,fcntl.LOCK_EX|fcntl.LOCK_NB)
     except BlockingIOError:raise SystemExit('A campaign already holds the lock; not starting another')
     old=Path(args.output)
     if old.exists():
         prior=json.loads(old.read_text());archive=old.with_name(old.stem+'.'+prior.get('runId',str(uuid.uuid4()))+'.json');atomic(archive,prior)
-    campaign=Campaign(args.duration,args.output,args.workers,args.decompiler,args.decompiler_timeout,args.decompiler_hardfork,args.review_budget_usd);handle.seek(0);handle.truncate();handle.write(json.dumps({'pid':os.getpid(),'runId':campaign.id,'startedAt':now()}));handle.flush()
+    campaign=Campaign(args.duration,args.output,args.workers,args.decompiler,args.decompiler_timeout,args.decompiler_hardfork,args.review_budget_usd,chain_filter);handle.seek(0);handle.truncate();handle.write(json.dumps({'pid':os.getpid(),'runId':campaign.id,'startedAt':now()}));handle.flush()
     for sig in (signal.SIGINT,signal.SIGTERM):signal.signal(sig,lambda *_:campaign.stop.set())
     try:campaign.run_campaign()
     except Exception as e:

@@ -431,11 +431,27 @@ class CompiledGetterVisibilityTests(unittest.TestCase):
                 'functions': functions}
 
     def test_abi_getter_resolves_a_field_the_ir_does_not_list(self):
+        # The IR's function list comes from the call graph and never records
+        # the getters solc synthesises, so the field has to be resolvable from
+        # the ABI alone.  It has to be a privilege though: the assertion this
+        # feeds asks whether an unprivileged caller changed the protected
+        # state, and a numeric field cannot answer that.
+        document = self._document(['owner'], [
+            {'name': 'swap(uint256)', 'visibility': 'external'}])
+        subs = self.gen._vulnerability_substitutions(
+            document, 'access_control', abi_getters=['owner()', 'withdrawFees()'])
+        self.assertEqual('owner', subs['guardedField'])
+
+    def test_a_numeric_field_is_not_resolved_as_the_guarded_state(self):
+        # `fee` is readable, but it is a number.  An access-control assertion
+        # bound to it would ask whether an unauthorised caller changed the fee
+        # rather than whether they changed the privileged state, and would
+        # report that as an access-control violation.
         document = self._document(['fee'], [
             {'name': 'swap(uint256)', 'visibility': 'external'}])
         subs = self.gen._vulnerability_substitutions(
             document, 'access_control', abi_getters=['fee()', 'withdrawFees()'])
-        self.assertEqual('fee', subs['guardedField'])
+        self.assertIsNone(subs['guardedField'])
 
     def test_field_name_is_used_verbatim_when_it_is_the_getter(self):
         # `badDebt` is the field *and* the getter; capitalising it finds nothing.
@@ -831,14 +847,37 @@ class AssertionClassificationTests(unittest.TestCase):
             rows = [{'invariantId': 'a' * 64, 'state': 'unavailable', 'reason': 'forge_not_found'}]
             self.assertEqual(DEEP._refine_assertion_states(Path(directory), rows), rows)
 
-    def test_clean_control_with_one_unusable_assertion_is_not_reported_as_violated(self):
-        """The measured 33-clean-amm result, pinned as a regression guard."""
+    def test_clean_control_with_only_unusable_assertions_is_not_reported_as_passed(self):
+        """The measured 33-clean-amm result, pinned as a regression guard.
+
+        This used to assert `outcome == 'passed'` with at least one executed
+        assertion.  Both of those came from the two constant-product
+        assertions, which read the reserves twice with no swap between the
+        readings: the comparison was decided before any protocol action
+        happened, so it held on every contract and a sample that genuinely
+        loses reserve value would have been recorded as passing too.  A verdict
+        derived that way measures the harness, not the pool.
+
+        The assertions now refuse to render without a swap adapter, so the
+        sample has nothing to execute.  The honest result is that it was not
+        measured -- which is neither a pass nor a violation, and must not be
+        counted as either.
+        """
         evidence = json.loads((ROOT / 'benchmark' / 'contracts' / '33-clean-amm'
                                / 'invariants.json').read_text(encoding='utf-8'))
         states = [row.get('state') for row in evidence.get('results') or []]
-        self.assertEqual(evidence.get('outcome'), 'passed')
+        self.assertEqual(evidence.get('state'), 'unavailable')
+        self.assertEqual(evidence.get('reason'), 'no_invariant_assertion_executed')
+        self.assertIsNone(evidence.get('outcome'))
         self.assertNotIn('violated', states)
-        self.assertGreaterEqual(evidence.get('executedAssertionCount') or 0, 1)
+        self.assertEqual(evidence.get('executedAssertionCount') or 0, 0)
+        # Every assertion that declined says which adapter it needed, so an
+        # unmeasured sample does not read the same as a measured clean one.
+        reasons = {row.get('reason') for row in evidence.get('results') or []}
+        self.assertIn('constant_product_comparison_requires_a_swap_between_the_two_reserve_readings',
+                      reasons)
+        self.assertIn('fee_ledger_comparison_requires_a_swap_between_the_two_fee_readings',
+                      reasons)
 
 
 class RenderedPreconditionTests(unittest.TestCase):

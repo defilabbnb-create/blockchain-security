@@ -15,6 +15,13 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+try:
+    from keccak import to_checksum_address
+except ModuleNotFoundError:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from keccak import to_checksum_address
+
 
 def _source_digest(sources: dict[str, Any]) -> str:
     import hashlib
@@ -56,7 +63,7 @@ def _constructor(abi: list[dict[str, Any]]) -> dict[str, Any] | None:
     return next((item for item in abi if item.get("type") == "constructor"), None)
 
 
-def _solidity_literal(value: Any, typ: str) -> str:
+def _solidity_literal(value: Any, typ: str, internal_type: str = "") -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int) and not isinstance(value, bool):
@@ -65,7 +72,18 @@ def _solidity_literal(value: Any, typ: str) -> str:
         if typ == "address":
             if not re.fullmatch(r"0x[0-9a-fA-F]{40}", value):
                 raise ValueError("invalid address constructor argument")
-            return value
+            # Solidity 0.8 rejects an address literal whose case does not match
+            # the EIP-55 checksum, and the recovered argument is the raw hex
+            # from the creation transaction, which carries no checksum.  The
+            # checksummed form is the same address, so the deployment is the
+            # same contract; the error it prevents is a compile failure, not a
+            # different address.
+            literal = to_checksum_address(value)
+            # A parameter declared as a contract type needs an explicit cast:
+            # the ABI type is `address`, but the Solidity type is the interface
+            # or contract it names, and Solidity does not convert implicitly.
+            contract = _contract_type(internal_type)
+            return f"{contract}({literal})" if contract else literal
         if typ.startswith("bytes") or typ == "string":
             return json.dumps(value)
         if re.fullmatch(r"(?:u?int)(?:[0-9]{0,3})", typ or "") and re.fullmatch(r"(?:0x[0-9a-fA-F]+|[0-9]+)", value):
@@ -73,6 +91,21 @@ def _solidity_literal(value: Any, typ: str) -> str:
     if isinstance(value, list):
         return "[" + ", ".join(_solidity_literal(item, typ.rstrip("[]")) for item in value) + "]"
     raise ValueError(f"unsupported constructor value for {typ or 'unknown'}")
+
+
+def _contract_type(internal_type: str) -> str:
+    """The contract or interface name a constructor parameter is declared with.
+
+    The ABI type of such a parameter is `address`, and the declaration carries
+    the concrete type in `internalType` as `contract IRegistryV1`.  Solidity
+    refuses to pass a plain address where a contract type is expected, so the
+    literal has to be cast to the declared name.
+    """
+    text = str(internal_type or "").strip()
+    if not text.startswith("contract "):
+        return ""
+    name = text[len("contract "):].strip()
+    return name if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", name) else ""
 
 
 def _constructor_values(constructor: dict[str, Any], provided: Any) -> tuple[list[str], list[str]]:
@@ -86,7 +119,7 @@ def _constructor_values(constructor: dict[str, Any], provided: Any) -> tuple[lis
         if value is None:
             missing.append(name)
             continue
-        literals.append(_solidity_literal(value, str(item.get("type") or "")))
+        literals.append(_solidity_literal(value, str(item.get("type") or ""), str(item.get("internalType") or "")))
     return literals, missing
 
 
