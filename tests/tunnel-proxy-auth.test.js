@@ -61,7 +61,26 @@ async function startUpstream() {
       res.write(`event: snapshot\nid: 1\ndata: ${JSON.stringify(bulky)}\n\n`);
       return;
     }
-    res.writeHead(200, { 'content-type': 'application/json' });
+    // 与真实上游一致：所有响应都带 no-store，由代理决定哪些可以放行缓存。
+    if (path === '/') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+      res.end('<!doctype html><title>x</title>');
+      return;
+    }
+    if (path.includes('missing')) {
+      res.writeHead(404, { 'content-type': 'text/javascript', 'cache-control': 'no-store' });
+      res.end('not found');
+      return;
+    }
+    if (path.endsWith('.js') || path.endsWith('.css')) {
+      res.writeHead(200, {
+        'content-type': path.endsWith('.css') ? 'text/css' : 'text/javascript',
+        'cache-control': 'no-store',
+      });
+      res.end(`/* ${path} */`);
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
     res.end(JSON.stringify(bulky));
   });
   server.on('connection', (socket) => {
@@ -365,4 +384,130 @@ test('代理层 gzip：SSE 保持流式且可解压（不能被缓冲成定长�
   assert.match(response.text, /^retry: 3000/, 'SSE 必须保留 retry 指令');
   assert.match(response.text, /^event: snapshot/m, 'SSE 必须保留事件类型');
   assert.match(response.text, /^data: /m, 'SSE 必须保留事件数据');
+});
+
+// 静态文件边缘缓存的回归测试。
+//
+// 应用对所有响应写 no-store，Cloudflare 因此每个静态文件都 BYPASS，页面要把十几个
+// 模块逐个走隧道。代理对白名单内的前端静态文件改写为 s-maxage=60。
+// 缓存错位是静默错值：/api 被缓存时页面照常渲染，数字却是旧的；口令模式被缓存时
+// 边缘副本会绕过 Basic Auth。所以这里正反两个方向都要断言。
+test('边缘缓存：白名单静态文件放行 s-maxage，浏览器仍每次校验', SKIP, async (t) => {
+  const upstream = await startUpstream();
+  const proxy = await startProxy({ TUNNEL_REQUIRE_AUTH: '0', TUNNEL_UPSTREAM_PORT: String(upstream.port) });
+  t.after(async () => { await proxy.stop(); await upstream.stop(); });
+
+  for (const path of ['/app.js', '/styles.css', '/views/overview.js', '/lib/format.js']) {
+    const response = await requestRaw(proxy.port, { path });
+    assert.equal(response.status, 200, path);
+    const cacheControl = String(response.headers['cache-control']);
+    assert.match(cacheControl, /s-maxage=60/, `${path} 应允许边缘缓存`);
+    assert.match(cacheControl, /max-age=0/, `${path} 浏览器必须每次回源校验，否则改前端后用户长时间看旧版`);
+    assert.doesNotMatch(cacheControl, /no-store/, `${path} 不应再是 no-store`);
+  }
+});
+
+test('边缘缓存：/api、首页、非白名单路径、非 200 保持 no-store（反方向）', SKIP, async (t) => {
+  const upstream = await startUpstream();
+  const proxy = await startProxy({ TUNNEL_REQUIRE_AUTH: '0', TUNNEL_UPSTREAM_PORT: String(upstream.port) });
+  t.after(async () => { await proxy.stop(); await upstream.stop(); });
+
+  const mustStayNoStore = [
+    ['/api/health', 200],
+    ['/api/status', 200],
+    ['/', 200],
+    ['/views/missing.js', 404],
+    ['/views/../api/health', 200],
+    ['/views/sub/deep.js', 200],
+    ['/other.js', 200],
+  ];
+  for (const [path, status] of mustStayNoStore) {
+    const response = await requestRaw(proxy.port, { path });
+    assert.equal(response.status, status, path);
+    assert.equal(response.headers['cache-control'], 'no-store', `${path} 不得被放行缓存`);
+  }
+});
+
+test('边缘缓存：口令模式下静态文件也保持 no-store（防止缓存副本绕过鉴权）', SKIP, async (t) => {
+  const upstream = await startUpstream();
+  const { file, dir } = await passFileWith('secret-pass');
+  const proxy = await startProxy({
+    TUNNEL_REQUIRE_AUTH: '1',
+    TUNNEL_PASS_FILE: file,
+    TUNNEL_UPSTREAM_PORT: String(upstream.port),
+  });
+  t.after(async () => { await proxy.stop(); await upstream.stop(); await rm(dir, { recursive: true, force: true }); });
+
+  const response = await requestRaw(proxy.port, { path: '/app.js', auth: 'secret-pass' });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers['cache-control'], 'no-store', '口令模式不得发出 public 缓存头');
+});
+
+// SSE 生命周期回归：代理必须把「上游中途断开」和「客户端断开」都传导到另一端。
+//
+// 修复前的两个静默故障（接口与单元测试都绿，只有长时间运行才暴露）：
+//   1. 上游 SSE 被掐断/重启时，pipe 不结束下游，浏览器连接一直挂着，
+//      EventSource 不重连，页面停在旧数据上且没有任何报错。
+//   2. 客户端断开后上游连接不释放；上游 SSE 有 16 个连接上限，泄漏会把名额占满。
+// 上游断开必须以「正常结束」（chunked 结束块 / gzip 尾部）收尾，
+// 否则浏览器记 net::ERR_INCOMPLETE_CHUNKED_ENCODING。
+async function startDyingSseUpstream({ dieAfterMs }) {
+  const state = { open: 0, started: 0 };
+  const server = createServer((req, res) => {
+    state.open++; state.started++;
+    res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' });
+    res.write('retry: 3000\n\n');
+    res.on('close', () => { state.open--; });
+    if (dieAfterMs !== null) setTimeout(() => res.socket.destroy(), dieAfterMs);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return {
+    state,
+    port: server.address().port,
+    stop: () => new Promise((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }),
+  };
+}
+
+function waitForStreamEnd(port, { acceptEncoding = 'identity', timeoutMs = 3000 } = {}) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { request.destroy(); resolve({ how: 'hang' }); }, timeoutMs);
+    const settle = (value) => { clearTimeout(timer); resolve(value); };
+    const request = http.get({ host: '127.0.0.1', port, path: '/api/events', agent: false, headers: { 'accept-encoding': acceptEncoding } }, (response) => {
+      response.resume();
+      response.on('end', () => settle({ how: 'end', complete: response.complete === true }));
+      response.on('aborted', () => settle({ how: 'aborted' }));
+      response.on('error', (error) => settle({ how: `error:${error.message}` }));
+    });
+    request.on('error', (error) => settle({ how: `request-error:${error.message}` }));
+  });
+}
+
+for (const acceptEncoding of ['identity', 'gzip']) {
+  test(`SSE 代理（${acceptEncoding}）：上游中途断开时下游正常结束，不挂死也不半截`, SKIP, async (t) => {
+    const upstream = await startDyingSseUpstream({ dieAfterMs: 200 });
+    const proxy = await startProxy({ TUNNEL_REQUIRE_AUTH: '0', TUNNEL_UPSTREAM_PORT: String(upstream.port) });
+    t.after(async () => { await proxy.stop(); await upstream.stop(); });
+
+    const result = await waitForStreamEnd(proxy.port, { acceptEncoding });
+    assert.equal(result.how, 'end', `上游断开后下游应正常结束，实际是 ${result.how}`);
+    assert.equal(result.complete, true, '下游应读到完整收尾的流');
+  });
+}
+
+test('SSE 代理：客户端断开后立即释放上游连接', SKIP, async (t) => {
+  const upstream = await startDyingSseUpstream({ dieAfterMs: null });
+  const proxy = await startProxy({ TUNNEL_REQUIRE_AUTH: '0', TUNNEL_UPSTREAM_PORT: String(upstream.port) });
+  t.after(async () => { await proxy.stop(); await upstream.stop(); });
+
+  for (let index = 0; index < 5; index++) {
+    await new Promise((resolve) => {
+      const request = http.get({ host: '127.0.0.1', port: proxy.port, path: '/api/events', agent: false }, (response) => {
+        response.once('data', () => { request.destroy(); resolve(); });
+      });
+      request.on('error', () => {});
+    });
+  }
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert.equal(upstream.state.started, 5, '5 次连接都应到达上游');
+  assert.equal(upstream.state.open, 0, '客户端全部断开后，上游不应残留 SSE 连接');
 });

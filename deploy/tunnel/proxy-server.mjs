@@ -99,6 +99,28 @@ function acceptsGzip(req) {
   });
 }
 
+// 前端静态文件的边缘缓存。
+//
+// 问题：应用对所有响应都写 cache-control: no-store，Cloudflare 因此对每个静态文件
+// 都 BYPASS，页面打开要把 10 个模块 + CSS 逐个走一遍隧道（实测每个 0.7–1.2 秒）。
+// 做法：只对白名单内的前端静态文件改写为 s-maxage=60 —— 边缘缓存 60 秒，
+// 浏览器仍然 max-age=0 每次回源校验（命中边缘时很快），改前端后最多 60 秒生效。
+//
+// 边界（见 .cursor/rules/silent-wrong-value-review.mdc，缓存错位是静默错值）：
+//   - 只放行白名单路径；/api/*、/ (index.html) 保持上游的 no-store，
+//     否则状态数据会过期而页面照常显示，看起来正常但数值是旧的。
+//   - 口令模式不缓存：public 缓存副本会让未带口令的请求直接命中边缘，绕过 Basic Auth。
+//   - 只缓存 200 的 GET/HEAD，404/500 不入缓存。
+const STATIC_ASSET_RE = /^\/(?:app\.js|styles\.css|(?:views|lib)\/[\w.-]+\.js)$/;
+const STATIC_CACHE_CONTROL = 'public, max-age=0, s-maxage=60';
+
+function isEdgeCacheable(req, statusCode) {
+  if (REQUIRE_AUTH) return false;
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+  if (statusCode !== 200) return false;
+  return STATIC_ASSET_RE.test((req.url || '').split('?')[0]);
+}
+
 function isCompressibleType(contentType) {
   const type = String(contentType || '').toLowerCase();
   return /json|text\/|javascript|xml|svg|wasm/.test(type);
@@ -126,6 +148,16 @@ const server = http.createServer((req, res) => {
       const compressible = gzip && isCompressibleType(contentType);
 
       if (isSse) {
+        // 生命周期两头都要接上，否则会出现两种「看起来正常」的故障：
+        //   1. 客户端断开后上游连接不释放 —— 上游 SSE 有 16 个连接上限，泄漏会挤占名额；
+        //   2. 上游中途死掉（重启/被掐断）时 pipe 不会结束下游 —— 浏览器连接一直挂着，
+        //      EventSource 不重连，页面停在旧数据上却没有任何报错。
+        // 上游异常结束时用 end() 正常收尾（补 chunked 结束块），浏览器会按 retry 重连；
+        // 用 destroy() 会变成 net::ERR_INCOMPLETE_CHUNKED_ENCODING。
+        res.on('close', () => upstreamReq.destroy());
+        let closeDownstream = () => { if (!res.writableEnded && !res.destroyed) res.end(); };
+        upstreamRes.on('error', () => {});
+        upstreamRes.on('close', () => { if (!upstreamRes.complete) closeDownstream(); });
         // SSE：实时推送，不缓冲。压缩时用流式 gzip，并在每帧后立即 flush，
         // 保证浏览器能及时收到事件（不为了压缩率牺牲实时性）。
         if (compressible) {
@@ -138,6 +170,8 @@ const server = http.createServer((req, res) => {
           const gzipStream = createGzip({ flush: zlibConstants.Z_SYNC_FLUSH });
           gzipStream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); });
           res.on('close', () => gzipStream.destroy());
+          // 经过 gzip 时必须先结束压缩流，才会写出 gzip 尾部并关闭下游。
+          closeDownstream = () => { if (!gzipStream.writableEnded && !gzipStream.destroyed) gzipStream.end(); };
           upstreamRes.pipe(gzipStream).pipe(res);
         } else {
           res.writeHead(upstreamRes.statusCode || 502, upstreamRes.headers);
@@ -162,6 +196,7 @@ const server = http.createServer((req, res) => {
           }
         }
         outHeaders['content-length'] = String(body.length);
+        if (isEdgeCacheable(req, upstreamRes.statusCode)) outHeaders['cache-control'] = STATIC_CACHE_CONTROL;
         res.writeHead(upstreamRes.statusCode || 502, outHeaders);
         res.end(body);
       });
@@ -173,7 +208,9 @@ const server = http.createServer((req, res) => {
   );
 
   upstreamReq.on('error', () => {
-    if (!res.headersSent) res.writeHead(502, { 'content-type': 'application/json; charset=utf-8' });
+    // 响应头已发出（例如 SSE 中途断开）时不能再往流里追加 JSON，否则会污染事件流。
+    if (res.headersSent) { if (!res.writableEnded && !res.destroyed) res.end(); return; }
+    res.writeHead(502, { 'content-type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({ error: '上游不可用' }));
   });
 

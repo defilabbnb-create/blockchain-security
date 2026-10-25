@@ -17,7 +17,7 @@
 		<key>TUNNEL_REQUIRE_AUTH</key>
 		<!-- 0 = 免口令，浏览器直接打开 https://blksec.luckytad.vip 即可访问。
 		     改成 1 即恢复口令保护，无需改动任何代码。 -->
-		<string>0</string>
+		<string>1</string>
 		<key>TUNNEL_UPSTREAM_PORT</key>
 		<string>8788</string>
 	</dict>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+		<key>PORT</key>
+		<string>8788</string>
+	</dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.d288.security.webserver</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>src/web-server.js</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>/Users/d288/Library/Logs/SecurityWebTunnel/web.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/d288/Library/Logs/SecurityWebTunnel/web.log</string>
+	<key>ThrottleInterval</key>
+	<integer>15</integer>
+	<key>WorkingDirectory</key>
+	<string>/Users/d288/Desktop/区块链安全</string>
+</dict>
+</plist>
