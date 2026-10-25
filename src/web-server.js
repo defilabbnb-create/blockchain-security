@@ -26,11 +26,12 @@ import {
   taskErrorBody,
 } from './task-api-v1.js';
 import { CorpusControlPlane, corpusErrorBody, isChainCollectionStart } from './corpus-control.js';
+import { ChainCollectionControl, ChainCollectionError } from './chain-collection-control.js';
 
 const WEB_ROOT = join(PROJECT_ROOT, 'web');
 const loopback = new Set(['localhost', '127.0.0.1', '[::1]']);
 const mime = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
-const assets = new Set(['/', '/index.html', '/styles.css', '/app.js', '/lib/api.js', '/lib/format.js', '/lib/severity.js', '/views/overview.js', '/views/protocol.js', '/views/finding.js', '/views/execution.js', '/views/corpus.js']);
+const assets = new Set(['/', '/index.html', '/styles.css', '/home.css', '/audit.css', '/workspace.css', '/app.js', '/lib/api.js', '/lib/format.js', '/lib/severity.js', '/lib/confidence.js', '/lib/badges.js', '/lib/home-model.js', '/views/overview.js', '/views/protocol.js', '/views/finding.js', '/views/execution.js', '/views/corpus.js', '/views/home.js']);
 const securityHeaders = {
   'cache-control': 'no-store', 'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
@@ -1014,11 +1015,12 @@ async function callExternalCloudAi(question, context, signal, configuration) {
   };
 }
 
-export function startServer({ port = Number(process.env.PORT || 8788), host = process.env.HOST || '127.0.0.1', snapshotProvider = buildSnapshot, explanationProvider = null, eventIntervalMs = 15000, readTimeoutMs = 5000, sourceFingerprint = null, taskStore = null, resourceStore = null, resourceOperations = null, resourceArtifactRoots = [join(PROJECT_ROOT, 'work'), join(PROJECT_ROOT, 'flare-scan', 'reports'), join(PROJECT_ROOT, 'flare-scan', 'contracts')], evidenceRoot = ANALYSIS_EVIDENCE_ROOT, reviewAuditPath = join(PROJECT_ROOT, 'work', 'review-audit.jsonl'), eventSink = null, startCollectionWorker = false, collectionWorkerId = null, collectionWorkerConcurrency = 1, collectionWorkerPollIntervalMs = 250, collectionWorkerLeaseTtlMs = 45_000, collectionWorkerMaxHandlerRuntimeMs = 300_000, collectionWorkerRpcRequest = null, chainCollectionEnabled = null } = {}) {
+export function startServer({ port = Number(process.env.PORT || 8788), host = process.env.HOST || '127.0.0.1', snapshotProvider = buildSnapshot, explanationProvider = null, eventIntervalMs = 15000, readTimeoutMs = 5000, sourceFingerprint = null, taskStore = null, resourceStore = null, resourceOperations = null, resourceArtifactRoots = [join(PROJECT_ROOT, 'work'), join(PROJECT_ROOT, 'flare-scan', 'reports'), join(PROJECT_ROOT, 'flare-scan', 'contracts')], evidenceRoot = ANALYSIS_EVIDENCE_ROOT, reviewAuditPath = join(PROJECT_ROOT, 'work', 'review-audit.jsonl'), eventSink = null, startCollectionWorker = false, collectionWorkerId = null, collectionWorkerConcurrency = 1, collectionWorkerPollIntervalMs = 250, collectionWorkerLeaseTtlMs = 45_000, collectionWorkerMaxHandlerRuntimeMs = 300_000, collectionWorkerRpcRequest = null, chainCollectionEnabled = null, chainCollectionControl = null } = {}) {
   if (!loopback.has(host)) throw new Error('本地服务只能绑定 loopback 地址');
   // 链上采集守卫：离线阶段的服务实例默认拒绝创建链上采集任务。
   // 库调用方保持历史行为（默认不拦截），命令行服务显式传入 chainCollectionEnabled。
-  const chainCollectionOn = chainCollectionEnabled === null ? true : chainCollectionEnabled === true;
+  // 这个值只作为「前端开关的初始状态」，实际状态持久化在 work/chain-collection-control.json。
+  const chainCollectionDefault = chainCollectionEnabled === null ? true : chainCollectionEnabled === true;
   const started = Date.now();
   const instanceId = randomUUID();
   const clients = new Set();
@@ -1033,6 +1035,16 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
   const metrics = { total: 0, failures: 0, clientErrors: 0, active: 0, snapshotReads: 0, snapshotFailures: 0, cloudAiCalls: 0, cloudAiFailures: 0, cloudAiActive: 0, lastSnapshotAt: null, lastSnapshotError: null };
   const operations = resourceOperations || new ResourceApiOperations({ path: join(PROJECT_ROOT, 'work', 'resource-api-state.json'), auditPath: reviewAuditPath });
   const corpusControl = new CorpusControlPlane({ projectRoot: PROJECT_ROOT });
+  // 链上采集控制面：前端「一键开启」的后端。
+  // chainCollectionEnabled 只作为「开关的默认值」，实际状态持久化在
+  // work/chain-collection-control.json，用户在页面上操作后不再由环境变量决定。
+  // 库调用方（不传 chainCollectionEnabled）保持既有历史行为：守卫一律放行。
+  // 测试可以传入自己的控制面实例，避免读写真实项目的状态文件。
+  const chainCollection = chainCollectionControl ?? new ChainCollectionControl({
+    projectRoot: PROJECT_ROOT,
+    enabledDefault: chainCollectionDefault,
+    guardFollowsSwitch: chainCollectionEnabled !== null,
+  });
   const projectResourceApi = createResourceApiV1({ store: resourceStore || createTaskResourceStore(taskStore, evidenceRoot), artifactRoots: resourceArtifactRoots });
   const collectionWorkerRuntime = {
     enabled: startCollectionWorker === true,
@@ -1135,8 +1147,17 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
       if (response.writableLength > 512 * 1024) return false;
       response.write(eventFrame(item));
       return true;
-    }
+  }
     return false;
+  }
+  /* 断开 SSE 流必须用 end()，不能用 destroy()。
+   * destroy() 直接掐掉 socket，不补写 chunked 结束块，浏览器读到的是半截流，
+   * 会记成 net::ERR_INCOMPLETE_CHUNKED_ENCODING —— 看起来像接口坏了，其实只是
+   * 服务端主动断开慢客户端。end() 会把已缓冲的数据写完并补上结束块，客户端读到
+   * 的是一个正常结束的流。 */
+  function closeEventStream(response) {
+    if (response.destroyed || response.writableEnded) return;
+    response.end();
   }
   function publishEvent(type, payload = {}, taskId = null) {
     if (typeof type !== 'string' || !type || type.length > 80) throw new TypeError('event type must be a non-empty string');
@@ -1146,7 +1167,7 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
     };
     eventHistory.push(item);
     if (eventHistory.length > SSE_HISTORY_LIMIT) eventHistory.splice(0, eventHistory.length - SSE_HISTORY_LIMIT);
-    for (const client of clients) if (!sendEvent(client, item)) clients.delete(client);
+    for (const client of clients) if (!sendEvent(client, item)) { clients.delete(client); closeEventStream(client); }
     try { eventSink?.(item.data); } catch { /* event observers must not affect request handling */ }
     return item.data;
   }
@@ -1223,7 +1244,7 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
     try {
       const data = await snapshot();
       const item = { id: String(++eventSequence), event: 'snapshot', data };
-      if (!sendEvent(response, item)) response.destroy();
+      if (!sendEvent(response, item)) closeEventStream(response);
     } catch {
       sendEvent(response, { id: String(++eventSequence), event: 'snapshot-error', data: { error: '快照刷新失败' } });
     }
@@ -1286,6 +1307,51 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
       if ([...requestUrl.searchParams.keys()].length) return sendJson(response, 400, { apiVersion: 'v1', schemaVersion: 1, error: { code: 'unknown_query_parameter', message: '能力清单不接受查询参数' } });
       return sendJson(response, 200, { apiVersion: 'v1', schemaVersion: 1, generatedAt: new Date().toISOString(), capabilities: { ...API_V1_CAPABILITIES, collection: { ...API_V1_CAPABILITIES.collection, runtimeState: workerStatus().state } }, workers: { collection: workerStatus() }, interpretation: 'executionState 表示已有处理器实现；runtimeState 和 workers.collection 表示当前进程是否正在运行。不可用或未生成的数据保持显式缺失状态。' });
     }
+    if (pathname === '/api/v1/chain-collection' || pathname.startsWith('/api/v1/chain-collection/')) {
+      const requestId = randomUUID();
+      try {
+        const body = ['POST', 'PUT', 'PATCH'].includes(request.method) ? await parseBody(request) : null;
+        const action = pathname.slice('/api/v1/chain-collection'.length).replace(/^\//, '') || 'status';
+        let result;
+        if (action === 'status' && request.method === 'GET') {
+          result = { status: 200, body: await chainCollection.status() };
+        } else if (action === 'switch' && request.method === 'POST') {
+          if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ChainCollectionError('invalid_request', '请求体必须是 JSON 对象。', 400);
+          const unknown = Object.keys(body).filter((key) => !['enabled', 'chainIds', 'durationSec'].includes(key));
+          if (unknown.length) throw new ChainCollectionError('unknown_field', `请求包含未知字段：${unknown.join('、')}`, 400);
+          // enabled 与 chainIds 同时出现时必须报错，不能只执行其中一个：
+          // 两个字段都写进去，调用方无法知道哪一条被静默丢掉了。
+          if (body.enabled !== undefined && body.chainIds !== undefined) {
+            throw new ChainCollectionError('conflicting_fields', 'enabled 与 chainIds 不能同时传入，请分成两次请求。', 400, {
+              fields: ['enabled', 'chainIds'],
+            });
+          }
+          if (body.enabled !== undefined) result = { status: 200, body: await chainCollection.setEnabled(body.enabled) };
+          else if (Array.isArray(body.chainIds)) {
+            await chainCollection.select(body.chainIds);
+            result = { status: 200, body: await chainCollection.status() };
+          } else throw new ChainCollectionError('invalid_request', '需要 enabled 布尔值或 chainIds 数组。', 400);
+        } else if (action === 'start' && request.method === 'POST') {
+          if (body && (typeof body !== 'object' || Array.isArray(body))) throw new ChainCollectionError('invalid_request', '请求体必须是 JSON 对象。', 400);
+          const unknown = Object.keys(body || {}).filter((key) => !['chainIds', 'durationSec'].includes(key));
+          if (unknown.length) throw new ChainCollectionError('unknown_field', `请求包含未知字段：${unknown.join('、')}`, 400);
+          result = { status: 200, body: await chainCollection.start(body || {}) };
+        } else if (action === 'stop' && request.method === 'POST') {
+          result = { status: 200, body: await chainCollection.stop() };
+        } else if (action === 'chains' && request.method === 'GET') {
+          const status = await chainCollection.status();
+          result = { status: 200, body: { availableChains: status.availableChains, selectedChainIds: status.selectedChainIds } };
+        } else {
+          return sendJson(response, 404, { error: { code: 'not_found', message: '链上采集接口不存在', requestId } });
+        }
+        return sendJson(response, result.status, { ...result.body, requestId, generatedAt: new Date().toISOString() });
+      } catch (error) {
+        const failure = error instanceof ChainCollectionError
+          ? { status: error.status || 400, error: { code: error.code, message: error.message, ...(error.details !== undefined ? { details: error.details } : {}) } }
+          : { status: 500, error: { code: 'internal_error', message: String(error?.message || '链上采集请求失败') } };
+        return sendJson(response, failure.status, { ...failure, requestId, generatedAt: new Date().toISOString() });
+      }
+    }
     if (pathname === '/api/v1/corpus' || pathname.startsWith('/api/v1/corpus/')) {
       const requestId = randomUUID();
       try {
@@ -1302,9 +1368,11 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
       const requestId = randomUUID();
       try {
         const body = request.method === 'POST' ? await parseBody(request, 12 * 1024 * 1024) : null;
-        // 离线阶段后端拒绝链上采集启动请求：前端置灰只是提示，真正的拒绝在后端。
-        if (!chainCollectionOn && isChainCollectionStart(pathname, request.method, body)) {
-          throw new TaskApiV1Error('chain_collection_disabled', '离线阶段不开放链上采集，链上采集启动请求已被后端拒绝。', 400);
+        // 链上采集守卫：命令行服务里开关没打开时，后端拒绝创建链上采集任务。
+        // 前端置灰只是提示，真正的拒绝在后端。开关状态现读，不缓存。
+        // 库调用方（chainCollectionEnabled 缺省）一律放行，保持既有历史行为。
+        if (!await chainCollection.guardAllows() && isChainCollectionStart(pathname, request.method, body)) {
+          throw new TaskApiV1Error('chain_collection_disabled', '链上采集开关未打开，链上采集启动请求已被后端拒绝。', 400);
         }
         const result = await projectResourceApi({ method: request.method, pathname, searchParams: requestUrl.searchParams, body, requestId });
         if (result) return sendJson(response, result.status, result.body);
@@ -1377,8 +1445,10 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
       try {
         const body = ['POST', 'PUT', 'PATCH'].includes(request.method) ? await parseBody(request) : null;
         // 离线阶段后端拒绝链上采集任务创建：类型命中采集语义时直接拒绝。
-        if (!chainCollectionOn && isChainCollectionStart(pathname, request.method, body)) {
-          throw new TaskApiV1Error('chain_collection_disabled', '离线阶段不开放链上采集，链上采集启动请求已被后端拒绝。', 400);
+        // 开关状态现读，不缓存——用户在页面上打开开关后立刻生效。
+        // 库调用方（chainCollectionEnabled 缺省）一律放行，保持既有历史行为。
+        if (!await chainCollection.guardAllows() && isChainCollectionStart(pathname, request.method, body)) {
+          throw new TaskApiV1Error('chain_collection_disabled', '链上采集开关未打开，链上采集启动请求已被后端拒绝。', 400);
         }
         const result = await taskRouteV1(taskStore, request, requestUrl, body, evidenceRoot, withReportReadSlot, withArtifactReadSlot);
         if (!result) return sendJson(response, 404, taskEnvelope({ error: { code: 'not_found', message: '任务接口不存在', requestId } }));
@@ -1505,7 +1575,25 @@ export function startServer({ port = Number(process.env.PORT || 8788), host = pr
   return server;
 }
 
+/* 读取云端审查通道的本地配置（.env.cloud-ai，被 .gitignore 忽略，密钥不入库、不进 plist）。
+ * 只认 DEFI_CLOUD_AI_ 开头的三个变量，已存在的环境变量优先，文件缺失不报错。
+ * 只在命令行启动服务时调用；库调用方（测试）不会读到真实密钥。 */
+export function loadCloudAiEnvFile(path = join(PROJECT_ROOT, '.env.cloud-ai'), env = process.env) {
+  let text;
+  try { text = readFileSync(path, 'utf8'); } catch { return []; }
+  const loaded = [];
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(/^\s*(DEFI_CLOUD_AI_(?:BASE_URL|API_KEY|MODEL))\s*=\s*(.*?)\s*$/);
+    if (!match || !match[2]) continue;
+    if (env[match[1]]) continue;
+    env[match[1]] = match[2].replace(/^(['"])(.*)\1$/, '$2');
+    loaded.push(match[1]);
+  }
+  return loaded;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  loadCloudAiEnvFile();
   const taskStore = new TaskStateStore({ path: join(PROJECT_ROOT, 'work', 'task-state.json') });
   // 离线阶段（代号 LaneW）：默认不启动链上采集 worker，且后端拒绝链上采集启动请求。
   // 需要显式设置 WEB_COLLECTION_WORKER=1 与 CORPUS_CHAIN_COLLECTION=1 才放开。

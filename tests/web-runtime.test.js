@@ -1,10 +1,11 @@
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { startServer } from '../src/web-server.js';
+import { join, posix } from 'node:path';
+import { startServer, loadCloudAiEnvFile } from '../src/web-server.js';
 import { TaskStateStore } from '../src/task-state.js';
 import { ResourceApiOperations } from '../src/resource-api-operations.js';
 import { createSnapshotStore, answerQuestion } from '../src/status-store.js';
@@ -22,6 +23,83 @@ async function serverFor(t, overrides = {}) {
   t.after(async () => { server.stop(); server.closeAllConnections(); if (server.listening) await once(server, 'close'); });
   return `http://127.0.0.1:${server.address().port}`;
 }
+
+/** 递归列出 web/ 下的所有 .js 模块，返回相对 web/ 的路径。 */
+async function webModules(directory = new URL('../web/', import.meta.url), prefix = '') {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const found = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    if (entry.isDirectory()) {
+      found.push(...await webModules(new URL(`${entry.name}/`, directory), posix.join(prefix, entry.name)));
+    } else if (entry.name.endsWith('.js')) {
+      found.push(posix.join(prefix, entry.name));
+    }
+  }
+  return found.sort();
+}
+
+test('web/ 下的每个模块都能被服务端提供，不会 404', async (t) => {
+  const base = await serverFor(t);
+  const modules = await webModules();
+  assert.ok(modules.length > 0, '应当至少找到几个前端模块');
+  for (const module of modules) {
+    const response = await fetch(`${base}/${module}`);
+    assert.equal(response.status, 200, `${module} 应当可访问，但返回了 ${response.status}`);
+  }
+});
+
+test('每个前端模块的 import 依赖都能被服务端提供', async (t) => {
+  const base = await serverFor(t);
+  const modules = await webModules();
+  for (const module of modules) {
+    const source = await readFile(new URL(`../web/${module}`, import.meta.url), 'utf8');
+    const specifiers = [...source.matchAll(/^\s*import\s[^'"]*from\s*['"](\.[^'"]+)['"]/gm)].map((match) => match[1]);
+    for (const specifier of specifiers) {
+      const resolved = posix.normalize(posix.join(posix.dirname(module), specifier));
+      const response = await fetch(`${base}/${resolved}`);
+      assert.equal(
+        response.status,
+        200,
+        `${module} 依赖 ${specifier}（解析为 /${resolved}），但它返回 ${response.status}：`
+        + '浏览器会在模块图加载时直接失败，页面不会执行任何脚本。',
+      );
+    }
+  }
+});
+
+test('index.html 的 modulepreload 指向的模块都能被服务端提供', async (t) => {
+  const base = await serverFor(t);
+  const index = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
+  const preloads = [...index.matchAll(/<link[^>]+rel="modulepreload"[^>]+href="([^"]+)"/g)].map((match) => match[1]);
+  for (const href of preloads) {
+    const response = await fetch(`${base}${href}`);
+    assert.equal(response.status, 200, `modulepreload ${href} 应当可访问，但返回了 ${response.status}`);
+  }
+});
+
+test('服务端声明的可提供资源清单覆盖 web/ 下的全部模块', async (t) => {
+  // 真实踩过的坑：服务端把可提供的静态资源清单在启动时固化，而 index.html
+  // 每次从磁盘读。两者不同步时，页面拿到新版 index.html（含新的 modulepreload），
+  // 但新模块全部 404 —— 浏览器模块图加载直接失败，页面只剩静态 HTML，
+  // 而后端接口与单元测试全绿，看起来一切正常。
+  //
+  // 这个用例守住「新增 web/ 模块必须同时登记进服务端清单」。
+  const base = await serverFor(t);
+  const modules = await webModules();
+  const source = await readFile(new URL('../src/web-server.js', import.meta.url), 'utf8');
+  const declared = source.match(/const assets = new Set\(\[([^\]]*)\]\)/);
+  assert.ok(declared, '应当能在 web-server.js 里找到 assets 清单');
+  const listed = new Set([...declared[1].matchAll(/'([^']+)'/g)].map((match) => match[1]));
+  for (const module of modules) {
+    const path = `/${module}`;
+    assert.ok(listed.has(path), `web/${module} 没有登记进 web-server.js 的 assets 清单：`
+      + '新增前端模块后必须同步登记，否则运行中的实例会 404，页面加载不到任何脚本。');
+    const response = await fetch(`${base}${path}`);
+    assert.equal(response.status, 200, `${path} 应当可访问，但返回了 ${response.status}`);
+  }
+});
+
 test('specific questions take precedence over generic 当前 and do not reuse another chain quote', async () => {
   const s = await buildSnapshot();
   assert.match(answerQuestion(s, '当前有哪些高优先级告警？').answer, /High/);
@@ -292,6 +370,47 @@ test('SSE disconnect releases active connections and timers', async (t) => {
   assert.equal(health.sseClients, 0);
   assert.equal(health.requests.active, 1);
 });
+/* 服务端主动断开慢客户端时必须让流「正常结束」，不能半截掐断。
+ *
+ * 回归背景：sendEvent 有 writableLength > 512KB 的守卫（防慢客户端无限堆积），
+ * 命中时原来调 response.destroy() —— destroy 不补写 chunked 结束块，浏览器读到
+ * 半截流就记 net::ERR_INCOMPLETE_CHUNKED_ENCODING，看起来像接口坏了。
+ * 正确做法是 end()：把已缓冲数据写完并补结束块，客户端读到的是正常结束的流。
+ *
+ * 造现场景：快照大到一次推送就能把写缓冲顶过 512KB 守卫，客户端又读得慢
+ * （先 pause 再 resume），逼服务端走「主动断开」分支。
+ *
+ * 断言两条方向：
+ *   - 慢客户端：流必须干净结束（complete=true），不能是 aborted
+ *   - 断开后连接数归零，不能留下悬挂的 SSE 客户端
+ */
+test('SSE 断开慢客户端时流是干净结束的，不是半截掐断', async (t) => {
+  // 单帧约 1MB：一次推送就能把服务端写缓冲顶过 512KB 守卫。
+  const bulky = { ok: true, blob: 'x'.repeat(1024 * 1024) };
+  const server = startServer({ port: 0, snapshotProvider: async () => bulky, eventIntervalMs: 20 });
+  await once(server, 'listening');
+  t.after(async () => { server.stop(); server.closeAllConnections(); if (server.listening) await once(server, 'close'); });
+  const port = server.address().port;
+  const result = await new Promise((resolve) => {
+    const request = http.get({ host: '127.0.0.1', port, path: '/api/events' }, (response) => {
+      response.pause(); // 先不消费 → 服务端写缓冲堆积 → 守卫命中
+      const settle = (how) => resolve({ how, aborted: response.aborted === true, complete: response.complete === true });
+      response.on('aborted', () => settle('aborted'));
+      response.on('end', () => settle('end'));
+      response.on('error', (error) => settle('error:' + error.message));
+      // 守卫命中后服务端会 end()，缓冲数据随即冲出去；这时再恢复消费。
+      setTimeout(() => response.resume(), 300);
+      setTimeout(() => { request.destroy(); settle('timeout'); }, 5000);
+    });
+    request.on('error', () => {});
+  });
+  assert.equal(result.how, 'end', `SSE 应当正常结束，实际是 ${result.how}`);
+  assert.equal(result.aborted, false, 'SSE 不应被半截掐断');
+  assert.equal(result.complete, true, 'SSE 应当是完整读完的流');
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const health = await (await fetch(`http://127.0.0.1:${port}/api/health`)).json();
+  assert.equal(health.sseClients, 0, '断开后不能留下悬挂的 SSE 客户端');
+});
 test('SSE frames carry ids and lifecycle events replay after Last-Event-ID', async (t) => {
   const snapshot = await buildSnapshot();
   const server = startServer({ port: 0, snapshotProvider: async () => snapshot, eventIntervalMs: 60_000 });
@@ -404,4 +523,28 @@ test('soak refuses a server running an older source version', async (t) => {
   const report = await runSoak({ ...options(), baseUrl: base, output: join(dir, 'soak.json'), durationMs: 60, intervalMs: 30, modelProbe: false });
   assert.equal(report.state, 'failed');
   assert.ok(report.failureDetails.some((check) => check.path === 'source-continuity'));
+});
+
+/* 云端审查通道的本地配置文件：密钥只放在被 git 忽略的文件里，由命令行启动时读取。 */
+test('云端审查配置文件：只认白名单变量，已有环境变量优先，空值与缺失文件不报错', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'dsh-cloud-env-'));
+  t.after(() => rm(dir, { recursive: true }));
+  const file = join(dir, '.env.cloud-ai');
+  await writeFile(file, [
+    '# 注释行',
+    'DEFI_CLOUD_AI_BASE_URL=https://example.test',
+    'DEFI_CLOUD_AI_API_KEY="sk-from-file"',
+    'DEFI_CLOUD_AI_MODEL=',
+    'PATH=/evil',
+    'SOME_OTHER=1',
+  ].join('\n'));
+  const env = { DEFI_CLOUD_AI_BASE_URL: 'https://already.set' };
+  const loaded = loadCloudAiEnvFile(file, env);
+  assert.deepEqual(loaded, ['DEFI_CLOUD_AI_API_KEY'], '只加载未设置且非空的白名单变量');
+  assert.equal(env.DEFI_CLOUD_AI_BASE_URL, 'https://already.set', '已有环境变量优先于文件');
+  assert.equal(env.DEFI_CLOUD_AI_API_KEY, 'sk-from-file', '引号被去掉');
+  assert.equal(env.DEFI_CLOUD_AI_MODEL, undefined, '空值不能写成空字符串冒充已配置');
+  assert.equal(env.PATH, undefined, '白名单之外的变量不得被注入');
+  assert.equal(env.SOME_OTHER, undefined);
+  assert.deepEqual(loadCloudAiEnvFile(join(dir, 'missing'), {}), [], '文件缺失返回空而不是抛错');
 });
